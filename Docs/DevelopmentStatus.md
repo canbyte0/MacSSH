@@ -184,9 +184,11 @@
 
 ### Phase 4：Keychain / Credential Security
 
-状态：**已完成，等待用户验收**
+状态：**已通过用户验收**
 
 完成日期：2026-08-28
+
+验收日期：2026-08-28
 
 已完成：
 
@@ -222,10 +224,28 @@
 - 临时 `test-without-building` production namespace 验证使用单独 xctestrun，因此 Xcode 输出过 run-destination 选择提示；它不是项目 compiler warning，相关临时 xctestrun/xcresult 已删除。
 - 本地 `Sign to Run Locally` 的不同临时构建签名读取彼此创建的 Keychain item 时，macOS 可能要求登录钥匙串授权；同一构建完全退出并重启的持久化验证不受影响。最终删除使用创建该测试 item 的同签名验收构建完成。
 
+用户验收端到端验证结果（2026-08-28）：
+
+- Debug arm64 与 Release arm64 均完成 clean build，`xcodebuild -quiet` 无输出，项目 compiler warning 为 0。
+- Debug/Release 产物均为 Mach-O arm64，`codesign --verify --strict` 通过（valid on disk + satisfies Designated Requirement）。
+- 独立 Keychain XCTest 结果为 4 passed、1 skipped（未请求的 production 验证钩子）、0 failed。
+- 通过辅助功能与 CGEvent 驱动真实 UI 完成端到端生命周期：
+  - 在 Host Manager 新建带密码 Host（Password 字段进入 SecureField），Save 后 sheet 正常关闭。
+  - 数据库 `ZHOST` 行出现新 Host，`ZCREDENTIALID` 非 NULL；`MacSSH.store` / WAL / SHM 三个文件中均未发现密码明文。
+  - Keychain 中出现对应 Generic Password item（service=`com.macssh.MacSSH.credentials.ssh-password`，account 为 credentialID 的小写 UUID），创建时间与保存时刻一致。
+  - App 进程内 XCTest（环境变量驱动 production namespace）验证 Keychain 中存储的密码与 UI 输入完全匹配。
+  - App 使用 `⌘Q` 完全退出并重新启动后，Host 计数保持 2，Keychain 密码仍可通过 App 进程内 XCTest 正确读取。
+  - 编辑 Host 仅修改 Name、Password 留空保存后，`ZCREDENTIALID` 保持不变，App 进程内验证密码仍可读取（密码未被覆盖）。
+  - 选中 Host 后通过 Delete 键触发 `onDeleteCommand`，确认 Delete 后 sheet 关闭；数据库中该 Host 已删除，Keychain 中对应 item 已清理（`security find-generic-password` 返回 item not found），App 进程内 XCTest `expectation=missing` 通过。
+- 用户保留的 Phase 3 验收 Host/Group/Favorite/Group 关联关系在本次端到端验证前后均保持，credentialID/privateKeyID 仍为 NULL，无 Phase 4 验收数据残留。
+- 最近 30 分钟 OSLog（subsystem `com.macssh.MacSSH`）扫描 password/passphrase/Secret/测试密码明文均无匹配。
+- 验收使用的临时构建产物与临时 UI 驱动工具已清理，工作树保持 clean。
+
 当前已知问题：
 
 - Phase 4 范围内未发现未解决的功能缺陷。
 - 开发环境跨临时签名访问 Keychain 的系统授权行为如上；正式稳定签名发布前仍需在后续发布阶段复测。
+- 端到端 UI 验收通过 macOS 辅助功能 + CGEvent 合成事件完成；正式稳定签名发布前仍建议在真实键鼠交互下复测一次。
 
 本阶段明确未实现：
 
@@ -235,4 +255,4 @@
 
 ## 下一阶段
 
-Phase 5：SSH 基础连接。只有用户验收 Phase 4 并明确要求后才能开始。
+Phase 4 已通过用户验收（2026-08-28）。下一阶段为 Phase 5：SSH 基础连接（集成 libssh2 + OpenSSL，建立 SSHConnection，实现 TCP + Handshake + Password Authentication）。只有用户明确要求后才能开始。

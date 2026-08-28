@@ -8,4 +8,22 @@ xcuserdata/
 # Local build output
 DerivedData/
 .build/
+build/
 
+# Xcode additional artifacts
+*.xcscmblueprint
+*.xccheckout
+*.moved-aside
+*.hmap
+*.ipa
+*.dSYM
+*.dSYM.zip
+
+# Swift Package Manager cache (Package.resolved is tracked separately)
+.swiftpm/
+
+# CocoaPods (insurance; project uses SPM)
+Pods/
+
+# JetBrains IDE
+.idea/
