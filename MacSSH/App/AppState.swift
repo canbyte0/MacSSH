@@ -1,6 +1,7 @@
 import Observation
+import SwiftData
 
-/// 保存顶层页面选择，并持有独立于 SwiftUI 页面生命周期的本地 Terminal 会话。
+/// 保存顶层页面选择，并持有独立于 SwiftUI 页面生命周期的会话状态。
 @MainActor
 @Observable
 final class AppState {
@@ -13,10 +14,14 @@ final class AppState {
     /// 持有 SwiftTerm View 和 PTY，避免切换 Sidebar 时意外结束 Shell。
     let localTerminalService: LocalTerminalService
 
-    init() {
+    /// Phase 5 SSH 连接的唯一业务入口；连接独立于 View 生命周期。
+    let sshService: SSHService
+
+    init(modelContainer: ModelContainer) {
         let terminalSession = TerminalSession(shellPath: LoginShellResolver.resolve())
         self.terminalSession = terminalSession
         localTerminalService = LocalTerminalService(session: terminalSession)
+        sshService = SSHService(modelContainer: modelContainer)
 
         // 日志不包含密码、私钥、终端内容或其他敏感信息。
         AppLogger.app.info("Application state initialized")
@@ -26,7 +31,7 @@ final class AppState {
     var statusText: String {
         selectedSection == .terminal
             ? terminalSession.statusText
-            : "Phase 4 · Credential Security"
+            : "Phase 5 · SSH Connection"
     }
 
     /// Terminal 页面显示 PTY 尺寸，其他页面继续显示页面名称。

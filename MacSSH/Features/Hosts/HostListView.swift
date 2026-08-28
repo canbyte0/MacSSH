@@ -2,9 +2,15 @@ import SwiftData
 import SwiftUI
 
 /// Host Manager 直接观察 SwiftData，并在删除 Host 时同步清理 Keychain 凭据。
+/// Phase 5 起同时提供真实 SSH 连接入口；连接状态由 SSHService 持有。
 struct HostListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(AppState.self) private var appState
     private let credentialService = CredentialService.shared
+
+    private var sshService: SSHService {
+        appState.sshService
+    }
 
     /// @Query 让插入、编辑和删除在保存后立即反映到列表。
     @Query(sort: \Host.name) private var hosts: [Host]
@@ -70,6 +76,18 @@ struct HostListView: View {
         }
         .sheet(item: $groupEditorRequest) { request in
             HostGroupEditorView(group: request.group)
+        }
+        .sheet(item: hostTrustDialogBinding) { request in
+            HostTrustDialogView(
+                info: request.info,
+                onTrustOnce: {
+                    sshService.trustOnce(hostID: request.id)
+                },
+                onCancel: {
+                    sshService.cancelHostTrust(hostID: request.id)
+                }
+            )
+            .interactiveDismissDisabled(true)
         }
         .alert(
             "Delete Host?",
@@ -191,9 +209,19 @@ struct HostListView: View {
                     .listRowSeparator(.hidden)
                 } else {
                     ForEach(filteredHosts) { host in
-                        HostRowView(host: host) {
-                            toggleFavorite(host)
-                        }
+                        HostRowView(
+                            host: host,
+                            connectionInfo: sshService.connectionInfo(for: host.id),
+                            toggleFavorite: {
+                                toggleFavorite(host)
+                            },
+                            connect: {
+                                connect(host)
+                            },
+                            disconnect: {
+                                sshService.disconnect(hostID: host.id)
+                            }
+                        )
                         .tag(host.id)
                         .contentShape(Rectangle())
                         // 显式同步选择状态，确保整行普通单击可启用编辑和键盘删除。
@@ -209,6 +237,16 @@ struct HostListView: View {
                                 }
                         )
                         .contextMenu {
+                            if isHostConnected(host.id) {
+                                Button("Disconnect") {
+                                    sshService.disconnect(hostID: host.id)
+                                }
+                            } else if !sshService.isConnectionActive(host.id) {
+                                Button("Connect") {
+                                    connect(host)
+                                }
+                            }
+
                             Button("Edit Host") {
                                 hostEditorRequest = HostEditorRequest(host: host)
                             }
@@ -317,6 +355,39 @@ struct HostListView: View {
             return
         }
         hostEditorRequest = HostEditorRequest(host: selectedHost)
+    }
+
+    // MARK: - SSH 连接（Phase 5）
+
+    /// 发起连接；前置校验失败（Private Key、缺失凭据等）直接显示 failed 状态。
+    private func connect(_ host: Host) {
+        sshService.connect(to: host)
+    }
+
+    private func isHostConnected(_ hostID: UUID) -> Bool {
+        sshService.connectionInfo(for: hostID)?.phase == .connected
+    }
+
+    /// 当前处于 awaitingHostTrust 的连接；sheet 展示其真实 Host Key。
+    /// 使用独立 struct 规避 actor 隔离类型的 Identifiable 限制。
+    private var hostTrustRequest: HostTrustRequest? {
+        guard let info = sshService.connections.values.first(where: {
+            $0.phase == .awaitingHostTrust
+        }) else {
+            return nil
+        }
+        return HostTrustRequest(id: info.hostID, info: info)
+    }
+
+    /// Trust 对话框关闭（Esc 等）等价于 Cancel，必须断开连接。
+    private var hostTrustDialogBinding: Binding<HostTrustRequest?> {
+        Binding(
+            get: { hostTrustRequest },
+            set: { newValue in
+                guard newValue == nil, let current = hostTrustRequest else { return }
+                sshService.cancelHostTrust(hostID: current.id)
+            }
+        )
     }
 
     /// Favorite 是普通 SwiftData 字段；切换后立即显式保存。
@@ -540,4 +611,10 @@ private struct HostGroupEditorRequest: Identifiable {
         self.group = group
         id = group?.id ?? UUID()
     }
+}
+
+/// 驱动 Host Trust 对话框 Sheet 的请求；以 HostID 作为稳定标识。
+private struct HostTrustRequest: Identifiable {
+    let id: UUID
+    let info: SSHConnectionInfo
 }

@@ -15,15 +15,31 @@ build/
 *.xccheckout
 *.moved-aside
 *.hmap
-*.ipa
 *.dSYM
 *.dSYM.zip
+*.xcarchive
+*.xcresult
 
 # Swift Package Manager cache (Package.resolved is tracked separately)
 .swiftpm/
 
-# CocoaPods (insurance; project uses SPM)
-Pods/
-
 # JetBrains IDE
 .idea/
+
+# Third-party dependency build intermediates and unused install metadata
+# (ThirdParty/openssl 与 ThirdParty/libssh2 仅保留编译所需的头文件和静态库；
+#  源码压缩包、编译目录、文档、本机配置与构建系统元数据不入库)
+ThirdParty/downloads/
+ThirdParty/work/
+ThirdParty/libssh2/share/
+ThirdParty/libssh2/lib/cmake/
+ThirdParty/libssh2/lib/pkgconfig/
+ThirdParty/openssl/bin/
+ThirdParty/openssl/certs/
+ThirdParty/openssl/misc/
+ThirdParty/openssl/private/
+ThirdParty/openssl/lib/cmake/
+ThirdParty/openssl/lib/pkgconfig/
+ThirdParty/openssl/openssl.cnf
+ThirdParty/openssl/ct_log_list.cnf
+ThirdParty/openssl/*.dist

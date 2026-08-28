@@ -37,6 +37,15 @@
 		C10000000000000000000002 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* KeychainService.swift */; };
 		C10000000000000000000003 /* CredentialService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000003 /* CredentialService.swift */; };
 		C10000000000000000000004 /* CredentialServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000004 /* CredentialServiceTests.swift */; };
+		D10000000000000000000001 /* SSHError.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000001 /* SSHError.swift */; };
+		D10000000000000000000002 /* SSHConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* SSHConnectionState.swift */; };
+		D10000000000000000000003 /* SSHConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* SSHConnection.swift */; };
+		D10000000000000000000004 /* SSHService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* SSHService.swift */; };
+		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
+		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
+		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
+		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
+		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -81,6 +90,16 @@
 		C20000000000000000000003 /* CredentialService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialService.swift; sourceTree = "<group>"; };
 		C20000000000000000000004 /* CredentialServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialServiceTests.swift; sourceTree = "<group>"; };
 		C20000000000000000000005 /* MacSSHTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacSSHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		D20000000000000000000001 /* SSHError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHError.swift; sourceTree = "<group>"; };
+		D20000000000000000000002 /* SSHConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionState.swift; sourceTree = "<group>"; };
+		D20000000000000000000003 /* SSHConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnection.swift; sourceTree = "<group>"; };
+		D20000000000000000000004 /* SSHService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHService.swift; sourceTree = "<group>"; };
+		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
+		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
+		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
+		D20000000000000000000008 /* libssl.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libssl.a"; sourceTree = "<group>"; };
+		D20000000000000000000009 /* HostTrustDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrustDialogView.swift; sourceTree = "<group>"; };
+		D2000000000000000000000A /* SSHConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -89,6 +108,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000015 /* SwiftTerm in Frameworks */,
+				D10000000000000000000006 /* libssh2.a in Frameworks */,
+				D10000000000000000000008 /* libssl.a in Frameworks */,
+				D10000000000000000000007 /* libcrypto.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -107,8 +129,19 @@
 			children = (
 				A4000000000000000000001E /* MacSSH */,
 				A4000000000000000000000A /* Tests */,
+				D40000000000000000000001 /* ThirdParty */,
 				A4000000000000000000000B /* Products */,
 			);
+			sourceTree = "<group>";
+		};
+		D40000000000000000000001 /* ThirdParty */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000006 /* libssh2.a */,
+				D20000000000000000000007 /* libcrypto.a */,
+				D20000000000000000000008 /* libssl.a */,
+			);
+			path = ThirdParty;
 			sourceTree = "<group>";
 		};
 		A4000000000000000000001E /* MacSSH */ = {
@@ -200,8 +233,17 @@
 			isa = PBXGroup;
 			children = (
 				C40000000000000000000001 /* Security */,
+				D40000000000000000000002 /* SSH */,
 			);
 			path = Tests;
+			sourceTree = "<group>";
+		};
+		D40000000000000000000002 /* SSH */ = {
+			isa = PBXGroup;
+			children = (
+				D2000000000000000000000A /* SSHConnectionTests.swift */,
+			);
+			path = SSH;
 			sourceTree = "<group>";
 		};
 		A4000000000000000000000B /* Products */ = {
@@ -251,7 +293,17 @@
 			path = Settings;
 			sourceTree = "<group>";
 		};
-		A40000000000000000000011 /* SSH */ = {isa = PBXGroup; path = SSH; sourceTree = "<group>"; };
+		A40000000000000000000011 /* SSH */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000001 /* SSHError.swift */,
+				D20000000000000000000002 /* SSHConnectionState.swift */,
+				D20000000000000000000003 /* SSHConnection.swift */,
+				D20000000000000000000004 /* SSHService.swift */,
+			);
+			path = SSH;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000012 /* SFTP */ = {isa = PBXGroup; path = SFTP; sourceTree = "<group>"; };
 		A40000000000000000000013 /* Terminal */ = {
 			isa = PBXGroup;
@@ -273,7 +325,14 @@
 			path = Security;
 			sourceTree = "<group>";
 		};
-		A40000000000000000000016 /* LibSSH2 */ = {isa = PBXGroup; path = LibSSH2; sourceTree = "<group>"; };
+		A40000000000000000000016 /* LibSSH2 */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */,
+			);
+			path = LibSSH2;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000017 /* OpenSSL */ = {isa = PBXGroup; path = OpenSSL; sourceTree = "<group>"; };
 		A40000000000000000000018 /* Persistence */ = {isa = PBXGroup; path = Persistence; sourceTree = "<group>"; };
 		A40000000000000000000019 /* Logging */ = {
@@ -300,7 +359,14 @@
 			path = Toolbar;
 			sourceTree = "<group>";
 		};
-		A4000000000000000000001C /* Dialogs */ = {isa = PBXGroup; path = Dialogs; sourceTree = "<group>"; };
+		A4000000000000000000001C /* Dialogs */ = {
+			isa = PBXGroup;
+			children = (
+				D20000000000000000000009 /* HostTrustDialogView.swift */,
+			);
+			path = Dialogs;
+			sourceTree = "<group>";
+		};
 		A4000000000000000000001D /* Common */ = {
 			isa = PBXGroup;
 			children = (
@@ -451,6 +517,11 @@
 				C10000000000000000000001 /* KeychainError.swift in Sources */,
 				C10000000000000000000002 /* KeychainService.swift in Sources */,
 				C10000000000000000000003 /* CredentialService.swift in Sources */,
+				D10000000000000000000001 /* SSHError.swift in Sources */,
+				D10000000000000000000002 /* SSHConnectionState.swift in Sources */,
+				D10000000000000000000003 /* SSHConnection.swift in Sources */,
+				D10000000000000000000004 /* SSHService.swift in Sources */,
+				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -459,6 +530,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C10000000000000000000004 /* CredentialServiceTests.swift in Sources */,
+				D10000000000000000000009 /* SSHConnectionTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -616,6 +688,10 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/include",
+				);
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LM_FILTER_WARNINGS = YES;
@@ -624,12 +700,18 @@
 					"$(inherited)",
 					"@executable_path/../Frameworks",
 				);
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/lib",
+					"$(PROJECT_DIR)/ThirdParty/openssl/lib",
+				);
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				MARKETING_VERSION = 0.1.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macssh.MacSSH;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "MacSSH/Infrastructure/LibSSH2/MacSSHLibSSH2BridgingHeader.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 			};
@@ -645,10 +727,19 @@
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/include",
+				);
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LM_FILTER_WARNINGS = YES;
 				LM_SKIP_METADATA_EXTRACTION = YES;
+				LIBRARY_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/lib",
+					"$(PROJECT_DIR)/ThirdParty/openssl/lib",
+				);
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -659,6 +750,7 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				REGISTER_APP_GROUPS = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_OBJC_BRIDGING_HEADER = "MacSSH/Infrastructure/LibSSH2/MacSSHLibSSH2BridgingHeader.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
 			};
@@ -671,6 +763,12 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/include",
+				);
+				LM_FILTER_WARNINGS = YES;
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macssh.MacSSHTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -687,6 +785,12 @@
 				BUNDLE_LOADER = "$(TEST_HOST)";
 				CODE_SIGN_STYLE = Automatic;
 				GENERATE_INFOPLIST_FILE = YES;
+				HEADER_SEARCH_PATHS = (
+					"$(inherited)",
+					"$(PROJECT_DIR)/ThirdParty/libssh2/include",
+				);
+				LM_FILTER_WARNINGS = YES;
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.macssh.MacSSHTests;
 				PRODUCT_NAME = "$(TARGET_NAME)";

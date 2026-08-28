@@ -253,6 +253,117 @@
 - Private Key 解析与认证、Host Key Verification、Known Hosts、SSH Terminal。
 - SFTP、Transfer Manager、KeepAlive、Reconnect 或任何 Phase 5 及后续功能。
 
+### Phase 5：SSH 基础连接
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-28
+
+#### 第三方依赖安全基线
+
+libssh2：
+
+- 来源：upstream `https://github.com/libssh2/libssh2`（codeload tarball，SHA256 校验后解压）
+- base version：1.11.2_DEV（1.11.1 之后的开发快照）
+- 完整 commit SHA：`256d04b60d80bf1190e96b0ad1e91b2174d744b1`
+- tarball SHA256：`6b16b30d0437c4c13ec854011b654a79c5f23c22dc8ef26d6ac6d8754c7e9a24`
+- CVE-2026-7598 修复：**已包含**。该 commit 即官方修复（`userauth.c: username_len bounds checking`，PR #1858，作者 Will Cosgrove，GPG verified）。构建脚本以 `grep "username_len out of bounds" src/userauth.c` 硬性验证三处 bounds check 全部存在后才允许构建。
+- 构建方式：cmake Release 静态库，arm64，macOS 14.0 deployment target，Crypto Backend = OpenSSL（静态）
+- 禁止事项执行情况：未使用 vanilla 1.11.1，未使用任何第三方 binary/wrapper
+
+OpenSSL：
+
+- 来源：官方 release tarball（GitHub openssl/openssl release asset）
+- 版本：**3.5.8**（3.5 LTS，2026-08-25 发布）
+- tarball SHA256：`a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2`（与官方发布 digest 一致）
+- 构建方式：`./Configure darwin64-arm64-cc no-shared no-tests no-apps no-docs no-legacy` 静态库，arm64，macOS 14.0 deployment target
+
+依赖可复现性：
+
+- 构建脚本：`Scripts/build-dependencies.sh`（下载→SHA256 校验→CVE 修复验证→configure→构建→安装到 `ThirdParty/`）
+- 清单：`ThirdParty/MANIFEST.txt`（版本/commit/SHA256/构建参数）
+- 静态库产物（`ThirdParty/openssl`、`ThirdParty/libssh2`）与脚本一并纳入 Git；下载缓存与中间目录（`ThirdParty/downloads`、`ThirdParty/work`）已 gitignore
+- 换一台 Mac：安装 Xcode + cmake 后运行同一脚本即可复现完全相同的依赖
+
+最终 App Runtime linkage（已用 otool -L 实测）：
+
+- Debug 与 Release 二进制的动态库依赖**仅**为系统框架（Foundation/AppKit/SwiftUI/Security 等）与 `/usr/lib` 系统库
+- **不存在任何 `/opt/homebrew` 或 `/usr/local` 运行时依赖**
+- libssh2（219 个符号）与 OpenSSL（1504 个 EVP_/OSSL_ 符号）已静态链接进可执行文件，App 完全自包含，无需 `brew install openssl/libssh2`
+
+#### 已完成实现
+
+SSH Core（`MacSSH/Services/SSH/`）：
+
+- `SSHConnectionState.swift`：9 态完整状态机（idle/connecting/handshaking/awaitingHostTrust/authenticating/connected/disconnecting/disconnected/failed），绝不退化为 `isConnected: Bool`；`SSHHostKeyInfo`（真实 Host Key 的算法名 + OpenSSH SHA256 Fingerprint）；`SSHHostTrustDecision`（trustOnce/cancel）
+- `SSHConnection.swift`：`actor` 作为 `LIBSSH2_SESSION *` 的唯一串行所有者；全流程 TCP（非阻塞 connect + poll）→ libssh2 session init → non-blocking handshake（`LIBSSH2_ERROR_EAGAIN` 通过 `poll()` + `libssh2_session_block_directions()` 等待；方向为 0 时使用最多 1 秒的异步退避，禁止把通常立即可写的 `POLLOUT` 当作 fallback，避免 CPU busy-loop）→ 真实 Host Key 提取（`libssh2_session_hostkey` + SHA256 fingerprint）→ 等待用户信任决策 → 认证方法协商（`libssh2_userauth_list`，服务器不支持 password 时明确报错）→ Keychain 读取密码（`_ex` 显式长度调用，Secret 生命周期最短化）→ `libssh2_userauth_password_ex`；任何失败路径统一清理 session + socket；disconnect 幂等（含连接中取消的 use-after-free 防护）。`libssh2_userauth_list` 返回值按官方所有权约定交由 session 管理，不错误释放；密码使用可变字节缓冲并在认证调用结束后逐字节覆写清零
+- `SSHService.swift`：View 与 SSH Core 之间的唯一业务层；连接由其持有（独立于 View 生命周期）；Private Key Host 前置明确拒绝（不偷试其他方式）；credential 缺失前置失败（不弹假认证失败）；认证成功更新 lastConnectedAt
+- `SSHError.swift`：16 个业务级错误（invalidHost/dnsResolutionFailed/connectionTimeout/connectionRefused/socketError/sessionInitializationFailed/handshakeFailed/hostKeyUnavailable/hostTrustRejected/credentialNotFound/passwordAuthenticationUnsupported/authenticationFailed/privateKeyAuthenticationUnavailable/connectionLost/cancelled/disconnectFailed），全部映射为用户可读信息，不含 Secret 或裸 OSStatus
+
+UI（按用户确认的设计实现）：
+
+- `HostTrustDialogView.swift`：原生 Sheet 对话框，展示真实 handshake 返回的 Host/Port/Key Type/SHA256 Fingerprint（可选中复制），仅 Trust Once / Cancel；Esc/关闭等价 Cancel
+- `HostRowView.swift`：行尾连接状态列（Connect/Connected(绿点)/Connecting(转圈+真实阶段文本)/Failed(红叉+Retry)）；右键菜单 Connect/Disconnect
+- `HostListView.swift`：接入 SSHService；Trust 对话框由 awaitingHostTrust 状态自动驱动；Cancel 路径强制断开
+
+Host Trust 安全边界（对原计划的 Phase 5 修正）：
+
+- handshake 后必须显示真实 Fingerprint，用户明确选择 Trust Once 后才允许发送 Password；信任仅对当前连接有效，不写 SwiftData（KnownHost 属于 Phase 6）；Cancel 立即断开 TCP/SSH 并清理
+
+超时（计划书 42 节）：
+
+- DNS+TCP / handshake / authentication 各 10 秒独立预算；优雅断开 1 秒预算
+
+日志安全：
+
+- 新增 `AppLogger.ssh` 分类；只记录生命周期事件（started/TCP established/handshake completed/trust accepted/authentication succeeded/closed/failed 类型）；绝不记录密码、长度、Fingerprint、终端内容
+- 未启用任何 libssh2/OpenSSL 底层 trace
+
+工程集成：
+
+- `MacSSHLibSSH2BridgingHeader.h`（Infrastructure/LibSSH2）引入 libssh2 C API
+- pbxproj：静态库链接 + HEADER_SEARCH_PATHS + LIBRARY_SEARCH_PATHS + bridging header；App/Test target 使用唯一 PBXBuildFile ID，测试目标具有独立 libssh2 header 搜索路径
+- XCTest：`Tests/SSH/SSHConnectionTests.swift` 覆盖测试矩阵 A-I + 20 次 Connect/Disconnect 泄漏检测（FD/线程）+ 连接后空闲 30 秒 CPU 测量 + `EAGAIN` 阻塞方向映射/零方向实际退避 CPU 回归 + Phase 4 回归
+- 测试脚本：`Scripts/run-ssh-tests.sh`（本机 sshd 作为测试服务器；密码 read -s 输入，仅经环境变量进测试进程写测试专用 Keychain item，测试后清理，不进任何日志）
+
+构建验收结果（2026-08-28，本轮修复后重新执行）：
+
+- Debug arm64 clean build：成功，**项目 compiler warning = 0**
+- Release arm64 clean build：成功，**项目 compiler warning = 0**
+- 两产物均为 Mach-O arm64，`codesign --verify --strict` 通过
+- otool -L 实测：零 Homebrew/非系统运行时依赖（详见上文 linkage 章节）
+- SwiftTerm 仍固定 1.19.0；未修改任何第三方源码
+
+验收测试执行状态：
+
+- 真实环境完整测试已执行：共 16 项，15 项通过、1 项按设计跳过、0 项失败，`** TEST EXECUTE SUCCEEDED **`；总耗时 81.148 秒。
+- `SSHConnectionTests`：11/11 通过、0 跳过、0 失败。A-I 全部通过，包括正确密码连接、错误密码、错误用户名、端口拒绝、10 秒不可达超时、DNS 失败、真实 Host Trust Cancel、凭据缺失和 Phase 5 Private Key 边界。
+- 20 次 Connect/Disconnect 泄漏检测通过，FD/线程增量均在断言阈值内；连接成功后空闲 30 秒 CPU 检测通过，CPU 时间增量不超过 1.0 秒阈值。
+- Phase 4 `CredentialServiceTests`：4 项通过、0 失败；仅生产凭据状态测试因未请求生产验证而按设计跳过。
+- `run-ssh-tests.sh` 使用 `security -w` 的安全提示将密码直接写入固定测试专用 Keychain item，不使用环境变量或密码命令行参数；测试完成后已在正常本机环境确认该 item 不存在。
+- 测试结果包：`/tmp/macssh-dd/Logs/Test/Test-MacSSH-2026.08.28_19-16-08-+0800.xcresult`；完整日志：`/tmp/macssh-ssh-tests.log`。
+- 用户首次验收发现 `directions == 0` 时使用 `POLLIN | POLLOUT` 可能让可写 socket 立即返回并形成 busy-loop；现已改为与上游策略一致的最多 1 秒异步退避。修复后的针对性测试为 3 项通过、0 失败，其中实际 1 秒退避同时断言进程 CPU 增量 `< 0.2` 秒；结果包：`/private/tmp/MacSSH-Phase5-Fix-Tests-v2/Logs/Test/Test-MacSSH-2026.08.28_19-41-01-+0800.xcresult`。
+- 修复后完整测试共 18 项：13 项通过、5 项按设计跳过、0 项失败。5 项跳过均需要已经安全删除的真实测试密码；不依赖真实密码的 Phase 4/Phase 5 回归全部通过。
+- Phase 2 UI 回归通过：Local Terminal 实际执行 `echo PHASE5_TERMINAL_OK` 并得到正确输出；窗口 Resize 后终端尺寸从 109 × 37 更新为 85 × 30；切换 Hosts 后返回，原命令输出与同一 PTY 会话仍保留。
+- Phase 3 UI 回归通过：创建临时 Group/Host、分组、Favorite、单击选择、编辑、按 Hostname Search、完全退出并重启后的 SwiftData 持久化以及 Host/Group 删除均实际通过；测试结束后临时数据已删除，原 Phase 3 验收数据保持不变。
+
+构建环境说明（重要，本机特有）：
+
+- 受限代理沙箱可能拦截 Xcode Metal 工具链 wrapper 的路径探测；使用正常本机执行环境运行 `Scripts/build-app.sh` 已完成 Debug/Release 构建。该限制不是 App 代码缺陷。
+- `Scripts/build-app.sh` 与 `Scripts/run-ssh-tests.sh` 固化了 Phase 5 的构建和真实 SSH 验收入口。
+
+当前已知问题：
+
+- 未发现 Phase 5 功能缺陷。
+- Hosted XCTest 启动时出现 `com.apple.linkd.autoShortcut` 与 `NSFontManager` 系统运行时诊断；它们不是 compiler warning，未影响任何测试、SSH 行为或 App 构建。
+
+本阶段明确未实现（Phase 5 禁止范围，全部遵守）：
+
+- Private Key Authentication、KnownHost 持久化、Host Key Changed 检测、始终信任
+- SSH Terminal / SSH PTY / Remote Shell / SwiftTerm Remote Bridge（未调用 libssh2_channel_open_session）
+- SFTP（未调用 libssh2_sftp_init）、Upload/Download、Transfer Manager
+- Port Forwarding、SSH Agent、ProxyJump、SSH Config、Reconnect Manager、KeepAlive 高级策略
+
 ## 下一阶段
 
-Phase 4 已通过用户验收（2026-08-28）。下一阶段为 Phase 5：SSH 基础连接（集成 libssh2 + OpenSSL，建立 SSHConnection，实现 TCP + Handshake + Password Authentication）。只有用户明确要求后才能开始。
+Phase 5 已完成并停止开发，等待用户验收。下一阶段是 Phase 6（SSH 安全：KnownHost 持久化 + Private Key Authentication），只有用户验收 Phase 5 并明确要求后才能开始。

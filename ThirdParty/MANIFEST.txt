@@ -1,0 +1,33 @@
+MacSSH third-party dependencies (arm64, macOS 14.0+)
+Generated: 2026-08-28 08:13:20 UTC
+
+libssh2
+  source        : https://github.com/libssh2/libssh2
+  base version  : 1.11.2_DEV (post 1.11.1 development snapshot)
+  commit        : 256d04b60d80bf1190e96b0ad1e91b2174d744b1
+  tarball sha256: 6b16b30d0437c4c13ec854011b654a79c5f23c22dc8ef26d6ac6d8754c7e9a24
+  CVE-2026-7598 : FIXED (userauth.c username_len bounds checking, upstream PR #1858)
+  crypto backend: OpenSSL 3.5.8 (static)
+  build         : cmake, Release, static, arm64
+
+OpenSSL
+  source        : https://www.openssl.org/source/openssl-3.5.8.tar.gz
+  version       : 3.5.8 (3.5 LTS)
+  tarball sha256: a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
+  build         : ./Configure darwin64-arm64-cc no-shared no-tests no-apps no-docs no-legacy
+
+Artifacts
+  /Users/msl/msl_code/Ter/ThirdParty/libssh2/lib:
+  total 728
+  drwxr-xr-x@ 3 msl  staff      96 Aug 28 16:13 cmake
+  -rw-r--r--@ 1 msl  staff  371056 Aug 28 16:13 libssh2.a
+  drwxr-xr-x@ 3 msl  staff      96 Aug 28 16:13 pkgconfig
+
+  /Users/msl/msl_code/Ter/ThirdParty/openssl/lib:
+  total 20072
+  drwxr-xr-x@ 3 msl  staff       96 Aug 28 16:12 cmake
+  drwxr-xr-x@ 2 msl  staff       64 Aug 28 16:12 engines-3
+  -rw-r--r--@ 1 msl  staff  8667448 Aug 28 16:12 libcrypto.a
+  -rw-r--r--@ 1 msl  staff  1603824 Aug 28 16:12 libssl.a
+  drwxr-xr-x@ 2 msl  staff       64 Aug 28 16:12 ossl-modules
+  drwxr-xr-x@ 5 msl  staff      160 Aug 28 16:12 pkgconfig

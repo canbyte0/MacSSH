@@ -19,4 +19,7 @@ enum AppLogger {
 
     /// Keychain 生命周期日志；禁止写入 Password、Passphrase、Private Key 或 Secret Data。
     static let security = Logger(subsystem: subsystem, category: "Security")
+
+    /// SSH 连接生命周期日志；只记录阶段变化，禁止写入任何 Secret、Fingerprint 或终端内容。
+    static let ssh = Logger(subsystem: subsystem, category: "SSH")
 }

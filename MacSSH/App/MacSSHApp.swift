@@ -4,8 +4,8 @@ import SwiftUI
 /// MacSSH 的应用入口，装配全局状态、SwiftData 容器和根视图。
 @main
 struct MacSSHApp: App {
-    /// 全局状态独立于具体页面生命周期，并持有 Phase 2 本地 Terminal 会话。
-    @State private var appState = AppState()
+    /// 全局状态独立于具体页面生命周期，持有本地 Terminal 与 SSH 连接。
+    @State private var appState: AppState
 
     /// 使用本地持久化容器；Secret 只进入 Keychain，不进入 SwiftData 或 CloudKit。
     private let modelContainer: ModelContainer
@@ -30,6 +30,8 @@ struct MacSSHApp: App {
             // 持久化不可用时不能降级为易丢失的内存 Mock 数据。
             fatalError("Unable to create the SwiftData container: \(error)")
         }
+
+        _appState = State(initialValue: AppState(modelContainer: modelContainer))
     }
 
     var body: some Scene {
