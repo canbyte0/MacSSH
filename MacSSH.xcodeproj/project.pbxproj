@@ -33,7 +33,21 @@
 		A10000000000000000000019 /* HostRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* HostRowView.swift */; };
 		A1000000000000000000001A /* HostEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HostEditorView.swift */; };
 		A1000000000000000000001B /* HostGroupEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* HostGroupEditorView.swift */; };
+		C10000000000000000000001 /* KeychainError.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000001 /* KeychainError.swift */; };
+		C10000000000000000000002 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000002 /* KeychainService.swift */; };
+		C10000000000000000000003 /* CredentialService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000003 /* CredentialService.swift */; };
+		C10000000000000000000004 /* CredentialServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C20000000000000000000004 /* CredentialServiceTests.swift */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C70000000000000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = A70000000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = A50000000000000000000001;
+			remoteInfo = MacSSH;
+		};
+/* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		A20000000000000000000001 /* MacSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSSHApp.swift; sourceTree = "<group>"; };
@@ -62,6 +76,11 @@
 		A20000000000000000000019 /* HostRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRowView.swift; sourceTree = "<group>"; };
 		A2000000000000000000001A /* HostEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEditorView.swift; sourceTree = "<group>"; };
 		A2000000000000000000001B /* HostGroupEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostGroupEditorView.swift; sourceTree = "<group>"; };
+		C20000000000000000000001 /* KeychainError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainError.swift; sourceTree = "<group>"; };
+		C20000000000000000000002 /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		C20000000000000000000003 /* CredentialService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialService.swift; sourceTree = "<group>"; };
+		C20000000000000000000004 /* CredentialServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CredentialServiceTests.swift; sourceTree = "<group>"; };
+		C20000000000000000000005 /* MacSSHTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = MacSSHTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -70,6 +89,13 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000015 /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C30000000000000000000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -170,11 +196,19 @@
 		};
 		A40000000000000000000008 /* Utilities */ = {isa = PBXGroup; path = Utilities; sourceTree = "<group>"; };
 		A40000000000000000000009 /* Resources */ = {isa = PBXGroup; path = Resources; sourceTree = "<group>"; };
-		A4000000000000000000000A /* Tests */ = {isa = PBXGroup; path = Tests; sourceTree = "<group>"; };
+		A4000000000000000000000A /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				C40000000000000000000001 /* Security */,
+			);
+			path = Tests;
+			sourceTree = "<group>";
+		};
 		A4000000000000000000000B /* Products */ = {
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000006 /* MacSSH.app */,
+				C20000000000000000000005 /* MacSSHTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -229,7 +263,16 @@
 			sourceTree = "<group>";
 		};
 		A40000000000000000000014 /* Transfer */ = {isa = PBXGroup; path = Transfer; sourceTree = "<group>"; };
-		A40000000000000000000015 /* Security */ = {isa = PBXGroup; path = Security; sourceTree = "<group>"; };
+		A40000000000000000000015 /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				C20000000000000000000001 /* KeychainError.swift */,
+				C20000000000000000000002 /* KeychainService.swift */,
+				C20000000000000000000003 /* CredentialService.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000016 /* LibSSH2 */ = {isa = PBXGroup; path = LibSSH2; sourceTree = "<group>"; };
 		A40000000000000000000017 /* OpenSSL */ = {isa = PBXGroup; path = OpenSSL; sourceTree = "<group>"; };
 		A40000000000000000000018 /* Persistence */ = {isa = PBXGroup; path = Persistence; sourceTree = "<group>"; };
@@ -268,6 +311,14 @@
 			path = Common;
 			sourceTree = "<group>";
 		};
+		C40000000000000000000001 /* Security */ = {
+			isa = PBXGroup;
+			children = (
+				C20000000000000000000004 /* CredentialServiceTests.swift */,
+			);
+			path = Security;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -291,6 +342,24 @@
 			productReference = A20000000000000000000006 /* MacSSH.app */;
 			productType = "com.apple.product-type.application";
 		};
+		C50000000000000000000001 /* MacSSHTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C90000000000000000000001 /* Build configuration list for PBXNativeTarget "MacSSHTests" */;
+			buildPhases = (
+				C60000000000000000000001 /* Sources */,
+				C30000000000000000000001 /* Frameworks */,
+				C60000000000000000000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				C71000000000000000000001 /* PBXTargetDependency */,
+			);
+			name = MacSSHTests;
+			productName = MacSSHTests;
+			productReference = C20000000000000000000005 /* MacSSHTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -303,6 +372,10 @@
 				TargetAttributes = {
 					A50000000000000000000001 = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					C50000000000000000000001 = {
+						CreatedOnToolsVersion = 26.6;
+						TestTargetID = A50000000000000000000001;
 					};
 				};
 			};
@@ -323,12 +396,20 @@
 			projectRoot = "";
 			targets = (
 				A50000000000000000000001 /* MacSSH */,
+				C50000000000000000000001 /* MacSSHTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		A60000000000000000000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C60000000000000000000002 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -367,10 +448,29 @@
 				A10000000000000000000019 /* HostRowView.swift in Sources */,
 				A1000000000000000000001A /* HostEditorView.swift in Sources */,
 				A1000000000000000000001B /* HostGroupEditorView.swift in Sources */,
+				C10000000000000000000001 /* KeychainError.swift in Sources */,
+				C10000000000000000000002 /* KeychainService.swift in Sources */,
+				C10000000000000000000003 /* CredentialService.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C60000000000000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C10000000000000000000004 /* CredentialServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C71000000000000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = A50000000000000000000001 /* MacSSH */;
+			targetProxy = C70000000000000000000001 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCRemoteSwiftPackageReference section */
 		AA0000000000000000000001 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
@@ -515,11 +615,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LM_FILTER_WARNINGS = YES;
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -544,11 +644,11 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
-				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				LM_FILTER_WARNINGS = YES;
+				LM_SKIP_METADATA_EXTRACTION = YES;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/../Frameworks",
@@ -561,6 +661,38 @@
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		C80000000000000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macssh.MacSSHTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacSSH.app/Contents/MacOS/MacSSH";
+			};
+			name = Debug;
+		};
+		C80000000000000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ARCHS = arm64;
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 14.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.macssh.MacSSHTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/MacSSH.app/Contents/MacOS/MacSSH";
 			};
 			name = Release;
 		};
@@ -581,6 +713,15 @@
 			buildConfigurations = (
 				A80000000000000000000003 /* Debug */,
 				A80000000000000000000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C90000000000000000000001 /* Build configuration list for PBXNativeTarget "MacSSHTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C80000000000000000000001 /* Debug */,
+				C80000000000000000000002 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

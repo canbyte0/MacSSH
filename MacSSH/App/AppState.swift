@@ -19,14 +19,14 @@ final class AppState {
         localTerminalService = LocalTerminalService(session: terminalSession)
 
         // 日志不包含密码、私钥、终端内容或其他敏感信息。
-        AppLogger.app.info("Phase 2 application state initialized")
+        AppLogger.app.info("Application state initialized")
     }
 
     /// 主窗口底部左侧展示当前阶段或本地 Terminal 状态。
     var statusText: String {
         selectedSection == .terminal
             ? terminalSession.statusText
-            : "Phase 3 · Host Manager"
+            : "Phase 4 · Credential Security"
     }
 
     /// Terminal 页面显示 PTY 尺寸，其他页面继续显示页面名称。

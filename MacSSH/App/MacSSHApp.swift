@@ -7,7 +7,7 @@ struct MacSSHApp: App {
     /// 全局状态独立于具体页面生命周期，并持有 Phase 2 本地 Terminal 会话。
     @State private var appState = AppState()
 
-    /// Phase 3 使用本地持久化容器；不启用 CloudKit，也不保存任何 Secret。
+    /// 使用本地持久化容器；Secret 只进入 Keychain，不进入 SwiftData 或 CloudKit。
     private let modelContainer: ModelContainer
 
     init() {

@@ -122,9 +122,11 @@
 
 ### Phase 3：Host Manager
 
-状态：**已完成，等待用户验收**
+状态：**已完成并通过用户验收**
 
 完成日期：2026-08-27
+
+验收阻塞修复日期：2026-08-28
 
 已完成：
 
@@ -156,10 +158,23 @@
 - Release arm64 干净构建成功，项目 compiler warning 为 0。
 - Debug/Release 产物均为 Mach-O arm64，代码签名完整性验证通过。
 
+验收阻塞修复结果：
+
+- 修复 Host 行双击手势吞掉原生选择状态的问题；普通单击会更新 `selectedHostID` 并让 Host List 获得键盘焦点。
+- 单击 Host 后，行状态实测为 selected，工具栏 `Edit Host` 立即启用且可打开编辑表单。
+- 双击 Host 和右键编辑入口保持不变；双击实测仍可打开编辑表单。
+- 单击选中后按 macOS Delete 键，实测成功弹出 `Delete Host?` 确认框；测试时选择 Cancel，未删除验收数据。
+- 将无效的 `EXTRACT_APP_INTENTS_METADATA = NO` 替换为 Xcode Swift Build 实际支持的 `LM_SKIP_METADATA_EXTRACTION = YES`。
+- 修复后 Debug arm64 与 Release arm64 均完成 clean build；`xcodebuild -quiet` 无输出，compiler warning 为 0。
+- 修复后两个产物仍为 Mach-O arm64，严格代码签名校验通过。
+- Local Terminal 实际执行并输出 `PHASE3_FINAL_TERMINAL_OK`；切换 Hosts 再返回后，同一会话和输出保持。
+- 用户保留的 `Phase 3 Acceptance Host Edited` 与 `Phase 3 Acceptance Group Edited` 仍存在于 SwiftData；Favorite、Group 关联保持，credentialID/privateKeyID 仍为 NULL。
+
 构建环境说明：
 
 - SwiftTerm 仍固定为 1.19.0，`Package.resolved` 继续提交并参与可复现构建。
 - 命令行构建继续使用 `-skipPackagePluginValidation`；SwiftTerm 插件和 Metal Toolchain 要求与 Phase 2 相同。
+- App 不依赖 AppIntents.framework；通过 `LM_SKIP_METADATA_EXTRACTION = YES` 阻止不适用的 AppIntents metadata extraction task，避免 Xcode 产生跳过提示。
 
 本阶段明确未实现：
 
@@ -167,6 +182,57 @@
 - 真实 SSH Connection、SSH 登录、Test Connection、Host Key 验证或远程 Terminal。
 - SFTP、Transfer、libssh2、OpenSSL 或任何 Phase 4 及后续功能。
 
+### Phase 4：Keychain / Credential Security
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-28
+
+已完成：
+
+- 使用 Apple Security.framework `SecItem` API 建立统一 `KeychainService`，封装 Generic Password 的 save、read、update、delete 和 upsert。
+- 使用 `CredentialService` 隔离 SSH Password 与 Private Key Passphrase 两类 Secret；两类凭据使用不同 service namespace。
+- 使用不可编辑字段无关的 UUID 作为稳定 account；SwiftData `Host` 只保存 `credentialID` / `privateKeyID` 引用。
+- Keychain item 使用 `kSecAttrAccessibleWhenUnlockedThisDeviceOnly`，不启用同步；阻塞式 SecItem 调用在专用串行队列执行。
+- Host Editor 的 Password `SecureField` 已接入 Keychain；创建时保存、输入新值时更新、留空时保持、显式按钮负责移除。
+- 删除 Host 时同步清理 Password 与 Private Key Passphrase，并在 SwiftData 保存失败时尽力执行凭据补偿恢复。
+- 建立 `KeychainError`，把常见 OSStatus 映射为用户可理解且不回显 Secret/状态码的错误。
+- 增加真实 macOS Keychain XCTest target，覆盖 Password 与 Private Key Passphrase 生命周期、类型隔离、重复项与空 Secret 错误映射。
+- 更新应用阶段状态和安全日志；日志只记录凭据生命周期，不记录 Secret、Secret Data 或可关联的凭据 ID。
+
+安全与功能验证结果：
+
+- 创建 Password Host 后立即出现在 Host Manager；SwiftData 中只存在普通元数据与稳定 credentialID。
+- 实际扫描 `MacSSH.store`、WAL 和 SHM，未发现两个测试 Secret；源代码和本文档也未发现测试 Secret。
+- Password save/read/update/delete 均通过真实 Keychain 验证；更新后新值可读取，旧值不再是该 item 的值。
+- App 使用 `⌘Q` 完全退出并重新启动后，Host 和 Keychain Password 均仍存在。
+- 仅把 Host Name 改为验收名称且保持 Password 输入为空后，credentialID 未变化，原 Password 仍能通过 `CredentialService` 读取。
+- 删除专用验收 Host 后，SwiftData 查询数量为 0；对应 `CredentialService` 读取返回 `itemNotFound`，未留下孤立 Password。
+- Private Key Passphrase 的 save/read/update/delete 真实 Keychain 测试通过；没有实现私钥解析或 SSH 登录。
+- 独立 Keychain XCTest 结果为 4 passed、0 failed、0 skipped。
+- 实时 OSLog 只出现 saved、updated、deleted、lookup failed 等生命周期消息，未发现 Secret。
+- Host Manager 的 Create、Edit、Delete、Group、Favorite、Search、Persistence 均无回归；保留的 Phase 3 Host/Group/Favorite/关联关系不变。
+- Local Terminal 实际执行 `echo PHASE4_TERMINAL_OK` 成功；Hosts 与 Local Terminal 往返后 PTY 和输出保持。
+- Debug arm64 与 Release arm64 均完成 clean build；两次 `xcodebuild -quiet` 无输出，项目 compiler warning 为 0。
+- Debug/Release 产物均为 Mach-O arm64，严格代码签名校验通过。
+
+构建与测试环境说明：
+
+- SwiftTerm 仍固定为 1.19.0，`Package.resolved` 继续提交；未修改任何第三方源码。
+- 临时 `test-without-building` production namespace 验证使用单独 xctestrun，因此 Xcode 输出过 run-destination 选择提示；它不是项目 compiler warning，相关临时 xctestrun/xcresult 已删除。
+- 本地 `Sign to Run Locally` 的不同临时构建签名读取彼此创建的 Keychain item 时，macOS 可能要求登录钥匙串授权；同一构建完全退出并重启的持久化验证不受影响。最终删除使用创建该测试 item 的同签名验收构建完成。
+
+当前已知问题：
+
+- Phase 4 范围内未发现未解决的功能缺陷。
+- 开发环境跨临时签名访问 Keychain 的系统授权行为如上；正式稳定签名发布前仍需在后续发布阶段复测。
+
+本阶段明确未实现：
+
+- libssh2、OpenSSL、TCP、SSH handshake 或 Password Authentication。
+- Private Key 解析与认证、Host Key Verification、Known Hosts、SSH Terminal。
+- SFTP、Transfer Manager、KeepAlive、Reconnect 或任何 Phase 5 及后续功能。
+
 ## 下一阶段
 
-Phase 4：Keychain。只有用户验收 Phase 3 并明确要求后才能开始。
+Phase 5：SSH 基础连接。只有用户验收 Phase 4 并明确要求后才能开始。

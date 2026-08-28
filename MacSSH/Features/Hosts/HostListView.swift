@@ -1,9 +1,10 @@
 import SwiftData
 import SwiftUI
 
-/// Phase 3 Host Manager：直接观察 SwiftData，并提供 Host 与 Group 的原生管理界面。
+/// Host Manager 直接观察 SwiftData，并在删除 Host 时同步清理 Keychain 凭据。
 struct HostListView: View {
     @Environment(\.modelContext) private var modelContext
+    private let credentialService = CredentialService.shared
 
     /// @Query 让插入、编辑和删除在保存后立即反映到列表。
     @Query(sort: \Host.name) private var hosts: [Host]
@@ -14,9 +15,11 @@ struct HostListView: View {
     @State private var searchText = ""
     @State private var hostEditorRequest: HostEditorRequest?
     @State private var groupEditorRequest: HostGroupEditorRequest?
-    @State private var hostPendingDeletion: Host?
-    @State private var groupPendingDeletion: HostGroup?
+    @State private var hostPendingDeletionID: UUID?
+    @State private var groupPendingDeletionID: UUID?
     @State private var operationErrorMessage: String?
+    @State private var credentialOperationInProgress = false
+    @FocusState private var isHostListFocused: Bool
 
     var body: some View {
         HSplitView {
@@ -68,20 +71,31 @@ struct HostListView: View {
         .sheet(item: $groupEditorRequest) { request in
             HostGroupEditorView(group: request.group)
         }
-        .alert("Delete Host?", isPresented: hostDeleteAlertBinding) {
+        .alert(
+            "Delete Host?",
+            isPresented: hostDeleteAlertBinding,
+            presenting: hostPendingDeletionID
+        ) { hostID in
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                deletePendingHost()
+                AppLogger.persistence.info("Host deletion confirmed")
+                deleteHost(withID: hostID)
             }
         } message: {
-            Text("This removes the Host metadata from this Mac. No credentials are stored in Phase 3.")
+            _ in
+            Text("This removes the Host metadata and its saved Keychain credentials from this Mac.")
         }
-        .alert("Delete Group?", isPresented: groupDeleteAlertBinding) {
+        .alert(
+            "Delete Group?",
+            isPresented: groupDeleteAlertBinding,
+            presenting: groupPendingDeletionID
+        ) { groupID in
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                deletePendingGroup()
+                deleteGroup(withID: groupID)
             }
         } message: {
+            _ in
             Text("Hosts in this Group will be kept and moved to Ungrouped.")
         }
         .alert("Host Manager Error", isPresented: operationErrorBinding) {
@@ -129,7 +143,7 @@ struct HostListView: View {
                         Divider()
 
                         Button("Delete Group", role: .destructive) {
-                            groupPendingDeletion = group
+                            groupPendingDeletionID = group.id
                         }
                     }
                 }
@@ -182,9 +196,18 @@ struct HostListView: View {
                         }
                         .tag(host.id)
                         .contentShape(Rectangle())
-                        .onTapGesture(count: 2) {
-                            hostEditorRequest = HostEditorRequest(host: host)
+                        // 显式同步选择状态，确保整行普通单击可启用编辑和键盘删除。
+                        .onTapGesture {
+                            selectedHostID = host.id
+                            isHostListFocused = true
                         }
+                        // 双击编辑与单击选择并行；双击时先选中当前 Host，再打开编辑表单。
+                        .simultaneousGesture(
+                            TapGesture(count: 2)
+                                .onEnded {
+                                    hostEditorRequest = HostEditorRequest(host: host)
+                                }
+                        )
                         .contextMenu {
                             Button("Edit Host") {
                                 hostEditorRequest = HostEditorRequest(host: host)
@@ -197,16 +220,18 @@ struct HostListView: View {
                             Divider()
 
                             Button("Delete Host", role: .destructive) {
-                                hostPendingDeletion = host
+                                hostPendingDeletionID = host.id
                             }
                         }
                     }
                 }
             }
             .listStyle(.inset)
+            // 单击 Host 后让列表成为键盘焦点，使 macOS Delete 命令进入当前列表。
+            .focused($isHostListFocused)
             .onDeleteCommand {
                 if let selectedHost {
-                    hostPendingDeletion = selectedHost
+                    hostPendingDeletionID = selectedHost.id
                 }
             }
         }
@@ -301,31 +326,129 @@ struct HostListView: View {
         saveOperation(successLog: "Host favorite updated", failureMessage: "Favorite could not be updated.")
     }
 
-    private func deletePendingHost() {
-        guard let hostPendingDeletion else {
+    /// 删除 Host 前先清理其 Password/Passphrase；SwiftData 失败时用内存备份补偿恢复。
+    private func deleteHost(withID hostID: UUID) {
+        guard !credentialOperationInProgress else {
+            AppLogger.persistence.error("Host deletion ignored because another credential operation is active")
             return
         }
 
-        if selectedHostID == hostPendingDeletion.id {
-            selectedHostID = nil
+        guard let host = hosts.first(where: { $0.id == hostID }) else {
+            AppLogger.persistence.error("Host deletion target was not found")
+            return
         }
 
-        modelContext.delete(hostPendingDeletion)
-        self.hostPendingDeletion = nil
-        saveOperation(successLog: "Host deleted", failureMessage: "The Host could not be deleted.")
+        AppLogger.persistence.info("Host deletion started")
+        credentialOperationInProgress = true
+        Task { @MainActor in
+            await deleteHostAndCredentials(host)
+        }
     }
 
-    private func deletePendingGroup() {
-        guard let groupPendingDeletion else {
+    @MainActor
+    private func deleteHostAndCredentials(_ host: Host) async {
+        var backup = HostCredentialBackup()
+
+        do {
+            if let credentialID = host.credentialID {
+                backup.password = try await readPasswordIfPresent(credentialID: credentialID)
+            }
+
+            if let privateKeyID = host.privateKeyID {
+                backup.privateKeyPassphrase = try await readPassphraseIfPresent(privateKeyID: privateKeyID)
+            }
+
+            if let password = backup.password {
+                try await credentialService.deletePassword(credentialID: password.id)
+            }
+
+            if let passphrase = backup.privateKeyPassphrase {
+                try await credentialService.deletePrivateKeyPassphrase(privateKeyID: passphrase.id)
+            }
+
+            modelContext.delete(host)
+            do {
+                try modelContext.save()
+            } catch {
+                throw HostDeletionError.persistenceFailed
+            }
+
+            if selectedHostID == host.id {
+                selectedHostID = nil
+            }
+            hostPendingDeletionID = nil
+            AppLogger.persistence.info("Host and associated credentials deleted")
+        } catch {
+            modelContext.rollback()
+            let restored = await restoreCredentials(from: backup)
+            operationErrorMessage = restored
+                ? userFacingDeletionMessage(for: error)
+                : "The Host was not deleted and macOS Keychain restoration also failed. Please retry."
+            AppLogger.persistence.error("Failed to delete Host and associated credentials")
+        }
+
+        credentialOperationInProgress = false
+    }
+
+    private func readPasswordIfPresent(credentialID: UUID) async throws -> StoredCredential? {
+        do {
+            let secret = try await credentialService.readPassword(credentialID: credentialID)
+            return StoredCredential(id: credentialID, secret: secret)
+        } catch KeychainError.itemNotFound {
+            return nil
+        }
+    }
+
+    private func readPassphraseIfPresent(privateKeyID: UUID) async throws -> StoredCredential? {
+        do {
+            let secret = try await credentialService.readPrivateKeyPassphrase(privateKeyID: privateKeyID)
+            return StoredCredential(id: privateKeyID, secret: secret)
+        } catch KeychainError.itemNotFound {
+            return nil
+        }
+    }
+
+    /// 只在删除事务失败时执行；Secret 不进入日志、SwiftData 或长期状态。
+    private func restoreCredentials(from backup: HostCredentialBackup) async -> Bool {
+        do {
+            if let password = backup.password {
+                try await credentialService.upsertPassword(
+                    password.secret,
+                    credentialID: password.id
+                )
+            }
+
+            if let passphrase = backup.privateKeyPassphrase {
+                try await credentialService.upsertPrivateKeyPassphrase(
+                    passphrase.secret,
+                    privateKeyID: passphrase.id
+                )
+            }
+            return true
+        } catch {
+            AppLogger.security.error("Credential restoration after Host deletion failed")
+            return false
+        }
+    }
+
+    private func userFacingDeletionMessage(for error: Error) -> String {
+        if let keychainError = error as? KeychainError {
+            return keychainError.localizedDescription
+        }
+        return "The Host could not be deleted. Please try again."
+    }
+
+    private func deleteGroup(withID groupID: UUID) {
+        guard let group = groups.first(where: { $0.id == groupID }) else {
             return
         }
 
-        if selectedFilter == .group(groupPendingDeletion.id) {
+        if selectedFilter == .group(group.id) {
             selectedFilter = .all
         }
 
-        modelContext.delete(groupPendingDeletion)
-        self.groupPendingDeletion = nil
+        modelContext.delete(group)
+        groupPendingDeletionID = nil
         saveOperation(successLog: "Host group deleted", failureMessage: "The Group could not be deleted.")
     }
 
@@ -343,10 +466,10 @@ struct HostListView: View {
 
     private var hostDeleteAlertBinding: Binding<Bool> {
         Binding(
-            get: { hostPendingDeletion != nil },
+            get: { hostPendingDeletionID != nil },
             set: { isPresented in
                 if !isPresented {
-                    hostPendingDeletion = nil
+                    hostPendingDeletionID = nil
                 }
             }
         )
@@ -354,10 +477,10 @@ struct HostListView: View {
 
     private var groupDeleteAlertBinding: Binding<Bool> {
         Binding(
-            get: { groupPendingDeletion != nil },
+            get: { groupPendingDeletionID != nil },
             set: { isPresented in
                 if !isPresented {
-                    groupPendingDeletion = nil
+                    groupPendingDeletionID = nil
                 }
             }
         )
@@ -373,6 +496,21 @@ struct HostListView: View {
             }
         )
     }
+}
+
+/// 删除 Host 时短暂保存补偿所需 Secret，生命周期只覆盖当前异步操作。
+private struct HostCredentialBackup {
+    var password: StoredCredential?
+    var privateKeyPassphrase: StoredCredential?
+}
+
+private struct StoredCredential {
+    let id: UUID
+    let secret: String
+}
+
+private enum HostDeletionError: Error {
+    case persistenceFailed
 }
 
 /// Host Manager Sidebar 的最小筛选状态，不写入数据库。

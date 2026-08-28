@@ -16,4 +16,7 @@ enum AppLogger {
 
     /// SwiftData 操作日志；禁止写入 Host 名称、地址、用户名或备注。
     static let persistence = Logger(subsystem: subsystem, category: "Persistence")
+
+    /// Keychain 生命周期日志；禁止写入 Password、Passphrase、Private Key 或 Secret Data。
+    static let security = Logger(subsystem: subsystem, category: "Security")
 }

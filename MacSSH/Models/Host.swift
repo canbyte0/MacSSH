@@ -3,8 +3,8 @@ import SwiftData
 
 /// 可由 Host Manager 管理并通过 SwiftData 持久化的普通主机信息。
 ///
-/// 密码、Private Key Passphrase 和私钥内容不属于本模型；Phase 3 仅保留
-/// 后续 Keychain 阶段可使用的可空引用标识。
+/// 密码、Private Key Passphrase 和私钥内容不属于本模型；这里只保留
+/// Phase 4 Keychain 凭据所需的可空稳定引用标识。
 @Model
 final class Host {
     /// 业务层稳定标识，不依赖 SwiftData 的内部 PersistentIdentifier。
@@ -20,10 +20,10 @@ final class Host {
     /// 删除分组时由 HostGroup 的 nullify 关系规则自动设为 nil。
     var group: HostGroup?
 
-    /// Phase 4 可关联 Keychain credential；Phase 3 始终保持 nil。
+    /// 指向 Keychain Password 的稳定 UUID；不包含实际 Secret。
     var credentialID: UUID?
 
-    /// 后续私钥管理阶段可关联私钥记录；Phase 3 始终保持 nil。
+    /// 指向 Private Key/Passphrase 的稳定 UUID；不包含私钥或 Passphrase。
     var privateKeyID: UUID?
 
     var createdAt: Date

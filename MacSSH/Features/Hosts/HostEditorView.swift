@@ -9,6 +9,7 @@ struct HostEditorView: View {
     /// nil 表示创建；非 nil 表示编辑现有持久化对象。
     private let host: Host?
     private let groups: [HostGroup]
+    private let credentialService: CredentialService
 
     @State private var name: String
     @State private var hostname: String
@@ -18,12 +19,20 @@ struct HostEditorView: View {
     @State private var selectedGroupID: UUID?
     @State private var favorite: Bool
     @State private var notes: String
+    @State private var password = ""
+    @State private var removeStoredPassword = false
+    @State private var isSaving = false
     @State private var validationMessage: String?
     @State private var saveErrorMessage: String?
 
-    init(host: Host?, groups: [HostGroup]) {
+    init(
+        host: Host?,
+        groups: [HostGroup],
+        credentialService: CredentialService = .shared
+    ) {
         self.host = host
         self.groups = groups
+        self.credentialService = credentialService
 
         // 表单先编辑本地状态，Cancel 不会污染持久化对象。
         _name = State(initialValue: host?.name ?? "")
@@ -72,9 +81,50 @@ struct HostEditorView: View {
                     }
                     .accessibilityIdentifier("hostEditor.authentication")
 
-                    Text("Credentials will be configured in Phase 4.")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
+                    if authenticationType == .password {
+                        SecureField(host == nil ? "Password" : "New Password", text: $password)
+                            .textContentType(.password)
+                            .accessibilityIdentifier("hostEditor.password")
+                            .onChange(of: password) { _, newValue in
+                                // 输入新密码代表更新操作，应覆盖尚未保存的移除意图。
+                                if !newValue.isEmpty {
+                                    removeStoredPassword = false
+                                }
+                            }
+
+                        if host?.credentialID != nil {
+                            if removeStoredPassword {
+                                Label("Password will be removed when you save.", systemImage: "trash")
+                                    .font(.footnote)
+                                    .foregroundStyle(.red)
+                            } else {
+                                Label(
+                                    "Password stored securely in macOS Keychain",
+                                    systemImage: "checkmark.circle.fill"
+                                )
+                                .font(.footnote)
+                                .foregroundStyle(.green)
+
+                                Text("Leave blank to keep the saved password.")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+
+                                Button("Remove Saved Password", role: .destructive) {
+                                    password = ""
+                                    removeStoredPassword = true
+                                }
+                                .accessibilityIdentifier("hostEditor.removePassword")
+                            }
+                        } else {
+                            Text("Password will be stored securely in macOS Keychain.")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+                    } else {
+                        Text("Private Key selection and authentication are introduced in a later phase.")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
 
                 Section("Organization") {
@@ -118,10 +168,18 @@ struct HostEditorView: View {
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Save") {
+                Button {
                     save()
+                } label: {
+                    if isSaving {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("Save")
+                    }
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(isSaving)
                 .accessibilityIdentifier("hostEditor.save")
             }
             .padding(AppTheme.Spacing.regular)
@@ -134,8 +192,12 @@ struct HostEditorView: View {
         }
     }
 
-    /// 先验证普通字段，再一次性插入或更新并显式保存。
+    /// 先验证普通字段，再异步处理 Keychain 和 SwiftData 的协调保存。
     private func save() {
+        guard !isSaving else {
+            return
+        }
+
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedHostname = hostname.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -163,40 +225,158 @@ struct HostEditorView: View {
         validationMessage = nil
         let selectedGroup = groups.first { $0.id == selectedGroupID }
 
-        if let host {
-            host.name = trimmedName
-            host.hostname = trimmedHostname
-            host.port = validatedPort
-            host.username = trimmedUsername
-            host.authenticationType = authenticationType
-            host.group = selectedGroup
-            host.favorite = favorite
-            host.notes = notes.trimmingCharacters(in: .whitespacesAndNewlines)
-            host.updatedAt = .now
-        } else {
-            let newHost = Host(
+        isSaving = true
+        Task { @MainActor in
+            await persist(
                 name: trimmedName,
                 hostname: trimmedHostname,
                 port: validatedPort,
                 username: trimmedUsername,
-                authenticationType: authenticationType,
                 group: selectedGroup,
-                favorite: favorite,
                 notes: notes.trimmingCharacters(in: .whitespacesAndNewlines)
             )
-            modelContext.insert(newHost)
         }
+    }
+
+    /// Keychain 先完成，再保存引用；SwiftData 失败时用补偿操作恢复原 Secret 状态。
+    @MainActor
+    private func persist(
+        name: String,
+        hostname: String,
+        port: Int,
+        username: String,
+        group: HostGroup?,
+        notes: String
+    ) async {
+        var credentialRollback = CredentialRollback.none
 
         do {
-            try modelContext.save()
+            let targetHost = host ?? Host(
+                name: name,
+                hostname: hostname,
+                port: port,
+                username: username,
+                authenticationType: authenticationType,
+                group: group,
+                favorite: favorite,
+                notes: notes
+            )
+
+            if host != nil {
+                targetHost.name = name
+                targetHost.hostname = hostname
+                targetHost.port = port
+                targetHost.username = username
+                targetHost.authenticationType = authenticationType
+                targetHost.group = group
+                targetHost.favorite = favorite
+                targetHost.notes = notes
+                targetHost.updatedAt = .now
+            }
+
+            credentialRollback = try await applyPasswordMutation(to: targetHost)
+
+            if host == nil {
+                modelContext.insert(targetHost)
+            }
+
+            do {
+                try modelContext.save()
+            } catch {
+                throw HostEditorSaveError.persistenceFailed
+            }
+
+            password = ""
             AppLogger.persistence.info("Host metadata saved")
             dismiss()
         } catch {
-            // 回滚本次表单修改，不把错误中的潜在用户数据写入日志。
+            // 回滚 Host 字段，并尽力恢复 Keychain 在本次 Save 前的状态。
             modelContext.rollback()
-            saveErrorMessage = "SwiftData could not save the Host. Please try again."
+            let rollbackSucceeded = await rollbackCredentialMutation(credentialRollback)
+            saveErrorMessage = rollbackSucceeded
+                ? userFacingMessage(for: error)
+                : "The Host was not saved and macOS Keychain cleanup also failed. Please retry."
             AppLogger.persistence.error("Failed to save Host metadata")
         }
+
+        isSaving = false
+    }
+
+    /// 空密码且未点击移除表示“未修改”；绝不因只编辑普通字段而覆盖已有 Password。
+    private func applyPasswordMutation(to targetHost: Host) async throws -> CredentialRollback {
+        guard authenticationType == .password else {
+            return .none
+        }
+
+        if removeStoredPassword, let credentialID = targetHost.credentialID {
+            let previousPassword = try await readPasswordIfPresent(credentialID: credentialID)
+            if previousPassword != nil {
+                try await credentialService.deletePassword(credentialID: credentialID)
+            }
+            targetHost.credentialID = nil
+            return previousPassword.map { .restore(credentialID, $0) } ?? .none
+        }
+
+        guard !password.isEmpty else {
+            return .none
+        }
+
+        if let credentialID = targetHost.credentialID {
+            let previousPassword = try await readPasswordIfPresent(credentialID: credentialID)
+            guard let previousPassword else {
+                try await credentialService.savePassword(password, credentialID: credentialID)
+                return .deleteCreated(credentialID)
+            }
+
+            try await credentialService.updatePassword(password, credentialID: credentialID)
+            return .restore(credentialID, previousPassword)
+        }
+
+        let credentialID = UUID()
+        try await credentialService.savePassword(password, credentialID: credentialID)
+        targetHost.credentialID = credentialID
+        return .deleteCreated(credentialID)
+    }
+
+    /// itemNotFound 表示引用尚无 Secret，可安全按新凭据处理；其他错误必须上抛。
+    private func readPasswordIfPresent(credentialID: UUID) async throws -> String? {
+        do {
+            return try await credentialService.readPassword(credentialID: credentialID)
+        } catch KeychainError.itemNotFound {
+            return nil
+        }
+    }
+
+    /// SwiftData 保存失败后执行 Keychain 补偿，避免产生孤立或意外覆盖的 Secret。
+    private func rollbackCredentialMutation(_ rollback: CredentialRollback) async -> Bool {
+        do {
+            switch rollback {
+            case .none:
+                return true
+            case let .deleteCreated(credentialID):
+                do {
+                    try await credentialService.deletePassword(credentialID: credentialID)
+                } catch KeychainError.itemNotFound {
+                    return true
+                }
+            case let .restore(credentialID, previousPassword):
+                try await credentialService.upsertPassword(
+                    previousPassword,
+                    credentialID: credentialID
+                )
+            }
+            return true
+        } catch {
+            AppLogger.security.error("Credential rollback failed")
+            return false
+        }
+    }
+
+    private func userFacingMessage(for error: Error) -> String {
+        if let keychainError = error as? KeychainError {
+            return keychainError.localizedDescription
+        }
+        return "SwiftData could not save the Host. Please try again."
     }
 
     /// 将可空错误文本桥接成 SwiftUI Alert 的布尔绑定。
@@ -210,4 +390,15 @@ struct HostEditorView: View {
             }
         )
     }
+}
+
+/// 仅在一次保存事务内短暂保留补偿信息，不写入 SwiftData 或日志。
+private enum CredentialRollback {
+    case none
+    case deleteCreated(UUID)
+    case restore(UUID, String)
+}
+
+private enum HostEditorSaveError: Error {
+    case persistenceFailed
 }

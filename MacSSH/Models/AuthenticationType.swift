@@ -1,6 +1,6 @@
 import Foundation
 
-/// Phase 3 只记录认证方式，不保存密码、Passphrase 或私钥内容。
+/// 只记录认证方式；Password 与 Passphrase 始终由 Keychain 独立保存。
 enum AuthenticationType: String, Codable, CaseIterable, Identifiable, Sendable {
     case password
     case privateKey

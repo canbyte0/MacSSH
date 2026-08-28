@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 顶层原生 Toolbar；Phase 3 Hosts 页面由自身提供管理操作。
+/// 顶层原生 Toolbar；Hosts 页面由自身提供管理操作。
 struct AppToolbarContent: ToolbarContent {
     @Environment(AppState.self) private var appState
 
