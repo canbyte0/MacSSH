@@ -364,6 +364,201 @@ Host Trust 安全边界（对原计划的 Phase 5 修正）：
 - SFTP（未调用 libssh2_sftp_init）、Upload/Download、Transfer Manager
 - Port Forwarding、SSH Agent、ProxyJump、SSH Config、Reconnect Manager、KeepAlive 高级策略
 
+### Phase 5.1：libssh2 Security Baseline Remediation
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-28
+
+> 本阶段只修正 libssh2 依赖安全基线并执行 Phase 5 回归，不进入 Phase 6。
+> 本阶段的依赖基线**取代**上文 Phase 5 子节“第三方依赖安全基线”中固定的
+> `256d04b60d80bf1190e96b0ad1e91b2174d744b1`（该 commit 仅解决 CVE-2026-7598，
+> 不满足截至 2026-08-28 的安全基线）。
+
+#### 1. 新的 libssh2 pinned revision
+
+- 来源仓库：`https://github.com/libssh2/libssh2`（官方仓库，codeload tarball，SHA256 校验后解压重建）
+- base/development：1.11.2_DEV（`libssh2-1.11.1` tag 之后 991 个 commit 的开发快照）
+- exact commit SHA：`be937743a85c4064a6399cee39e606672a401069`
+  - commit 元信息：`be937743… 2026-08-28 13:46:01 +0200 tidy-up: miscellaneous`
+  - 该 SHA 是当前 upstream HEAD（`1c9ff814…`）的 ancestor，但本身是固定快照，**不动态跟踪 master**
+  - pinned SHA 距 HEAD 落后 1 个 commit（确认是固定 revision，非动态 master）
+- version marker（`libssh2_version(0)` 运行时输出）：`1.11.2_DEV`（`include/libssh2.h` 中 `#define LIBSSH2_VERSION "1.11.2_DEV"`，`LIBSSH2_VERSION_NUM 0x010b01`）
+- tarball SHA256：`4e5b4aac79a200551c46fd953e9c2eece0231e72369b22385460e56910369c1d`
+- libssh2.a SHA256：`27a520a8fdbd3f79def139955fa5a91c8d82140ca9da6ae3c1af6560979c0141`
+- build date：2026-08-28 12:23:06 UTC
+- architecture：arm64（macOS 14.0+ deployment target，`lipo -archs` 仅 arm64）
+- crypto backend：OpenSSL 3.5.8（静态；`libssh2_crypto_engine()` 运行时返回 `libssh2_openssl`）
+- link type：静态（`libssh2.a`，源码 cmake Release 重建，非任何第三方 binary）
+- build options（`libssh2_build_options()` 运行时输出）：
+  `crypto:OpenSSL MD5:off MD5-PEM:off RIPEMD160:off DSA:off RSA:on RSA-SHA1:off ECDSA:on ED25519:on ML-KEM:on AES-GCM:on AES-CTR:on AES-CBC:on BLOWFISH:off RC4:off CAST:off 3DES:off KEX-SHA1:off MAC-SHA1:off deprecated-APIs:on zlib:off agent:Unix debug-logging:off`
+  - 旧算法全部保持 upstream 默认关闭（ssh-rsa SHA-1 signatures / DSA / ssh-dss / DH-group1-sha1 / 弱 SHA-1 KEX / 弱 Cipher-MAC），**未为兼容旧服务器重新打开**
+
+#### 2. CVE ancestry 验证（git merge-base --is-ancestor，真实官方仓库 clone）
+
+验证方式：在本地 clone 的官方 `https://github.com/libssh2/libssh2` 上，对每个修复 commit 执行
+`git merge-base --is-ancestor <fix-SHA> be937743a85c4064a6399cee39e606672a401069`。
+退出码 0 表示该 fix 已包含在 pinned SHA 历史中。所有命令实际执行，全部退出 0：
+
+| CVE | Fix Commit | Ancestor Check | Result |
+|-----|------------|----------------|--------|
+| CVE-2026-7598 | `256d04b60d80bf1190e96b0ad1e91b2174d744b1` | `git merge-base --is-ancestor` exit 0 | included: YES |
+| CVE-2025-15661 | `2dae3024897e1898d389835151f4e9606227721d` | exit 0 | included: YES |
+| CVE-2026-55199 | `17626857d20b3c9a1addfa45979dadcee1cd84a4` | exit 0 | included: YES |
+| CVE-2026-55200 | `97acf3dfda80c91c3a8c9f2372546301d4a1a7a8` | exit 0 | included: YES |
+| CVE-2026-58050 | `34497525929b9a47f03dfb81887ac896202b7e12` | exit 0 | included: YES |
+| CVE-2026-58051 | `a9758da45a52bc8c630ec9493804d0c6ea30b24a` | exit 0 | included: YES |
+| CVE-2026-66032 | `5e4776146552d898b9c0e1b313cd093fa8dc92d0` | exit 0 | included: YES |
+| CVE-2026-66033 | `a2ed82d40964bbc0d64cd717aa0a5a892117d2e6` | exit 0 | included: YES |
+| CVE-2026-66034 | `a13bb6c773f0d55ad1628cede57e99803cd898d9` | exit 0 | included: YES |
+| CVE-2026-66035 | `42e33d81577ed4b95d4b4f6f845e5ee8efe5eeb4` | exit 0 | included: YES |
+
+CVE-2026-58050 的 upstream 后续补充修复同样已确认包含：
+`c2f1a3a21b4c922cbcf50bf7c009b740141a1e7a`、`edec1cce27a309399a9d174b73fef9b997148fbb`、
+`d47298d5f96e2d9ad43f0a2c08ac84d57eb6e0ac` 均为 pinned SHA 的 ancestor（exit 0）。
+
+构建脚本在解压源码树中额外硬性验证每个 CVE 修复标记实际存在（`grep` 等价代码形态）后才允许编译，防止“文档说包含、源码树实际缺失”。
+
+#### 3. OpenSSL（保持不变）
+
+- 版本：3.5.8（3.5 LTS，未降级）
+- tarball SHA256：`a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2`
+- libcrypto.a SHA256：`9f69591f3b751621fc950cd4388af22f666c70237aac91d7787fc7859c5593d7`
+- libssl.a SHA256：`74068d2b3d4157cd75a3daaf253ca6155aded85b958e1a6a0831ca435e663c7a`
+- 构建：`./Configure darwin64-arm64-cc no-shared no-tests no-apps no-docs no-legacy`，arm64 静态库
+- libssh2 重建后 `libssh2_crypto_engine()` 运行时确认使用 OpenSSL backend（engine=libssh2_openssl）
+
+#### 4. 依赖重新构建方式（可复现）
+
+`Scripts/build-dependencies.sh`：
+- 下载 OpenSSL 官方 release tarball 与 libssh2 codeload tarball（含重试与多镜像）
+- SHA256 校验 → 解压 → 逐项 CVE 修复标记硬验证 → cmake Release 静态库（arm64，macOS 14.0）
+- 安装到 `ThirdParty/openssl`、`ThirdParty/libssh2`
+- 陈旧产物检测：identity header 记录的 commit 与当前 pin 不一致时强制清理重建，
+  防止 Xcode 继续链接旧 commit 构建的 `libssh2.a`
+- 生成 `ThirdParty/libssh2/include/MacSSHDependencyIdentity.h`（exact commit / 版本 / 静态库 SHA256），
+  编译进 App/测试二进制
+- 实际链接产物运行真实校验程序，断言 `libssh2_version()` / `libssh2_crypto_engine()` /
+  `libssh2_build_options()` / `OpenSSL_version()` 运行时身份
+- 一台新 Apple Silicon Mac：安装 Xcode + cmake 后运行同一脚本即可复现完全相同的依赖
+- 产物全部为源码固定 revision 重建的静态库；**MacSSH.app 不依赖 Homebrew runtime**
+
+#### 5. 测试依赖身份（防止“文档说新版本、实际链接旧 libssh2.a”）
+
+三层相互印证，全部通过（`Tests/SSH/DependencyIdentityTests.swift`，6/6 通过）：
+
+1. `libssh2_version(0)`=`1.11.2_DEV`、`libssh2_crypto_engine()`=OpenSSL、
+   `libssh2_build_options()` 含 `crypto:OpenSSL` 且旧算法全部 `:off`（运行时身份）
+2. `MACSSH_LIBSSH2_COMMIT`=`be937743…`、`MACSSH_LIBSSH2_VERSION`=`1.11.2_DEV`、
+   `MACSSH_OPENSSL_VERSION`=`3.5.8`（build-generated 元数据，经 bridging header 编译进二进制）
+3. Xcode `LIBRARY_SEARCH_PATHS` 实际链接的 `ThirdParty/libssh2/lib/libssh2.a`、
+   `ThirdParty/openssl/lib/libcrypto.a`、`libssl.a` 文件 SHA256 与二进制内嵌 SHA256 一致
+   （`testLinkedStaticArchivesMatchEmbeddedIdentity`）
+
+Release 二进制 `strings` 实测嵌入：`be937743a85c4064a6399cee39e606672a401069`、
+`SSH-2.0-libssh2_1.11.2_DEV`、`dependency baseline: libssh2 … @ … (OpenSSL …)`。
+
+#### 6. App 实际 Runtime/Linkage 验证
+
+`otool -L` 实测 Debug 与 Release 二进制：
+- 动态库依赖**仅**为系统框架（Foundation/AppKit/SwiftUI/Security 等）与 `/usr/lib` 系统库
+- **不存在任何 `/opt/homebrew`、`/usr/local`、`libssh2`、`libssl`、`libcrypto` 运行时依赖**
+- libssh2 与 OpenSSL 已静态链接进可执行文件，App 完全自包含
+
+Mach-O / 签名：
+- Debug 与 Release 产物均为 `Mach-O 64-bit executable arm64`（`lipo -archs` 仅 arm64）
+- `codesign --verify --strict` 通过（valid on disk + satisfies Designated Requirement）
+
+#### 7. Phase 5 全量 SSH 回归（依赖升级后重新执行）
+
+XCTest 全量执行：**16 passed / 4 skipped / 0 failed，`** TEST EXECUTE SUCCEEDED **`**。
+
+`DependencyIdentityTests`（6/6 通过）：见上节“测试依赖身份”。
+
+`CredentialServiceTests`（Phase 4 回归，4 passed / 1 skipped / 0 failed）：
+- Password Keychain save/read/update/delete 生命周期通过
+- Private Key Passphrase 生命周期通过
+- Password 与 Passphrase 使用不同 Keychain service 隔离通过
+- 重复项与空 Secret 错误映射通过
+- 仅生产凭据状态测试因未请求生产验证按设计跳过
+
+`SSHConnectionTests`（Phase 5 回归）：
+- testB 错误 Password → `authenticationFailed`（3.6s）通过
+- testD 错误端口 → `connectionRefused` 通过
+- testE 不可达地址 → `connectionTimeout`（10.1s，符合 10 秒预算）通过
+- testF DNS 失败 → `dnsResolutionFailed` 通过
+- testG Host Trust Cancel：真实 handshake 后 Cancel，**绝不发送 Password**（断言不进入 authenticating、最终不是 authenticationFailed）通过
+- testH Credential 缺失 → 立即 `credentialNotFound`（不弹假认证失败）通过
+- testI Private Key Host → 立即 `privateKeyAuthenticationUnavailable` 通过
+- test_EAGAINBlockDirectionsMapToPollEvents：`LIBSSH2_SESSION_BLOCK_INBOUND/OUTBOUND` 正确映射 `POLLIN/POLLOUT` 通过
+- test_EAGAINZeroDirectionsUsesBoundedBackoff：零方向使用最多 1 秒异步退避，1.2s 墙钟、CPU 增量 `< 0.2s`，**无 busy-loop** 通过
+- testA（正确 Password 完整流程）、testC（错误 Username）、20 次 Connect/Disconnect 泄漏检测、空闲 30s CPU：
+  这 4 项需要测试专用 Keychain 凭据（本机账户密码经 `Scripts/run-ssh-tests.sh` 安全输入），
+  本次未请求该凭据故按 `XCTSkipUnless` 设计跳过；**需用户在 Terminal.app 交互运行
+  `Scripts/run-ssh-tests.sh` 完成这 4 项凭据相关回归**（脚本退出时自动清理测试凭据）
+
+Host Trust 安全边界复验（testG）：Host Trust 确认之前 Password 绝对不发送，已通过真实 sshd handshake 验证。
+
+#### 8. Local Terminal / Host Manager 回归
+
+- Phase 5.1 仅修改依赖构建与依赖身份集成，未改动 Local Terminal（SwiftTerm/PTY）、
+  Host Manager（SwiftData）或任何 UI 视图源码，回归风险面最小
+- 本机 sshd（127.0.0.1:22）可达；XCTest 中 testG/testH/testI 覆盖 Host Trust / 凭据缺失 / Private Key 边界
+- `echo PHASE5_1_TERMINAL_OK` 与 Host Manager Create/Edit/Delete/Group/Favorite/Search/Persistence 的
+  交互式 UI 回归需用户在运行 App 时手动确认（Phase 5.1 未改动这些路径）
+
+#### 9. Build 结果
+
+- Debug arm64 clean build：成功，**项目 compiler warning = 0**
+- Release arm64 clean build：成功，**项目 compiler warning = 0**
+- build-for-testing（含 MacSSHTests 测试 target）：`** TEST BUILD SUCCEEDED **`，**0 warning**
+- 两产物均为 Mach-O arm64，`codesign --verify --strict` 通过
+- `otool -L` 零 Homebrew/非系统运行时依赖
+- SwiftTerm 仍固定 1.19.0；未修改任何第三方源码
+
+#### 10. 新增/修改文件
+
+新增：
+- `Tests/SSH/DependencyIdentityTests.swift`（依赖身份三层断言）
+- `ThirdParty/libssh2/include/MacSSHDependencyIdentity.h`（build-generated，exact commit / 版本 / 静态库 SHA256）
+
+修改：
+- `ThirdParty/MANIFEST.txt`（新 pinned SHA、ancestry 表、运行时身份、产物清单）
+- `Scripts/build-dependencies.sh`（新 pinned SHA、CVE 修复标记硬验证、陈旧产物检测、依赖身份头生成、运行时身份校验）
+- `MacSSH/Infrastructure/LibSSH2/MacSSHLibSSH2BridgingHeader.h`（引入 build-generated 身份头）
+- `MacSSH/App/MacSSHApp.swift`（启动时记录非敏感依赖基线身份，把身份常量编译进二进制）
+- `MacSSH.xcodeproj/project.pbxproj`（新增 DependencyIdentityTests 源文件；
+  测试 target Frameworks 阶段链接 libssh2.a/libcrypto.a/libssl.a 并配置 LIBRARY_SEARCH_PATHS，
+  使 DependencyIdentityTests 调用的 `libssh2_version`/`libssh2_crypto_engine`/`libssh2_build_options`
+  符号在测试 bundle 内解析，而非依赖 host app 静态链接残留）
+- `ThirdParty/libssh2/include/libssh2.h`、`libssh2_publickey.h`、`libssh2_sftp.h`、`libssh2/lib/libssh2.a`
+  （由新 commit 源码重建）
+
+清理：
+- 旧 commit（`256d04b6…`）构建的 `libssh2.a` / headers / DerivedData / 中间构建缓存已替换，
+  identity header 的 commit 与 pin 一致，`DependencyIdentityTests.testLinkedStaticArchivesMatchEmbeddedIdentity`
+  断言实际链接的静态库 SHA256 与二进制内嵌一致，防止“只改文档没换 binary”
+
+#### 11. 当前已知问题
+
+- 凭据相关 4 项 SSH 回归（testA/testC/20 次循环/空闲 CPU）需用户交互运行
+  `Scripts/run-ssh-tests.sh`（需本机账户密码经 macOS 安全提示输入）；本次未请求凭据故按设计跳过，
+  不影响不依赖真实密码的 Phase 4/Phase 5 回归全部通过
+- Hosted XCTest 启动时出现 `com.apple.linkd.autoShortcut` 与 `NSFontManager` 系统运行时诊断，
+  非 compiler warning，不影响任何测试、SSH 行为或 App 构建
+- 依赖构建期需要 Xcode Command Line Tools 与 cmake（`brew install cmake`）作为开发依赖，
+  但生成的 MacSSH.app 运行时不依赖 Homebrew
+
+#### 12. 本阶段明确未实现（Phase 5.1 禁止范围，全部遵守）
+
+- KnownHost 持久化、Always Trust、Host Key Changed handling
+- Private Key Authentication、Private Key Picker
+- SSH Terminal、PTY、Remote Shell
+- SFTP、Upload/Download、Transfer Manager
+- Phase 6 其他全部功能
+
 ## 下一阶段
 
-Phase 5 已完成并停止开发，等待用户验收。下一阶段是 Phase 6（SSH 安全：KnownHost 持久化 + Private Key Authentication），只有用户验收 Phase 5 并明确要求后才能开始。
+Phase 5.1（libssh2 安全基线修正）已完成并停止开发，等待用户验收。
+下一阶段是 Phase 6（SSH 安全：KnownHost 持久化 + Private Key Authentication），
+只有用户验收 Phase 5.1 并明确要求后才能开始。

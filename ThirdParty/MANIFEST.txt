@@ -1,27 +1,58 @@
 MacSSH third-party dependencies (arm64, macOS 14.0+)
-Generated: 2026-08-28 08:13:20 UTC
+Generated: 2026-08-28 12:23:06 UTC
 
 libssh2
-  source        : https://github.com/libssh2/libssh2
-  base version  : 1.11.2_DEV (post 1.11.1 development snapshot)
-  commit        : 256d04b60d80bf1190e96b0ad1e91b2174d744b1
-  tarball sha256: 6b16b30d0437c4c13ec854011b654a79c5f23c22dc8ef26d6ac6d8754c7e9a24
-  CVE-2026-7598 : FIXED (userauth.c username_len bounds checking, upstream PR #1858)
-  crypto backend: OpenSSL 3.5.8 (static)
-  build         : cmake, Release, static, arm64
+  source repository : https://github.com/libssh2/libssh2
+  base/development  : 1.11.2_DEV (1.11.1 + 991 commits upstream snapshot)
+  exact commit      : be937743a85c4064a6399cee39e606672a401069
+  version marker    : 1.11.2_DEV (libssh2_version(0) runtime output)
+  build date        : 2026-08-28 12:23:06 UTC
+  architecture      : arm64 (macOS 14.0+)
+  crypto backend    : OpenSSL 3.5.8 (static; runtime engine=libssh2_openssl)
+  link type         : static (libssh2.a)
+  tarball sha256    : 4e5b4aac79a200551c46fd953e9c2eece0231e72369b22385460e56910369c1d
+  libssh2.a sha256  : 27a520a8fdbd3f79def139955fa5a91c8d82140ca9da6ae3c1af6560979c0141
+  build options     : crypto:OpenSSL MD5:off MD5-PEM:off RIPEMD160:off DSA:off RSA:on RSA-SHA1:off ECDSA:on ED25519:on ML-KEM:on AES-GCM:on AES-CTR:on AES-CBC:on BLOWFISH:off RC4:off CAST:off 3DES:off KEX-SHA1:off MAC-SHA1:off deprecated-APIs:on zlib:off agent:Unix debug-logging:off
+
+  Security fix ancestry verification (git merge-base --is-ancestor <fix> be937743a85c4064a6399cee39e606672a401069):
+    CVE-2026-7598  fix 256d04b60d80bf1190e96b0ad1e91b2174d744b1  included: YES
+    CVE-2025-15661 fix 2dae3024897e1898d389835151f4e9606227721d  included: YES
+    CVE-2026-55199 fix 17626857d20b3c9a1addfa45979dadcee1cd84a4  included: YES
+    CVE-2026-55200 fix 97acf3dfda80c91c3a8c9f2372546301d4a1a7a8  included: YES
+    CVE-2026-58050 fix 34497525929b9a47f03dfb81887ac896202b7e12  included: YES (+ follow-ups c2f1a3a, edec1cc, d47298d)
+    CVE-2026-58051 fix a9758da45a52bc8c630ec9493804d0c6ea30b24a  included: YES
+    CVE-2026-66032 fix 5e4776146552d898b9c0e1b313cd093fa8dc92d0  included: YES
+    CVE-2026-66033 fix a2ed82d40964bbc0d64cd717aa0a5a892117d2e6  included: YES
+    CVE-2026-66034 fix a13bb6c773f0d55ad1628cede57e99803cd898d9  included: YES
+    CVE-2026-66035 fix 42e33d81577ed4b95d4b4f6f845e5ee8efe5eeb4  included: YES
+    (all checks executed against a local clone of the official repository;
+     every command exited 0; build additionally hard-verifies each fix
+     marker in the extracted source tree before compiling)
 
 OpenSSL
-  source        : https://www.openssl.org/source/openssl-3.5.8.tar.gz
-  version       : 3.5.8 (3.5 LTS)
-  tarball sha256: a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
-  build         : ./Configure darwin64-arm64-cc no-shared no-tests no-apps no-docs no-legacy
+  source repository : https://www.openssl.org/source/openssl-3.5.8.tar.gz
+  version           : 3.5.8 (3.5 LTS)
+  runtime identity  : 3.5.8 / OpenSSL 3.5.8 25 Aug 2026
+  architecture      : arm64 (macOS 14.0+)
+  link type         : static (libcrypto.a, libssl.a)
+  tarball sha256    : a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2
+  libcrypto.a sha256: 9f69591f3b751621fc950cd4388af22f666c70237aac91d7787fc7859c5593d7
+  libssl.a sha256   : 74068d2b3d4157cd75a3daaf253ca6155aded85b958e1a6a0831ca435e663c7a
+  build             : ./Configure darwin64-arm64-cc no-shared no-tests no-apps no-docs no-legacy
+
+Dependency identity
+  identity header   : ThirdParty/libssh2/include/MacSSHDependencyIdentity.h (generated)
+    libssh2 commit  : be937743a85c4064a6399cee39e606672a401069
+    libssh2 version : 1.11.2_DEV
+    openssl version : 3.5.8
+    built at        : 2026-08-28 12:23:06 UTC
 
 Artifacts
   /Users/msl/msl_code/Ter/ThirdParty/libssh2/lib:
-  total 728
-  drwxr-xr-x@ 3 msl  staff      96 Aug 28 16:13 cmake
-  -rw-r--r--@ 1 msl  staff  371056 Aug 28 16:13 libssh2.a
-  drwxr-xr-x@ 3 msl  staff      96 Aug 28 16:13 pkgconfig
+  total 688
+  drwxr-xr-x@ 3 msl  staff      96 Aug 28 20:23 cmake
+  -rw-r--r--@ 1 msl  staff  350392 Aug 28 20:23 libssh2.a
+  drwxr-xr-x@ 3 msl  staff      96 Aug 28 20:23 pkgconfig
 
   /Users/msl/msl_code/Ter/ThirdParty/openssl/lib:
   total 20072

@@ -11,6 +11,13 @@ struct MacSSHApp: App {
     private let modelContainer: ModelContainer
 
     init() {
+        // Phase 5.1：启动时记录一次非敏感的依赖安全基线身份（libssh2 pinned commit 与
+        // OpenSSL 版本）。该引用同时把 build-generated 身份常量编译进 App 二进制，
+        // 使 strings/otool 可直接验证 App 链接的依赖与 MANIFEST pin 一致。
+        AppLogger.app.info(
+            "dependency baseline: libssh2 \(MACSSH_LIBSSH2_VERSION, privacy: .public) @ \(MACSSH_LIBSSH2_COMMIT, privacy: .public) (OpenSSL \(MACSSH_OPENSSL_VERSION, privacy: .public))"
+        )
+
         let schema = Schema([
             Host.self,
             HostGroup.self
