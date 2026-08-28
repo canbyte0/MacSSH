@@ -27,6 +27,9 @@ enum AppTheme {
         static let sidebarMinimumWidth: CGFloat = 180
         static let sidebarIdealWidth: CGFloat = 220
         static let sidebarMaximumWidth: CGFloat = 280
+        static let hostSidebarMinimumWidth: CGFloat = 170
+        static let hostSidebarIdealWidth: CGFloat = 190
+        static let hostSidebarMaximumWidth: CGFloat = 240
         static let tabBarHeight: CGFloat = 42
         static let statusBarHeight: CGFloat = 28
     }

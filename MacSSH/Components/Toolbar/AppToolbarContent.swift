@@ -1,20 +1,24 @@
 import SwiftUI
 
-/// Phase 1 的原生 Toolbar 内容；新建 Session 操作在后续阶段启用。
+/// 顶层原生 Toolbar；Phase 3 Hosts 页面由自身提供管理操作。
 struct AppToolbarContent: ToolbarContent {
+    @Environment(AppState.self) private var appState
+
     var body: some ToolbarContent {
         ToolbarItem(placement: .principal) {
             Text("MacSSH")
                 .font(.headline)
         }
 
-        ToolbarItem(placement: .primaryAction) {
-            Button(action: {}) {
-                Label("New Session", systemImage: "plus")
+        if appState.selectedSection != .hosts {
+            ToolbarItem(placement: .primaryAction) {
+                Button(action: {}) {
+                    Label("New Session", systemImage: "plus")
+                }
+                .disabled(true)
+                .help("New sessions are introduced in a later phase")
+                .accessibilityIdentifier("toolbar.newSession")
             }
-            .disabled(true)
-            .help("New sessions are introduced in a later phase")
-            .accessibilityIdentifier("toolbar.newSession")
         }
     }
 }

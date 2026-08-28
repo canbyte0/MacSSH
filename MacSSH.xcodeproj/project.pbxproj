@@ -27,6 +27,12 @@
 		A10000000000000000000013 /* LocalTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* LocalTerminalService.swift */; };
 		A10000000000000000000014 /* TerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* TerminalRepresentable.swift */; };
 		A10000000000000000000015 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000001 /* SwiftTerm */; };
+		A10000000000000000000016 /* AuthenticationType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* AuthenticationType.swift */; };
+		A10000000000000000000017 /* Host.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000017 /* Host.swift */; };
+		A10000000000000000000018 /* HostGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000018 /* HostGroup.swift */; };
+		A10000000000000000000019 /* HostRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000019 /* HostRowView.swift */; };
+		A1000000000000000000001A /* HostEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001A /* HostEditorView.swift */; };
+		A1000000000000000000001B /* HostGroupEditorView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001B /* HostGroupEditorView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -50,6 +56,12 @@
 		A20000000000000000000013 /* LoginShellResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginShellResolver.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* LocalTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTerminalService.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* TerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRepresentable.swift; sourceTree = "<group>"; };
+		A20000000000000000000016 /* AuthenticationType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationType.swift; sourceTree = "<group>"; };
+		A20000000000000000000017 /* Host.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Host.swift; sourceTree = "<group>"; };
+		A20000000000000000000018 /* HostGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostGroup.swift; sourceTree = "<group>"; };
+		A20000000000000000000019 /* HostRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostRowView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001A /* HostEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEditorView.swift; sourceTree = "<group>"; };
+		A2000000000000000000001B /* HostGroupEditorView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostGroupEditorView.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -102,6 +114,9 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000007 /* AppSection.swift */,
+				A20000000000000000000016 /* AuthenticationType.swift */,
+				A20000000000000000000017 /* Host.swift */,
+				A20000000000000000000018 /* HostGroup.swift */,
 				A20000000000000000000012 /* TerminalSession.swift */,
 			);
 			path = Models;
@@ -168,6 +183,9 @@
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000F /* HostListView.swift */,
+				A20000000000000000000019 /* HostRowView.swift */,
+				A2000000000000000000001A /* HostEditorView.swift */,
+				A2000000000000000000001B /* HostGroupEditorView.swift */,
 			);
 			path = Hosts;
 			sourceTree = "<group>";
@@ -343,6 +361,12 @@
 				A10000000000000000000012 /* LoginShellResolver.swift in Sources */,
 				A10000000000000000000013 /* LocalTerminalService.swift in Sources */,
 				A10000000000000000000014 /* TerminalRepresentable.swift in Sources */,
+				A10000000000000000000016 /* AuthenticationType.swift in Sources */,
+				A10000000000000000000017 /* Host.swift in Sources */,
+				A10000000000000000000018 /* HostGroup.swift in Sources */,
+				A10000000000000000000019 /* HostRowView.swift in Sources */,
+				A1000000000000000000001A /* HostEditorView.swift in Sources */,
+				A1000000000000000000001B /* HostGroupEditorView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -491,6 +515,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
@@ -519,6 +544,7 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_APP_SANDBOX = NO;
 				ENABLE_HARDENED_RUNTIME = YES;
+				EXTRACT_APP_INTENTS_METADATA = NO;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = MacSSH;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";

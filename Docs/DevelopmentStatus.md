@@ -76,7 +76,7 @@
 
 ### Phase 2：本地 Terminal
 
-状态：**已完成，等待用户验收**
+状态：**已完成并通过用户验收**
 
 完成日期：2026-08-27
 
@@ -120,6 +120,53 @@
 - SwiftData、Keychain 和设置持久化。
 - Shell 退出后的自动重启或重连。
 
+### Phase 3：Host Manager
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-27
+
+已完成：
+
+- 使用 SwiftData `@Model` 建立真实 `Host` 与 `HostGroup` 持久化模型。
+- Host 包含 id、name、hostname、port、username、authenticationType、group、favorite、createdAt、updatedAt、lastConnectedAt、notes，以及后续阶段使用的可空 credential 引用。
+- port 默认值为 22；第一版 AuthenticationType 只包含 Password 和 Private Key。
+- 使用本地 SwiftData `ModelContainer` 持久化 Host 与 Group，不启用 CloudKit，不使用 Mock Data 或内存数组。
+- 支持 Host 创建、编辑、删除、Group 归属、Favorite 切换和 Name/Hostname 搜索。
+- 支持 Group 创建、重命名和删除；删除 Group 使用 nullify 关系规则保留其中的 Host。
+- 使用原生 macOS HSplitView、List、Section、Context Menu、Form、Sheet、Toolbar 和 Searchable 构建 Hosts Sidebar 与 Host Manager UI。
+- Host 编辑表单只记录认证方式，不提供密码、Passphrase、连接测试、SSH 登录或 SFTP 功能。
+- SwiftData 操作使用 OSLog 记录非敏感生命周期信息，不记录 Host 名称、地址、用户名或备注。
+- 保持 Phase 2 `AppState → LocalTerminalService → SwiftTerm/PTY` 生命周期不变。
+
+验收前自测结果：
+
+- 创建 Group 后立即出现在 Hosts Sidebar。
+- 创建 Host 后立即出现在 Hosts 列表，All Hosts、Favorites 和 Group 计数同步更新。
+- 编辑 Host 的 Name 与 Hostname 后列表立即显示新值。
+- Host 成功归入 Group；重启后 Group 归属仍然存在。
+- Favorite 可以切换，Favorites 筛选结果立即更新；重启后 Favorite 状态仍然存在。
+- Search 按 Name 和 Hostname 分别实测成功。
+- App 使用 `⌘Q` 完全退出并重新启动后，Host、Group、编辑结果和 Favorite 均从 SwiftData 恢复。
+- Host 与 Group 删除成功，列表和计数立即更新；再次重启后删除结果仍然保持。
+- 测试使用的 `Phase 3 Edited Host` 和 `Phase 3 Test Group` 已在验证后清理。
+- SwiftData 数据库 schema 经只读检查，不存在 password、passphrase 或私钥内容字段；credentialID 和 privateKeyID 在 Phase 3 保持 NULL。
+- Phase 2 Local Terminal 实际执行 `printf` 成功；切换 Hosts 再返回后，同一 PTY 的输出、Shell 提示符和会话保持。
+- Debug arm64 干净构建成功，项目 compiler warning 为 0。
+- Release arm64 干净构建成功，项目 compiler warning 为 0。
+- Debug/Release 产物均为 Mach-O arm64，代码签名完整性验证通过。
+
+构建环境说明：
+
+- SwiftTerm 仍固定为 1.19.0，`Package.resolved` 继续提交并参与可复现构建。
+- 命令行构建继续使用 `-skipPackagePluginValidation`；SwiftTerm 插件和 Metal Toolchain 要求与 Phase 2 相同。
+
+本阶段明确未实现：
+
+- macOS Keychain、密码或 Private Key Passphrase 保存。
+- 真实 SSH Connection、SSH 登录、Test Connection、Host Key 验证或远程 Terminal。
+- SFTP、Transfer、libssh2、OpenSSL 或任何 Phase 4 及后续功能。
+
 ## 下一阶段
 
-Phase 3：Host Manager。只有用户验收 Phase 2 并明确要求后才能开始。
+Phase 4：Keychain。只有用户验收 Phase 3 并明确要求后才能开始。

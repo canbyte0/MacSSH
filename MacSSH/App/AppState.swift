@@ -26,7 +26,7 @@ final class AppState {
     var statusText: String {
         selectedSection == .terminal
             ? terminalSession.statusText
-            : "Phase 2 · Local Terminal"
+            : "Phase 3 · Host Manager"
     }
 
     /// Terminal 页面显示 PTY 尺寸，其他页面继续显示页面名称。

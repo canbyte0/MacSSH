@@ -13,4 +13,7 @@ enum AppLogger {
 
     /// 本地 Terminal 生命周期日志；禁止写入命令、输出或环境变量。
     static let terminal = Logger(subsystem: subsystem, category: "Terminal")
+
+    /// SwiftData 操作日志；禁止写入 Host 名称、地址、用户名或备注。
+    static let persistence = Logger(subsystem: subsystem, category: "Persistence")
 }

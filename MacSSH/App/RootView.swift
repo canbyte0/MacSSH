@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// Phase 2 的主界面容器，只负责页面组合和顶层导航。
+/// 主界面容器，保留 Phase 2 Terminal 并装配 Phase 3 Host Manager。
 struct RootView: View {
     /// 从应用入口注入的全局状态。
     @Environment(AppState.self) private var appState
@@ -33,7 +33,7 @@ struct RootView: View {
             AppToolbarContent()
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("MacSSH Phase 2")
+        .accessibilityLabel("MacSSH Phase 3")
     }
 
     /// 根据 Sidebar 选择装配当前阶段允许的 Workspace。
