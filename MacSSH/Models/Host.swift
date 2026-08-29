@@ -23,8 +23,18 @@ final class Host {
     /// 指向 Keychain Password 的稳定 UUID；不包含实际 Secret。
     var credentialID: UUID?
 
-    /// 指向 Private Key/Passphrase 的稳定 UUID；不包含私钥或 Passphrase。
+    /// 指向 Private Key Passphrase 的稳定 UUID；不包含私钥或 Passphrase。
+    /// 仅当私钥需要 Passphrase 时非空；无 Passphrase 的私钥此字段为 nil。
     var privateKeyID: UUID?
+
+    /// OpenSSH 私钥文件路径（文件本身，非 Secret）。
+    ///
+    /// 按计划书 Developer ID 站外分发路线实现：保存绝对路径即可。
+    /// 架构上不假设该路径永远可访问（文件可能被移动/删除），
+    /// 连接时按 `privateKeyFileNotFound`/`privateKeyFileUnreadable` 优雅失败。
+    /// 未实现 Security-Scoped Bookmark，避免为未来 App Store 版本过度设计；
+    /// 该设计边界记录于 Docs/DevelopmentStatus.md。
+    var privateKeyPath: String?
 
     var createdAt: Date
     var updatedAt: Date
@@ -42,6 +52,7 @@ final class Host {
         favorite: Bool = false,
         credentialID: UUID? = nil,
         privateKeyID: UUID? = nil,
+        privateKeyPath: String? = nil,
         createdAt: Date = .now,
         updatedAt: Date = .now,
         lastConnectedAt: Date? = nil,
@@ -57,6 +68,7 @@ final class Host {
         self.favorite = favorite
         self.credentialID = credentialID
         self.privateKeyID = privateKeyID
+        self.privateKeyPath = privateKeyPath
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.lastConnectedAt = lastConnectedAt

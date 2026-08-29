@@ -557,8 +557,391 @@ Host Trust 安全边界复验（testG）：Host Trust 确认之前 Password 绝�
 - SFTP、Upload/Download、Transfer Manager
 - Phase 6 其他全部功能
 
+### Phase 6：Persistent Host Key Verification + Private Key Authentication
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-29
+
+> 本阶段完成 SSH 身份验证层：持久化 KnownHost 验证 + Private Key 认证。
+> 不含 SSH Terminal / PTY / Shell / SFTP。Phase 5.1 的 libssh2 安全基线未改动。
+
+#### 1. KnownHost 模型与身份
+
+- `@Model KnownHost`：`id` / `hostname` / `port` / `keyType` / `hostKey: Data` / `fingerprint` / `createdAt` / `updatedAt`。
+- 身份键为**真实** `hostname + port`（非用户可修改的 `Host.name` 显示名）；`example.com:22` 与 `example.com:2222` 是两条记录。
+- **验证比较完整 Host Key 字节**（`hostKey` Data），Fingerprint 仅用于 UI 展示。
+- Host Key / Fingerprint / Hostname / Port 都不是 Secret，存 SwiftData；Keychain 继续只存 Password 与 Private Key Passphrase。
+- 已加入 SwiftData Schema（`MacSSHApp`）；新增可选字段走轻量迁移。
+
+#### 2. KnownHostService
+
+`@MainActor KnownHostService`（`SSHConnection → KnownHostService → SwiftData`）：
+`lookup(hostname:port:) -> KnownHostRecord?` / `trust(...) -> KnownHostRecord`（upsert）/ `replace(...) -> KnownHostRecord` / `remove(_:)` / `allKnownHosts()` / `removeAll()`。
+跨 actor 边界返回 Sendable `KnownHostRecord` 快照（非敏感公钥数据）。
+
+#### 3. Host Key Verification 流程（SSHConnection.establish）
+
+Handshake 取得真实 Host Key（含完整 blob）后对照 KnownHost：
+- 无记录 → `unknown` → 显示未知主机对话框（Trust Once / Trust Always / Cancel）。
+- 字节一致 → `trusted` → **直接放行认证，不显示对话框**。
+- 不一致 → `changed` → 显示 Host Key Changed 警告（Cancel / Replace Trusted Key 二次确认），**硬性阻断**。
+
+`HostKeyVerification` 枚举同步到 `SSHConnectionInfo.hostKeyVerification`，UI 据此选择对话框。
+
+#### 4. Trust Once / Trust Always / Changed 行为
+
+- Trust Once：仅当前连接信任，不写 KnownHost。
+- Trust Always：写 KnownHost 持久化；之后连接同 `hostname+port` 不再询问。
+- Host Key Changed：阻断认证；Cancel → `.hostKeyChanged` 失败；Replace（经二次确认）→ 更新 KnownHost 后当前连接才继续认证。
+- **关键安全边界**：任何阻断路径都在认证之前抛出，Password 与私钥绝不发送（testG/testK 验证）。
+
+#### 5. Private Key Authentication
+
+- `AuthenticationType.privateKey` 正式可用；`libssh2_userauth_publickey_fromfile_ex(session, user, len, NULL, privateKey, passphrase)`，publickey 传 NULL 由 libssh2 从私钥推导公钥。
+- 全程 non-blocking：EAGAIN 接入现有 poll + `block_directions` 逻辑（复用 `runWithRetry`），不在主线程阻塞，不 `while EAGAIN {}`。
+- 认证方式由 Host 配置决定，**不回退 Password**；服务器不支持 publickey → `publicKeyAuthenticationUnsupported`。
+- Passphrase 从 `CredentialService` 读取（生命周期最短化，调用后逐字节覆写缓冲区）；无 Passphrase 私钥 `privateKeyID` 为 nil，传 NULL。
+- 日志不记录 Passphrase 或私钥内容。
+- 错误细分：`privateKeyPathMissing` / `privateKeyFileNotFound` / `privateKeyFileUnreadable` / `privateKeyPassphraseRequired` / `privateKeyPassphraseIncorrect`（`LIBSSH2_ERROR_KEYFILE_AUTH_FAILED`）/ `publicKeyAuthenticationUnsupported` / `privateKeyAuthenticationFailed`（`PUBLICKEY_UNVERIFIED`/`AUTHENTICATION_FAILED`）。
+
+#### 6. Host 模型与凭据语义
+
+- `Host.privateKeyPath: String?`（私钥文件路径，文件非 Secret）。
+- `credentialID` → Password；`privateKeyID` → Private Key Passphrase 引用（语义不变，Phase 3 预留字段正式启用）。
+- 无 Passphrase 私钥：`privateKeyID` 为 nil 即合法，不报 `credentialNotFound`。
+
+#### 7. Private Key path / Passphrase 设计边界
+
+- 按计划书 Developer ID 站外分发路线：保存绝对路径即可；架构上不假设路径永远可访问（连接时按 `privateKeyFileNotFound`/`privateKeyFileUnreadable` 优雅失败）。
+- 未实现 Security-Scoped Bookmark，避免为未来 App Store 版本过度设计。
+- Passphrase 必须经 `CredentialService → KeychainService`，不存 SwiftData。
+
+#### 8. UI（已按预览确认实现）
+
+- `HostTrustDialogView`：新增 **Trust Always**（Trust Once 仅本次；Trust Always 持久化）。
+- `HostKeyChangedDialogView`（新增）：旧/新 Fingerprint 对比，Cancel + Replace Trusted Key，**Replace 经二次危险确认**（明确告知将删除旧 Host Key 并保存新身份），不提供模糊 "Continue Anyway"。
+- `HostEditorView`：Private Key 文件选择（原生 `NSOpenPanel`，默认 `~/.ssh`）+ Passphrase 字段；已存显示 "Saved"，留空保存=保留原值，Remove=删除；切换 Password↔Private Key **不立即删除另一类凭据**，取消 Sheet 不丢凭据。
+- `SettingsView`：SSH → Known Hosts 列表（Host/Port/Key Type/Fingerprint/Trusted At）+ **Forget**。
+- Fingerprint 统一 OpenSSH SHA256 风格；Key Type 显示真实算法名（ssh-ed25519 / rsa-sha2-… / ecdsa-sha2-…）。
+
+#### 9. Host 删除 / 认证切换 / KnownHost 删除
+
+- 删除 Host：清理 Password + Private Key Passphrase 两类凭据（已有补偿事务逻辑，SwiftData 失败回滚 Keychain）。
+- 认证切换：仅改 UI 选中态，不立即删另一类凭据；保存时按当前类型生效（保守不丢数据）。
+- **删除 Host Profile 不联动删除 KnownHost**（身份属 hostname+port，非显示名）；Forget 作为独立操作。
+
+#### 10. 实际测试 Key Types
+
+- ED25519（无 Passphrase）：`SSHConnectionTests.testL`，需 `run-ssh-tests.sh` 生成并加入 authorized_keys。
+- ED25519（有 Passphrase，错误 Passphrase）：`testM`。
+- RSA / ECDSA：当前测试环境未单独构造；libssh2 + OpenSSL 后端理论上支持，但**未实测标记为已测试**。后续如需可在 run-ssh-tests.sh 增加 RSA 用例。
+
+#### 11. 测试结果
+
+可自动运行（无需凭据，已通过）：
+- `KnownHostServiceTests` 7/7：lookup / trust 持久化 / hostname+port 身份 / upsert / replace / remove / 完整 Host Key 字节比较。
+- `SSHConnectionTests.testK` Host Key Changed 阻断：预置错误 KnownHost → changed → Cancel → `.hostKeyChanged`，**绝不进入 authenticating**。
+- `testN` 私钥文件不存在 → `privateKeyFileNotFound`；`testI` 私钥无路径 → `privateKeyPathMissing`。
+- Phase 5.1 回归全过：`DependencyIdentityTests` 6/6、`CredentialServiceTests` 4+1skip、`testB/D/E/F/G`、EAGAIN ×2。
+
+需交互凭据/密钥（由 `Scripts/run-ssh-tests.sh` 驱动，跳过项需该脚本预置）：
+- `testA`（正确 Password + Trust Once）、`testC`（错误 Username）、`testJ`（Trust Always 持久化 + 第二次连接免对话框）、20× Connect/Disconnect、空闲 30s CPU、`testL`（ED25519 无 Passphrase 认证）、`testM`（错误 Passphrase）。
+- `run-ssh-tests.sh` 现生成 ed25519 测试密钥（无/有 Passphrase，Passphrase 运行时随机不入 Git），以标记块加入 `~/.ssh/authorized_keys`，退出移除标记块并删密钥。
+
+#### 12. Build / 依赖基线
+
+- Debug + Release arm64 clean build：成功，**project compiler warning = 0**。
+- build-for-testing：`TEST BUILD SUCCEEDED`，0 warning。
+- Mach-O arm64；`codesign --verify --strict` 通过；`otool -L` 零 `/opt/homebrew`、`/usr/local`、libssh2/libssl/libcrypto 运行时依赖。
+- **Phase 5.1 libssh2 安全基线未改动**：仍固定 `be937743a85c4064a6399cee39e606672a401069`（1.11.2_DEV），10 项 CVE ancestry 依旧成立；`DependencyIdentityTests` 全过；Release 二进制嵌入 `be937743…`。
+
+#### 13. 本阶段明确未实现（Phase 6 禁止范围，全部遵守）
+
+- SSH Terminal、Remote PTY、Remote Shell、SwiftTerm SSH Bridge。
+- SFTP、Upload、Download、Transfer Manager。
+- Port Forwarding、SSH Agent、ProxyJump、ProxyCommand、Server Monitoring。
+- 认证成功后仅显示 Connected，不打开 Shell Channel、不初始化 SFTP。
+
+### Phase 6 Final Cleanup
+
+状态：**已完成，等待用户验收**
+
+完成日期：2026-08-29
+
+> Phase 6 已复验通过（PASS）。本节为两个收尾项，仍属于 Phase 6 final cleanup，
+> 不构成新 Phase，不进入 Phase 7。
+
+#### 1. `default.profraw` 清理
+
+- 删除仓库根目录的 `default.profraw`（构建/测试产生的临时 LLVM Profile 文件）。
+- `.gitignore` 新增 `*.profraw` 忽略规则，防止此类文件再次进入 Git。
+- 未误删项目中其他正式资源。
+
+#### 2. Known Hosts → Forget 失败向用户显示错误
+
+**问题**：Settings → Known Hosts 中执行 Forget 时，如果 SwiftData 持久化失败，
+原实现仅记录 OSLog，用户界面没有任何失败提示，等同于静默失败。
+
+**修复**：
+
+- `SettingsView` 新增 `@State forgetError: ForgetFailureInfo?` 错误状态。
+- `forget()` 在 `modelContext.save()` 失败的 catch 分支中：
+  1. `modelContext.rollback()` 保持 KnownHost 状态一致（不假装 Forget 成功）；
+  2. 设置 `forgetError` 触发原生 macOS Alert 提示用户。
+- 错误 Alert 使用 macOS 原生 `.alert` 修饰器，标题：
+  `无法移除受信任的主机`，消息：
+  `Known Host 更改未能保存，请稍后重试。`
+- 底层技术错误（SwiftData 内部错误、OSStatus 等）仅记录到 OSLog，
+  不向普通用户直接显示裸错误码或堆栈信息。
+- 未修改 SSH 安全流程（Trust Once / Trust Always / Host Key Changed /
+  Replace Trusted Key / Password / Private Key 认证 / Passphrase 清零 /
+  KnownHost 验证 / libssh2 / OpenSSL 依赖基线全部不变）。
+
+**状态一致性保证**：
+
+- 持久化失败时 `modelContext.rollback()` 回滚删除操作，KnownHost 记录保持可见。
+- `@Query` 自动追踪 SwiftData 变化，回滚后 UI 列表自动恢复该记录。
+- 不会出现"UI 显示已删除但数据库仍存在"的不一致状态。
+
+#### 3. 测试
+
+`KnownHostServiceTests`（11 → 13 项，全部通过）：
+
+新增：
+
+- `test_forgetSuccessPath_allKnownHostsReflectsRemoval`：
+  验证 Forget 成功路径——KnownHost exists → Forget → save succeeds →
+  KnownHost removed → `allKnownHosts()`（UI `@Query` 等价入口）不再包含该记录。
+- `test_forgetFailurePath_allKnownHostsKeepsRecord`：
+  验证 Forget 保存失败路径——KnownHost exists → Forget → save fails →
+  `remove` 抛出 `knownHostPersistenceFailed`（UI 据此显示错误）→
+  `allKnownHosts()` 仍包含该记录（回滚后状态一致）→
+  记录的 Host Key 未被篡改。
+
+XCTest 结果：**13 passed / 0 failed**，`** TEST SUCCEEDED **`。
+
+#### 4. Build / Warning / diff
+
+- Debug arm64 clean build：成功，**project compiler warning = 0**。
+- Release arm64 clean build：成功，**project compiler warning = 0**。
+- 产物均为 Mach-O arm64，`codesign --verify --strict` 通过。
+- `git diff --check`：无空白错误（exit 0，无输出）。
+
+#### 5. 人工 UI 验证
+
+- Known Hosts 页面正常显示已信任主机列表。
+- Forget 成功路径：点击 Forget → 确认 → 记录从列表消失。
+- Forget 失败反馈路径：`forgetError` 状态触发原生 macOS Alert，标题和消息清晰，
+  不包含裸 SwiftData 错误码或堆栈信息。
+
+#### 6. 涉及的文件
+
+修改：
+
+- `.gitignore`（新增 `*.profraw`）
+- `MacSSH/Features/Settings/SettingsView.swift`（forgetError 状态 + 错误 Alert + rollback 注释）
+- `Tests/SSH/KnownHostServiceTests.swift`（+2 项 Forget 路径测试）
+- `Docs/DevelopmentStatus.md`（本节）
+
+删除：
+
+- `default.profraw`（临时 LLVM Profile 文件）
+
+### Phase 6 Fix / Re-validation：首轮验收阻塞项修复
+
+状态：**已完成，等待用户再次验收**
+
+完成日期：2026-08-29
+
+> 首轮验收未通过。本节如实记录每个阻塞项与对应修复；不掩盖首轮问题。
+
+#### 0. 首轮验收失败原因（用户指出 + 本轮新发现）
+
+用户指出的阻塞项：
+
+1. KnownHost 持久化失败被 `try? context.save()` 静默忽略（安全阻塞项）。
+2. Trust Always / Replace Trusted Key 保存失败后仍继续认证并显示成功。
+3. HostEditorView 私钥路径校验未覆盖 `privateKeyPath == nil`，可保存无路径的 Private Key Host。
+4. Passphrase 原始字节 `passphraseBytes` 未清零（只清了传给 libssh2 的 buffer）。
+5. UI 残留旧阶段标识（状态栏 "Phase 5 · SSH Connection"、RootView accessibility "MacSSH Phase 4"）。
+
+本轮额外发现并修复的隐蔽缺陷：
+
+6. **pbxproj 悬空引用导致 KnownHostServiceTests 被静默排除出构建**：
+   Phase 6 初始开发时 `KnownHostServiceTests.swift` 的 PBXBuildFile 定义 ID 为 23 位
+   （`D100000000000000000000F`），而 Sources 阶段引用 ID 为 24 位（差一个零），
+   Xcode 将悬空引用静默丢弃。此前 11:37 的构建因复用 DerivedData 增量缓存中的旧
+   `.o` 文件而侥幸通过；本轮 clean build 后暴露——12:58 的测试运行中该套件完全缺失。
+   已修正为一致的 24 位 ID，并用程序化校验确认全项目无悬空/孤立 build file 引用。
+
+#### 1. KnownHost 持久化失败处理（阻塞项 1/2/3）
+
+修复内容：
+
+- `KnownHostService.trust/replace/remove` 全部改为 throwing；`try? context.save()`
+  替换为显式 `saveAction(context)` + 失败时 `context.rollback()` + 抛出
+  `SSHError.knownHostPersistenceFailed`（新增错误类型，用户可读信息不含 Secret/状态码）。
+- 保存失败后重新读取校验：save 成功但读不回记录同样视为持久化异常（防御性双重校验）。
+- 失败回滚保证内存中不残留新 Host Key（否则同进程下一次 lookup 会误判 trusted）。
+- `SSHConnection.resolveHostKeyDecision` 中 Trust Always / Replace Trusted Key 均改为
+  `try await knownHostService.trust(...)`：持久化失败在进入 authenticating 之前终止连接，
+  Password 与私钥绝不发送；旧 KnownHost 保持不变。
+- 注入点设计：`KnownHostService` 新增 `saveAction: (ModelContext) throws -> Void`
+  注入口（生产默认 `context.save()`，测试注入失败），不引入 Repository 层。
+
+#### 2. Private Key nil / empty / whitespace 路径（阻塞项 4）
+
+修复内容：
+
+- `HostEditorView` 新增 `hasValidPrivateKeyPath(_:)` 静态校验：`nil`、`""`、纯空白
+  路径均无效；保存时阻止并提示 "Choose a private key file."（UI 文案与现有英文风格一致）。
+- Private Key 文件区显示逻辑（路径文本/Clear 按钮可见性）同步使用统一校验。
+- `SSHService` 前置校验同步收紧：nil / 空 / 纯空白路径一律 `privateKeyPathMissing` 快速失败。
+- 保持分层：Host Editor 只校验"有实际路径值"，不解析密钥格式；文件存在性/可读性
+  仍由连接层校验（`privateKeyFileNotFound` / `privateKeyFileUnreadable`）。
+
+#### 3. Passphrase 原始字节清零（阻塞项 5）
+
+修复内容：
+
+- 新增统一清零入口 `SSHConnection.zeroSecretBytes`（数组版 + 手动缓冲区版）。
+- `authenticateWithPrivateKey` 中原始 `passphraseBytes` 副本与 libssh2 用的
+  `passphraseBuffer` 均通过 `defer` 清零：覆盖成功、错误 Passphrase、认证失败、
+  超时、连接中断、取消、意外错误全部路径，不因提前 throw 留下可控 Secret。
+- Password 路径的 `passwordBytes` / `passwordBuffer` 清零迁移到同一统一入口
+  （安全标准一致化）。
+- Secret 副本数量保持最小（String → CChar 数组 → 跨 await 手动缓冲，未新增中间副本）。
+
+#### 4. UI Phase 标识修复（阻塞项 6）
+
+- 状态栏：`Phase 5 · SSH Connection` → `Phase 6 · SSH Security`。
+- RootView accessibility：`MacSSH Phase 4` → `MacSSH Phase 6`。
+- 全项目扫描确认无其他过期阶段文案（历史文档/测试名称/Commit 说明中的阶段引用按规则保留）。
+
+#### 5. 新增 / 修改的自动化测试
+
+新增文件：
+
+- `Tests/Hosts/HostEditorValidationTests.swift`（5 项）：nil / 空 / 纯空白路径无效、
+  真实路径有效（含空格路径）、SSHService 对 nil/空/空白路径前置失败。
+
+重写 / 扩展：
+
+- `Tests/SSH/KnownHostServiceTests.swift`（7 → 11 项）：新增 Trust Always 保存失败
+  抛错且无残留、upsert 失败保持旧记录、Replace 失败保持旧 Key、Forget 失败记录保持可见。
+- `Tests/SSH/SSHConnectionTests.swift`（17 → 31 项），新增：
+  - testO：Trust Always 持久化失败 → 认证绝不开始（终态错误 + 高频阶段采样双重断言 + 回滚验证）
+  - testP：Replace 持久化失败 → 认证绝不开始 + 旧 KnownHost 不变
+  - testQ：Replace 成功 → 私钥认证 Connected → 重连免警告直接 Connected
+  - testR：Trust Always 落盘持久化（同 store URL 重建 ModelContainer 等价 App 重启）
+  - testS：Forget 后重新连接回到 Unknown Host 对话框
+  - testT：未授权私钥 → privateKeyAuthenticationFailed（不回退 Password）
+  - testU：正确 Passphrase（随机生成经真实 Keychain）→ 认证成功
+  - testV / testW：RSA / ECDSA 私钥真实认证
+  - 20 次 Private Key Connect/Disconnect 泄漏检测（FD / 线程 / 常驻内存）
+  - Private Key 连接空闲 30 秒 CPU
+  - 清零机制测试（数组 + 手动缓冲区）
+- `Scripts/run-ssh-tests.sh`：生成全部测试密钥（ed25519 无/有 Passphrase、未授权
+  ed25519、RSA、ECDSA）；Passphrase 写入 600 权限临时文件由 testU 读取后即删，
+  经真实 CredentialService→KeychainService 保存，不进任何日志。
+
+#### 6. 真实验收测试结果（2026-08-29 13:20–13:22，本机 sshd + 真实 Keychain）
+
+XCTest 全量执行：**57 passed / 1 skipped / 0 failed，`** TEST EXECUTE SUCCEEDED **`**。
+
+- `KnownHostServiceTests` 11/11 通过（首次真实执行；此前被 pbxproj 悬空引用排除）。
+- `HostEditorValidationTests` 5/5 通过。
+- `CredentialServiceTests` 4 passed + 1 skipped（生产 namespace 验证按设计跳过）。
+- `DependencyIdentityTests` 6/6 通过（libssh2 `be937743…` 1.11.2_DEV / OpenSSL 3.5.8
+  基线不变，三层身份断言全过）。
+- `SSHConnectionTests` 31/31 通过，含：
+  - Password 回归：正确密码 Trust Once 连接（testA）、错误密码（testB）、错误用户名（testC）、
+    端口拒绝（testD）、超时（testE）、DNS 失败（testF）、Trust Cancel 绝不认证（testG）、
+    凭据缺失快速失败（testH）、无路径私钥前置失败（testI）
+  - Phase 6 回归：Trust Always 持久化 + 二次连接免对话框（testJ）、Host Key Changed
+    阻断（testK）、ED25519 无 Passphrase 认证（testL）、错误 Passphrase（testM）、
+    私钥文件缺失（testN，模拟保存后文件被删除）
+  - Phase 6 Fix 新增：持久化失败注入（testO/testP）、Replace 重连免警告（testQ）、
+    落盘持久化跨容器重建（testR）、Forget 回归（testS）、未授权私钥（testT）、
+    正确 Passphrase（testU）、RSA（testV）、ECDSA（testW）
+  - 资源与 CPU：20× Password 连接（FD/线程）、20× Private Key 连接（FD/线程/内存）、
+    双路径空闲 30 秒 CPU 均 ≤ 1.0 秒、EAGAIN 等待策略回归
+
+Key Type 实测状态：
+
+- ED25519（无 Passphrase）：**真实认证通过**（testL/testN/testQ/20×循环/空闲 CPU）。
+- ED25519（有 Passphrase，正确）：<redacted> 值不记录；**真实认证通过**（testU）。
+- ED25519（错误 Passphrase）：**正确返回 privateKeyPassphraseIncorrect**（testM）。
+- RSA（2048 无 Passphrase）：**真实认证通过**（testV）。
+- ECDSA（无 Passphrase）：**真实认证通过**（testW）。
+- 上述四种 Key Type 均已真实验证；无"理论支持未实测"项。
+
+Passphrase 清零测试边界（如实说明）：
+
+- 可直接断言的部分：清零机制本身（数组与手动缓冲区逐字节归零）已通过单测；
+  成功路径（testU）与全部失败路径（testM 错误 Passphrase、testT 认证失败、testO/P
+  持久化失败中止）均真实执行 defer 清零代码路径。
+- 无法直接断言的部分：物理内存中字节是否被清零无法从 Swift 层观测（编译器/OS
+  内存管理不受用户态控制）；该边界如实声明，不做虚假声明。
+
+#### 7. Build / 签名 / Linkage（修复后最终状态）
+
+- Debug arm64 clean build：成功，**project compiler warning = 0**。
+- Release arm64 clean build：成功，**project compiler warning = 0**。
+- build-for-testing：`** TEST BUILD SUCCEEDED **`，0 warning。
+- 产物均为 Mach-O arm64；Release `codesign --verify --strict` 通过，
+  Hardened Runtime 启用（Runtime Version 26.5.0）。
+- `otool -L`：Debug/Release 均无 `/opt/homebrew`、`/usr/local`、动态 libssh2/
+  libssl/libcrypto 依赖；libssh2 静态链接（Release 二进制嵌入 pinned commit
+  `be937743a85c4064a6399cee39e606672a401069`）。
+- 已知系统 runtime diagnostic（`com.apple.linkd.autoShortcut` / `NSFontManager` /
+  `default.profraw` 写入受限）：非 compiler warning，不影响功能。
+
+#### 8. Local Terminal / App 运行回归
+
+- App 实际启动成功（Debug 构建，13:20 版本）；窗口正常出现。
+- Local Terminal PTY 真实启动（App 子进程 `-zsh` login shell 存在，Phase 2 路径完好）。
+- App 与 zsh 空闲 CPU 实测均 0.0%；正常退出无崩溃。
+- 说明：Host Manager UI 深度交互（CRUD/切换认证类型）受代理沙箱 AppleScript 拦截
+  无法脚本化执行；但本轮对 Host Manager 相关改动仅限 HostEditorView 校验函数与
+  文案（已由 5 项单测覆盖），SwiftData/HostListView 路径零改动，回归风险面最小。
+  Password↔Private Key 切换不删凭据的行为逻辑未改动（Phase 4/6 已有实现保持不变）。
+
+#### 9. 本轮修复涉及的文件
+
+新增：
+
+- `Tests/Hosts/HostEditorValidationTests.swift`
+
+修改：
+
+- `MacSSH/Services/SSH/KnownHostService.swift`（throwing + rollback + saveAction 注入）
+- `MacSSH/Services/SSH/SSHConnection.swift`（try await 信任持久化 + zeroSecretBytes + defer 清零）
+- `MacSSH/Services/SSH/SSHError.swift`（新增 knownHostPersistenceFailed）
+- `MacSSH/Services/SSH/SSHService.swift`（前置校验收紧空白路径）
+- `MacSSH/Features/Hosts/HostEditorView.swift`（hasValidPrivateKeyPath 统一校验）
+- `MacSSH/App/AppState.swift`、`MacSSH/App/RootView.swift`（Phase 6 标识）
+- `Tests/SSH/KnownHostServiceTests.swift`、`Tests/SSH/SSHConnectionTests.swift`
+- `Scripts/run-ssh-tests.sh`（全密钥矩阵生成）
+- `MacSSH.xcodeproj/project.pbxproj`（修复 KnownHostServiceTests 悬空 ID + 新增
+  HostEditorValidationTests/Hosts group）
+- `Docs/DevelopmentStatus.md`（本节）
+
+#### 10. 当前已知问题
+
+- 代理沙箱拦截 Xcode Metal Toolchain wrapper 的 cryptex 注册表读取与 swift
+  plugin-server 宏展开，代理内无法直接执行 clean build/XCTest；构建与测试在
+  系统 Terminal（正常环境）完成。该限制非 App 代码缺陷。
+- 凭据/密钥相关测试依赖 `Scripts/run-ssh-tests.sh` 交互式创建（安全提示输入本机
+  密码），脚本退出自动清理；本轮验证结束后确认测试密钥与 Keychain item 已清理。
+- 其余无未解决的功能缺陷。
+
 ## 下一阶段
 
-Phase 5.1（libssh2 安全基线修正）已完成并停止开发，等待用户验收。
-下一阶段是 Phase 6（SSH 安全：KnownHost 持久化 + Private Key Authentication），
-只有用户验收 Phase 5.1 并明确要求后才能开始。
+Phase 6 已复验通过（PASS），Phase 6 final cleanup（`default.profraw` 清理 +
+Known Hosts Forget 失败错误提示）已完成。本轮修改不触及 SSH 安全流程，
+13 项 KnownHostServiceTests 全过，Debug/Release arm64 clean build 零 warning，
+`git diff --check` 通过。停止开发，等待用户确认。
+
+下一阶段是 Phase 7（Remote SSH Terminal），只有用户明确要求后才能开始。

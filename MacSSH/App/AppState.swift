@@ -14,7 +14,7 @@ final class AppState {
     /// 持有 SwiftTerm View 和 PTY，避免切换 Sidebar 时意外结束 Shell。
     let localTerminalService: LocalTerminalService
 
-    /// Phase 5 SSH 连接的唯一业务入口；连接独立于 View 生命周期。
+    /// SSH 连接的唯一业务入口（Phase 5 引入，Phase 6 扩展安全验证）；连接独立于 View 生命周期。
     let sshService: SSHService
 
     init(modelContainer: ModelContainer) {
@@ -31,7 +31,7 @@ final class AppState {
     var statusText: String {
         selectedSection == .terminal
             ? terminalSession.statusText
-            : "Phase 5 · SSH Connection"
+            : "Phase 6 · SSH Security"
     }
 
     /// Terminal 页面显示 PTY 尺寸，其他页面继续显示页面名称。

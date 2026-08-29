@@ -1,5 +1,6 @@
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// 使用原生 Form 创建或编辑 Host；只有点击 Save 后才修改 SwiftData。
 struct HostEditorView: View {
@@ -21,6 +22,9 @@ struct HostEditorView: View {
     @State private var notes: String
     @State private var password = ""
     @State private var removeStoredPassword = false
+    @State private var privateKeyPath: String?
+    @State private var passphrase = ""
+    @State private var removeStoredPassphrase = false
     @State private var isSaving = false
     @State private var validationMessage: String?
     @State private var saveErrorMessage: String?
@@ -43,6 +47,7 @@ struct HostEditorView: View {
         _selectedGroupID = State(initialValue: host?.group?.id)
         _favorite = State(initialValue: host?.favorite ?? false)
         _notes = State(initialValue: host?.notes ?? "")
+        _privateKeyPath = State(initialValue: host?.privateKeyPath)
     }
 
     var body: some View {
@@ -82,48 +87,9 @@ struct HostEditorView: View {
                     .accessibilityIdentifier("hostEditor.authentication")
 
                     if authenticationType == .password {
-                        SecureField(host == nil ? "Password" : "New Password", text: $password)
-                            .textContentType(.password)
-                            .accessibilityIdentifier("hostEditor.password")
-                            .onChange(of: password) { _, newValue in
-                                // 输入新密码代表更新操作，应覆盖尚未保存的移除意图。
-                                if !newValue.isEmpty {
-                                    removeStoredPassword = false
-                                }
-                            }
-
-                        if host?.credentialID != nil {
-                            if removeStoredPassword {
-                                Label("Password will be removed when you save.", systemImage: "trash")
-                                    .font(.footnote)
-                                    .foregroundStyle(.red)
-                            } else {
-                                Label(
-                                    "Password stored securely in macOS Keychain",
-                                    systemImage: "checkmark.circle.fill"
-                                )
-                                .font(.footnote)
-                                .foregroundStyle(.green)
-
-                                Text("Leave blank to keep the saved password.")
-                                    .font(.footnote)
-                                    .foregroundStyle(.secondary)
-
-                                Button("Remove Saved Password", role: .destructive) {
-                                    password = ""
-                                    removeStoredPassword = true
-                                }
-                                .accessibilityIdentifier("hostEditor.removePassword")
-                            }
-                        } else {
-                            Text("Password will be stored securely in macOS Keychain.")
-                                .font(.footnote)
-                                .foregroundStyle(.secondary)
-                        }
+                        passwordSection
                     } else {
-                        Text("Private Key selection and authentication are introduced in a later phase.")
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
+                        privateKeySection
                     }
                 }
 
@@ -184,12 +150,151 @@ struct HostEditorView: View {
             }
             .padding(AppTheme.Spacing.regular)
         }
-        .frame(width: 560, height: 620)
+        .frame(width: 560, height: 660)
         .alert("Unable to Save Host", isPresented: saveErrorBinding) {
             Button("OK", role: .cancel) {}
         } message: {
             Text(saveErrorMessage ?? "The Host could not be saved.")
         }
+    }
+
+    // MARK: - Password 认证区
+
+    @ViewBuilder
+    private var passwordSection: some View {
+        SecureField(host == nil ? "Password" : "New Password", text: $password)
+            .textContentType(.password)
+            .accessibilityIdentifier("hostEditor.password")
+            .onChange(of: password) { _, newValue in
+                if !newValue.isEmpty {
+                    removeStoredPassword = false
+                }
+            }
+
+        if host?.credentialID != nil {
+            if removeStoredPassword {
+                Label("Password will be removed when you save.", systemImage: "trash")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else {
+                Label(
+                    "Password stored securely in macOS Keychain",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(.green)
+
+                Text("Leave blank to keep the saved password.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Remove Saved Password", role: .destructive) {
+                    password = ""
+                    removeStoredPassword = true
+                }
+                .accessibilityIdentifier("hostEditor.removePassword")
+            }
+        } else {
+            Text("Password will be stored securely in macOS Keychain.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: - Private Key 认证区（Phase 6）
+
+    /// Private Key Host 的保存前置校验：必须已选择真实私钥文件路径。
+    ///
+    /// `nil`（未选择）、空字符串、纯空白路径都无效；
+    /// 与 SSH 连接层的存在性校验（`privateKeyFileNotFound`）分层，这里不做密钥格式解析。
+    static func hasValidPrivateKeyPath(_ path: String?) -> Bool {
+        guard let path else { return false }
+        return !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    @ViewBuilder
+    private var privateKeySection: some View {
+        // Private Key File（文件本身，非 Secret）。
+        HStack {
+            Text(Self.hasValidPrivateKeyPath(privateKeyPath)
+                ? (privateKeyPath ?? "")
+                : "No file chosen")
+                .font(.system(.callout, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(Self.hasValidPrivateKeyPath(privateKeyPath) ? .primary : .secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            Button("Choose…") {
+                choosePrivateKeyFile()
+            }
+            .accessibilityIdentifier("hostEditor.choosePrivateKey")
+
+            if Self.hasValidPrivateKeyPath(privateKeyPath) {
+                Button("Clear") {
+                    privateKeyPath = nil
+                }
+                .accessibilityIdentifier("hostEditor.clearPrivateKey")
+            }
+        }
+
+        Text("OpenSSH private key file (RSA / ECDSA / ED25519). Passphrase is optional.")
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+
+        // Passphrase（Secret；与 Password 使用不同 Keychain service）。
+        SecureField(host?.privateKeyID == nil ? "Passphrase" : "New Passphrase", text: $passphrase)
+            .textContentType(.password)
+            .accessibilityIdentifier("hostEditor.passphrase")
+            .onChange(of: passphrase) { _, newValue in
+                if !newValue.isEmpty {
+                    removeStoredPassphrase = false
+                }
+            }
+
+        if host?.privateKeyID != nil {
+            if removeStoredPassphrase {
+                Label("Passphrase will be removed when you save.", systemImage: "trash")
+                    .font(.footnote)
+                    .foregroundStyle(.red)
+            } else {
+                Label(
+                    "Passphrase stored securely in macOS Keychain",
+                    systemImage: "checkmark.circle.fill"
+                )
+                .font(.footnote)
+                .foregroundStyle(.green)
+
+                Text("Leave blank to keep the saved passphrase. No-passphrase keys need none.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+
+                Button("Remove Saved Passphrase", role: .destructive) {
+                    passphrase = ""
+                    removeStoredPassphrase = true
+                }
+                .accessibilityIdentifier("hostEditor.removePassphrase")
+            }
+        } else {
+            Text("Leave blank for a key without a passphrase.")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    /// 原生 NSOpenPanel 选择私钥文件（仅文件；不使用 Web 文件选择器）。
+    private func choosePrivateKeyFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Private Key File"
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.isExtensionHidden = false
+        panel.directoryURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh")
+
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        privateKeyPath = url.path
     }
 
     /// 先验证普通字段，再异步处理 Keychain 和 SwiftData 的协调保存。
@@ -222,6 +327,15 @@ struct HostEditorView: View {
             return
         }
 
+        // Private Key Host 必须已选择私钥文件：nil / 空 / 纯空白路径都阻止保存，
+        // 不生成已知无法连接的 Host（连接时仍会再次校验文件存在性与可读性）。
+        if authenticationType == .privateKey,
+           !Self.hasValidPrivateKeyPath(privateKeyPath)
+        {
+            validationMessage = "Choose a private key file."
+            return
+        }
+
         validationMessage = nil
         let selectedGroup = groups.first { $0.id == selectedGroupID }
 
@@ -248,7 +362,8 @@ struct HostEditorView: View {
         group: HostGroup?,
         notes: String
     ) async {
-        var credentialRollback = CredentialRollback.none
+        var passwordRollback: CredentialRollback = .none
+        var passphraseRollback: CredentialRollback = .none
 
         do {
             let targetHost = host ?? Host(
@@ -274,7 +389,12 @@ struct HostEditorView: View {
                 targetHost.updatedAt = .now
             }
 
-            credentialRollback = try await applyPasswordMutation(to: targetHost)
+            // 私钥文件路径（文件，非 Secret）始终随表单写入。
+            targetHost.privateKeyPath = privateKeyPath?.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            // 仅处理当前认证类型对应的 Secret；另一类凭据保持不动（切换不立即删除）。
+            passwordRollback = try await applyPasswordMutation(to: targetHost)
+            passphraseRollback = try await applyPassphraseMutation(to: targetHost)
 
             if host == nil {
                 modelContext.insert(targetHost)
@@ -287,12 +407,15 @@ struct HostEditorView: View {
             }
 
             password = ""
+            passphrase = ""
             AppLogger.persistence.info("Host metadata saved")
             dismiss()
         } catch {
             // 回滚 Host 字段，并尽力恢复 Keychain 在本次 Save 前的状态。
             modelContext.rollback()
-            let rollbackSucceeded = await rollbackCredentialMutation(credentialRollback)
+            let passwordRestored = await rollbackCredentialMutation(passwordRollback)
+            let passphraseRestored = await rollbackCredentialMutation(passphraseRollback)
+            let rollbackSucceeded = passwordRestored && passphraseRestored
             saveErrorMessage = rollbackSucceeded
                 ? userFacingMessage(for: error)
                 : "The Host was not saved and macOS Keychain cleanup also failed. Please retry."
@@ -301,6 +424,8 @@ struct HostEditorView: View {
 
         isSaving = false
     }
+
+    // MARK: - Password 变更
 
     /// 空密码且未点击移除表示“未修改”；绝不因只编辑普通字段而覆盖已有 Password。
     private func applyPasswordMutation(to targetHost: Host) async throws -> CredentialRollback {
@@ -314,7 +439,7 @@ struct HostEditorView: View {
                 try await credentialService.deletePassword(credentialID: credentialID)
             }
             targetHost.credentialID = nil
-            return previousPassword.map { .restore(credentialID, $0) } ?? .none
+            return previousPassword.map { .restore(credentialID, $0, kind: .password) } ?? .none
         }
 
         guard !password.isEmpty else {
@@ -325,17 +450,56 @@ struct HostEditorView: View {
             let previousPassword = try await readPasswordIfPresent(credentialID: credentialID)
             guard let previousPassword else {
                 try await credentialService.savePassword(password, credentialID: credentialID)
-                return .deleteCreated(credentialID)
+                return .deleteCreated(credentialID, kind: .password)
             }
 
             try await credentialService.updatePassword(password, credentialID: credentialID)
-            return .restore(credentialID, previousPassword)
+            return .restore(credentialID, previousPassword, kind: .password)
         }
 
         let credentialID = UUID()
         try await credentialService.savePassword(password, credentialID: credentialID)
         targetHost.credentialID = credentialID
-        return .deleteCreated(credentialID)
+        return .deleteCreated(credentialID, kind: .password)
+    }
+
+    // MARK: - Private Key Passphrase 变更（Phase 6）
+
+    /// 与 Password 变更同构；空 Passphrase 且未点击移除表示“未修改”。
+    /// 无 Passphrase 私钥：privateKeyID 为 nil 且不输入 Passphrase 即合法。
+    private func applyPassphraseMutation(to targetHost: Host) async throws -> CredentialRollback {
+        guard authenticationType == .privateKey else {
+            return .none
+        }
+
+        if removeStoredPassphrase, let privateKeyID = targetHost.privateKeyID {
+            let previous = try await readPassphraseIfPresent(privateKeyID: privateKeyID)
+            if previous != nil {
+                try await credentialService.deletePrivateKeyPassphrase(privateKeyID: privateKeyID)
+            }
+            targetHost.privateKeyID = nil
+            return previous.map { .restore(privateKeyID, $0, kind: .passphrase) } ?? .none
+        }
+
+        guard !passphrase.isEmpty else {
+            return .none
+        }
+
+        if let privateKeyID = targetHost.privateKeyID {
+            let previous = try await readPassphraseIfPresent(privateKeyID: privateKeyID)
+            guard let previous else {
+                try await credentialService.savePrivateKeyPassphrase(passphrase, privateKeyID: privateKeyID)
+                return .deleteCreated(privateKeyID, kind: .passphrase)
+            }
+
+            try await credentialService.updatePrivateKeyPassphrase(passphrase, privateKeyID: privateKeyID)
+            return .restore(privateKeyID, previous, kind: .passphrase)
+        }
+
+        let privateKeyID = UUID()
+        try await credentialService.savePrivateKeyPassphrase(passphrase, privateKeyID: privateKeyID)
+        targetHost.privateKeyID = privateKeyID
+        return .deleteCreated(privateKeyID, kind: .passphrase)
     }
 
     /// itemNotFound 表示引用尚无 Secret，可安全按新凭据处理；其他错误必须上抛。
@@ -347,25 +511,45 @@ struct HostEditorView: View {
         }
     }
 
+    private func readPassphraseIfPresent(privateKeyID: UUID) async throws -> String? {
+        do {
+            return try await credentialService.readPrivateKeyPassphrase(privateKeyID: privateKeyID)
+        } catch KeychainError.itemNotFound {
+            return nil
+        }
+    }
+
     /// SwiftData 保存失败后执行 Keychain 补偿，避免产生孤立或意外覆盖的 Secret。
     private func rollbackCredentialMutation(_ rollback: CredentialRollback) async -> Bool {
         do {
             switch rollback {
             case .none:
                 return true
-            case let .deleteCreated(credentialID):
-                do {
-                    try await credentialService.deletePassword(credentialID: credentialID)
-                } catch KeychainError.itemNotFound {
-                    return true
+            case let .deleteCreated(id, kind):
+                switch kind {
+                case .password:
+                    do {
+                        try await credentialService.deletePassword(credentialID: id)
+                    } catch KeychainError.itemNotFound {
+                        return true
+                    }
+                case .passphrase:
+                    do {
+                        try await credentialService.deletePrivateKeyPassphrase(privateKeyID: id)
+                    } catch KeychainError.itemNotFound {
+                        return true
+                    }
                 }
-            case let .restore(credentialID, previousPassword):
-                try await credentialService.upsertPassword(
-                    previousPassword,
-                    credentialID: credentialID
-                )
+                return true
+            case let .restore(id, previous, kind):
+                switch kind {
+                case .password:
+                    try await credentialService.upsertPassword(previous, credentialID: id)
+                case .passphrase:
+                    try await credentialService.upsertPrivateKeyPassphrase(previous, privateKeyID: id)
+                }
+                return true
             }
-            return true
         } catch {
             AppLogger.security.error("Credential rollback failed")
             return false
@@ -395,8 +579,13 @@ struct HostEditorView: View {
 /// 仅在一次保存事务内短暂保留补偿信息，不写入 SwiftData 或日志。
 private enum CredentialRollback {
     case none
-    case deleteCreated(UUID)
-    case restore(UUID, String)
+    case deleteCreated(UUID, kind: Kind)
+    case restore(UUID, String, kind: Kind)
+
+    enum Kind {
+        case password
+        case passphrase
+    }
 }
 
 private enum HostEditorSaveError: Error {

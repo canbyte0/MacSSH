@@ -16,6 +16,7 @@ final class SSHService {
 
     private let credentialService: CredentialService
     private let modelContainer: ModelContainer
+    let knownHostService: KnownHostService
 
     init(
         credentialService: CredentialService = .shared,
@@ -23,6 +24,7 @@ final class SSHService {
     ) {
         self.credentialService = credentialService
         self.modelContainer = modelContainer
+        self.knownHostService = KnownHostService(modelContainer: modelContainer)
     }
 
     // MARK: - 查询
@@ -45,19 +47,12 @@ final class SSHService {
     // MARK: - 连接动作
 
     /// 对一个 Host 发起连接；前置校验失败会立即产生 failed 状态。
+    ///
+    /// Phase 6：同时支持 Password 与 Private Key 两种认证方式，由 Host 配置决定，
+    /// 不互相回退。Private Key Host 需要已配置私钥路径；Passphrase 可选。
     func connect(to host: Host) {
         // 重复请求：连接进行中直接忽略。
         guard !isConnectionActive(host.id) else { return }
-
-        // 前置校验（Phase 5 硬性边界）：
-        // Private Key Host 明确拒绝，不偷偷尝试其他认证方式。
-        guard host.authenticationType == .password else {
-            failFast(
-                host: host,
-                error: .privateKeyAuthenticationUnavailable
-            )
-            return
-        }
 
         guard !host.hostname.trimmingCharacters(in: .whitespaces).isEmpty,
             !host.username.trimmingCharacters(in: .whitespaces).isEmpty,
@@ -67,10 +62,32 @@ final class SSHService {
             return
         }
 
-        // Password Host 必须已保存 Keychain 凭据。
-        guard let credentialID = host.credentialID else {
-            failFast(host: host, error: .credentialNotFound)
-            return
+        // 按认证方式做前置凭据校验；不偷试其他认证方式。
+        let credentialID: UUID?
+        let privateKeyPath: String?
+        let privateKeyID: UUID?
+
+        switch host.authenticationType {
+        case .password:
+            guard let id = host.credentialID else {
+                failFast(host: host, error: .credentialNotFound)
+                return
+            }
+            credentialID = id
+            privateKeyPath = nil
+            privateKeyID = nil
+
+        case .privateKey:
+            // 与 Host Editor 相同标准：nil / 空 / 纯空白路径一律视为未配置。
+            guard let path = host.privateKeyPath,
+                !path.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            else {
+                failFast(host: host, error: .privateKeyPathMissing)
+                return
+            }
+            credentialID = nil
+            privateKeyPath = path
+            privateKeyID = host.privateKeyID // 无 Passphrase 私钥为 nil，合法
         }
 
         // 已结束的旧连接先彻底清理。
@@ -93,13 +110,16 @@ final class SSHService {
             port: UInt16(host.port),
             username: host.username,
             authenticationType: host.authenticationType,
-            credentialID: credentialID
+            credentialID: credentialID,
+            privateKeyPath: privateKeyPath,
+            privateKeyID: privateKeyID
         )
 
         let connection = SSHConnection(
             configuration: configuration,
             info: info,
-            credentialService: credentialService
+            credentialService: credentialService,
+            knownHostService: knownHostService
         )
         connectionActors[host.id] = connection
 
@@ -117,10 +137,24 @@ final class SSHService {
         }
     }
 
-    /// Host Trust 对话框：仅本次信任。
+    // MARK: - Host Trust 决策入口（Phase 6）
+
+    /// Host Trust 对话框：仅本次信任（不持久化）。
     func trustOnce(hostID: UUID) {
         guard let connection = connectionActors[hostID] else { return }
         Task { await connection.resolveHostTrust(.trustOnce) }
+    }
+
+    /// Host Trust 对话框：始终信任（写入 KnownHost 持久化；仅未知主机）。
+    func trustAlways(hostID: UUID) {
+        guard let connection = connectionActors[hostID] else { return }
+        Task { await connection.resolveHostTrust(.trustAlways) }
+    }
+
+    /// Host Key Changed 对话框：替换已信任的 Host Key（UI 已完成二次确认）。
+    func replaceTrustedKey(hostID: UUID) {
+        guard let connection = connectionActors[hostID] else { return }
+        Task { await connection.resolveHostTrust(.replaceTrustedKey) }
     }
 
     /// Host Trust 对话框：取消并断开。

@@ -22,6 +22,14 @@ final class SSHConnectionInfo {
     /// Handshake 完成后的真实服务器 Host Key 身份。
     var hostKey: SSHHostKeyInfo?
 
+    /// Phase 6：握手后对照 KnownHost 的持久化验证结果。
+    ///
+    /// - `unknown`：无已保存记录，显示首次连接对话框（Trust Once / Trust Always / Cancel）。
+    /// - `trusted`：与已保存记录一致，直接放行认证，不显示对话框。
+    /// - `changed`：与已保存记录不一致，显示 Host Key Changed 警告
+    ///   （Cancel / Replace Trusted Key 二次确认），阻断认证直到用户明确替换。
+    var hostKeyVerification: HostKeyVerification?
+
     /// 失败时展示给用户的错误信息（不含 Secret）。
     var failureMessage: String?
 
@@ -40,6 +48,11 @@ final class SSHConnectionInfo {
     /// 更新 Host Key 身份。
     func setHostKey(_ hostKey: SSHHostKeyInfo) {
         self.hostKey = hostKey
+    }
+
+    /// 更新 Host Key 验证结果。
+    func setHostKeyVerification(_ verification: HostKeyVerification) {
+        self.hostKeyVerification = verification
     }
 
     /// 更新失败信息。
@@ -63,7 +76,12 @@ actor SSHConnection {
         let port: UInt16
         let username: String
         let authenticationType: AuthenticationType
+        /// Password Host：指向 Keychain Password 的引用。
         let credentialID: UUID?
+        /// Private Key Host：私钥文件路径（文件本身，非 Secret）。
+        let privateKeyPath: String?
+        /// Private Key Host：指向 Keychain Passphrase 的引用；无 Passphrase 私钥为 nil。
+        let privateKeyID: UUID?
     }
 
     /// 各阶段独立超时（计划书第 42 节：Connection Timeout 10 秒）。
@@ -86,6 +104,7 @@ actor SSHConnection {
     private let configuration: Configuration
     private let info: SSHConnectionInfo
     private let credentialService: CredentialService
+    private let knownHostService: KnownHostService
 
     /// 只允许本 actor 访问的 libssh2 session。
     private var session: OpaquePointer?
@@ -110,11 +129,13 @@ actor SSHConnection {
     init(
         configuration: Configuration,
         info: SSHConnectionInfo,
-        credentialService: CredentialService = .shared
+        credentialService: CredentialService = .shared,
+        knownHostService: KnownHostService
     ) {
         self.configuration = configuration
         self.info = info
         self.credentialService = credentialService
+        self.knownHostService = knownHostService
     }
 
     // MARK: - 连接主流程
@@ -155,28 +176,116 @@ actor SSHConnection {
         try await performHandshake()
         try throwIfDisconnectRequested()
 
-        // 3. 取得真实 Host Key 并等待用户确认（Phase 5 只支持 Trust Once）
+        // 3. 取得真实 Host Key 并对照持久化 KnownHost 验证身份（Phase 6）
         let hostKey = try extractHostKeyInfo()
         await info.setHostKey(hostKey)
-        await transition(to: .awaitingHostTrust)
 
-        let decision = await awaitHostTrustDecision()
-        try throwIfDisconnectRequested()
-
-        guard decision == .trustOnce else {
-            AppLogger.ssh.info("Host trust rejected for current connection")
-            throw SSHError.hostTrustRejected
+        let stored = await knownHostService.lookup(
+            hostname: configuration.hostname,
+            port: Int(configuration.port)
+        )
+        let verification: HostKeyVerification
+        if let stored {
+            if stored.hostKey == hostKey.hostKeyBlob {
+                verification = .trusted
+            } else {
+                verification = .changed(
+                    storedFingerprint: stored.fingerprint,
+                    storedKeyType: stored.keyType
+                )
+            }
+        } else {
+            verification = .unknown
         }
-        AppLogger.ssh.info("Host trust accepted for current connection")
+        await info.setHostKeyVerification(verification)
 
-        // 4. Password Authentication
+        // 已信任：直接放行认证，不显示对话框。
+        // 未知 / 变化：进入 awaitingHostTrust 等待 UI 决策。
+        //   未知 → Trust Once / Trust Always / Cancel
+        //   变化 → Cancel / Replace Trusted Key（UI 负责二次危险确认）
+        // 任何阻断路径都在认证之前抛出，保证 Password 与私钥绝不发送。
+        if verification != .trusted {
+            await transition(to: .awaitingHostTrust)
+            let decision = await awaitHostTrustDecision()
+            try throwIfDisconnectRequested()
+            try await resolveHostKeyDecision(decision, verification: verification, hostKey: hostKey)
+        } else {
+            AppLogger.ssh.info("Host key matches trusted record")
+        }
+
+        // 4. 认证（Password 或 Private Key，由 Host 配置决定，不互相回退）
         await transition(to: .authenticating)
-        try await authenticateWithPassword()
+        switch configuration.authenticationType {
+        case .password:
+            try await authenticateWithPassword()
+        case .privateKey:
+            try await authenticateWithPrivateKey()
+        }
         try throwIfDisconnectRequested()
 
-        // 5. 认证完成即 Phase 5 的终点
+        // 5. 认证完成即 Phase 6 的终点（不打开 Shell Channel，不初始化 SFTP）
         await transition(to: .connected)
-        AppLogger.ssh.info("Password authentication succeeded")
+        AppLogger.ssh.info("SSH authentication succeeded")
+    }
+
+    /// 处理用户在 Host Trust 对话框上的决策；Trust Always / Replace 会更新 KnownHost。
+    ///
+    /// Cancel 在“变化”场景抛 `hostKeyChanged`，在“未知”场景抛 `hostTrustRejected`；
+    /// 两者都保证在认证之前终止，绝不发送 Password 或私钥。
+    private func resolveHostKeyDecision(
+        _ decision: SSHHostTrustDecision,
+        verification: HostKeyVerification,
+        hostKey: SSHHostKeyInfo
+    ) async throws {
+        switch decision {
+        case .cancel:
+            AppLogger.ssh.info("Host trust cancelled by user")
+            switch verification {
+            case .changed:
+                throw SSHError.hostKeyChanged
+            case .unknown, .trusted:
+                throw SSHError.hostTrustRejected
+            }
+
+        case .trustOnce:
+            // 仅对未知主机合法；变化场景下 UI 不应发送，防御性按取消处理。
+            guard case .unknown = verification else {
+                throw SSHError.hostTrustRejected
+            }
+            AppLogger.ssh.info("Host trust accepted for current connection only")
+
+        case .trustAlways:
+            guard case .unknown = verification else {
+                throw SSHError.hostTrustRejected
+            }
+            // 安全契约：只有 KnownHost 真正落盘成功才允许继续认证。
+            // 持久化失败会抛 knownHostPersistenceFailed，establish 在进入
+            // authenticating 之前终止，Password 与私钥绝不发送。
+            _ = try await knownHostService.trust(
+                hostname: configuration.hostname,
+                port: Int(configuration.port),
+                keyType: hostKey.keyType,
+                hostKey: hostKey.hostKeyBlob,
+                fingerprint: hostKey.fingerprintSHA256
+            )
+            AppLogger.ssh.info("Host trusted and persisted (Trust Always)")
+
+        case .replaceTrustedKey:
+            // 仅变化场景合法；UI 已完成二次危险确认后才发送此决策。
+            guard case .changed = verification else {
+                throw SSHError.hostTrustRejected
+            }
+            // 与 Trust Always 相同的安全契约：替换保存失败必须中止认证，
+            // 旧 KnownHost 保持不变，绝不标记为已成功替换。
+            _ = try await knownHostService.trust(
+                hostname: configuration.hostname,
+                port: Int(configuration.port),
+                keyType: hostKey.keyType,
+                hostKey: hostKey.hostKeyBlob,
+                fingerprint: hostKey.fingerprintSHA256
+            )
+            AppLogger.ssh.info("Trusted host key replaced after user confirmation")
+        }
     }
 
     // MARK: - Host Trust 决策入口
@@ -279,7 +388,11 @@ actor SSHConnection {
         // 从 public key blob 解析算法名（STRING：4 字节大端长度 + 名称）。
         let keyType = Self.keyAlgorithmName(from: blob) ?? "unknown"
 
-        return SSHHostKeyInfo(keyType: keyType, fingerprintSHA256: fingerprint)
+        return SSHHostKeyInfo(
+            keyType: keyType,
+            fingerprintSHA256: fingerprint,
+            hostKeyBlob: blob
+        )
     }
 
     // MARK: - Password Authentication
@@ -320,11 +433,8 @@ actor SSHConnection {
             throw SSHError.credentialNotFound
         }
         defer {
-            // Swift 没有跨版本稳定暴露 explicit_bzero；逐字节覆写后立即
-            // 结束缓冲区生命周期，避免 Secret 长期保留在可控内存中。
-            for index in passwordBytes.indices {
-                passwordBytes[index] = 0
-            }
+            // 统一 Secret 清零入口；defer 保证认证成功 / 失败 / 取消路径都执行。
+            Self.zeroSecretBytes(&passwordBytes)
         }
 
         // 指针需要跨 await 存活，必须手动分配而不是 withUnsafeBufferPointer
@@ -344,9 +454,7 @@ actor SSHConnection {
             _ = passwordBuffer.initialize(from: source)
         }
         defer {
-            for index in passwordBuffer.indices {
-                passwordBuffer[index] = 0
-            }
+            Self.zeroSecretBytes(passwordBuffer)
             passwordBuffer.deallocate()
         }
 
@@ -369,6 +477,213 @@ actor SSHConnection {
             // 用户名或密码被服务器拒绝；错误信息不携带任何 Secret。
             throw SSHError.authenticationFailed
         }
+    }
+
+    // MARK: - Private Key Authentication
+
+    /// 使用 OpenSSH 私钥文件进行 publickey 认证（Phase 6）。
+    ///
+    /// - 全程 non-blocking：EAGAIN 交给现有 poll + block_directions 逻辑，不在主线程阻塞。
+    /// - Passphrase 从 `CredentialService` 读取（生命周期最短化，调用结束后逐字节覆写）；
+    ///   无 Passphrase 私钥 `privateKeyID` 为 nil，向 libssh2 传 NULL。
+    /// - 认证方式由 Host 配置决定，不回退 Password。
+    /// - 日志不记录 Passphrase 或私钥内容。
+    private func authenticateWithPrivateKey() async throws {
+        guard let session else {
+            throw SSHError.connectionLost
+        }
+
+        // 1. 私钥文件存在性与可读性（在调用 libssh2 前优雅失败，不卡在认证中）。
+        guard let privateKeyPath = configuration.privateKeyPath,
+              !privateKeyPath.isEmpty
+        else {
+            throw SSHError.privateKeyPathMissing
+        }
+        guard FileManager.default.fileExists(atPath: privateKeyPath) else {
+            throw SSHError.privateKeyFileNotFound
+        }
+        guard FileManager.default.isReadableFile(atPath: privateKeyPath) else {
+            throw SSHError.privateKeyFileUnreadable
+        }
+
+        let usernameBytes = Array(configuration.username.utf8CString)
+        let privateKeyPathBytes = Array(privateKeyPath.utf8CString)
+
+        // 2. 服务器认证方式发现；不支持 publickey 时明确报错，不回退 Password。
+        guard let supportedMethods = try await requestAuthenticationMethods(
+            session: session,
+            usernameBytes: usernameBytes
+        ) else {
+            throw SSHError.privateKeyAuthenticationFailed
+        }
+        guard supportedMethods.contains("publickey") else {
+            throw SSHError.publicKeyAuthenticationUnsupported
+        }
+
+        // 3. Passphrase（可选）。无 Passphrase 私钥：privateKeyID 为 nil，传 NULL。
+        var passphraseBytes: [CChar] = []
+        var passphraseSupplied = false
+        if let privateKeyID = configuration.privateKeyID {
+            do {
+                let passphrase = try await credentialService.readPrivateKeyPassphrase(
+                    privateKeyID: privateKeyID
+                )
+                guard !passphrase.isEmpty else {
+                    throw SSHError.privateKeyPassphraseRequired
+                }
+                passphraseBytes = Array(passphrase.utf8CString)
+                passphraseSupplied = true
+            } catch KeychainError.itemNotFound {
+                // 配置了 privateKeyID 但 Keychain 缺失：视为需要 Passphrase 但未保存。
+                throw SSHError.privateKeyPassphraseRequired
+            }
+        }
+        // 原始 Passphrase 字节副本与 libssh2 缓冲区使用同一清零标准；
+        // defer 覆盖后续全部路径（错误 Passphrase、认证失败、超时、
+        // 连接中断、意外错误、成功），不会因提前 throw 留下可控 Secret。
+        defer {
+            Self.zeroSecretBytes(&passphraseBytes)
+        }
+
+        // 指针需跨 await 存活，手动分配；Passphrase 缓冲区用后逐字节覆写。
+        let usernameBuffer = UnsafeMutableBufferPointer<CChar>.allocate(
+            capacity: usernameBytes.count
+        )
+        usernameBytes.withUnsafeBufferPointer { source in
+            _ = usernameBuffer.initialize(from: source)
+        }
+        defer { usernameBuffer.deallocate() }
+
+        let privateKeyBuffer = UnsafeMutableBufferPointer<CChar>.allocate(
+            capacity: privateKeyPathBytes.count
+        )
+        privateKeyPathBytes.withUnsafeBufferPointer { source in
+            _ = privateKeyBuffer.initialize(from: source)
+        }
+        defer { privateKeyBuffer.deallocate() }
+
+        let passphraseBuffer: UnsafeMutableBufferPointer<CChar>? = passphraseSupplied
+            ? UnsafeMutableBufferPointer<CChar>.allocate(capacity: passphraseBytes.count)
+            : nil
+        if let passphraseBuffer {
+            passphraseBytes.withUnsafeBufferPointer { source in
+                _ = passphraseBuffer.initialize(from: source)
+            }
+        }
+        defer {
+            if let passphraseBuffer {
+                Self.zeroSecretBytes(passphraseBuffer)
+                passphraseBuffer.deallocate()
+            }
+        }
+
+        // 4. libssh2 文件私钥认证；publickey 传 NULL，由 libssh2 从私钥推导公钥。
+        let rc: Int32 = try await runWithRetry(
+            session: session,
+            budget: Timeouts.authentication
+        ) {
+            let passphrasePointer: UnsafePointer<CChar>? =
+                passphraseBuffer?.baseAddress.map { UnsafePointer($0) }
+            return libssh2_userauth_publickey_fromfile_ex(
+                session,
+                usernameBuffer.baseAddress,
+                UInt32(usernameBuffer.count - 1),
+                nil,
+                privateKeyBuffer.baseAddress,
+                passphrasePointer
+            )
+        }
+
+        // 5. 结果映射（不携带 Secret）。
+        guard rc != 0 else {
+            return
+        }
+
+        switch rc {
+        case LIBSSH2_ERROR_KEYFILE_AUTH_FAILED:
+            // 解密私钥失败：提供了 Passphrase 即为错误 Passphrase；
+            // 未提供则表示私钥需要 Passphrase 但未配置。
+            throw passphraseSupplied
+                ? SSHError.privateKeyPassphraseIncorrect
+                : SSHError.privateKeyPassphraseRequired
+        case LIBSSH2_ERROR_FILE:
+            // 实测 libssh2 1.11.2_DEV：对加密 OpenSSH 私钥，只要 Passphrase 无法成功解密
+            // （错误 / 未提供 / 空串），一律返回 LIBSSH2_ERROR_FILE 而非 KEYFILE_AUTH_FAILED。
+            // 文件存在性与可读性已在前置校验确认，因此先判断私钥是否加密：
+            // - 已加密：错误 / 缺失 Passphrase（而不是文件权限问题）；
+            // - 未加密：私钥格式损坏或无法解析。
+            if Self.isEncryptedOpenSSHPrivateKey(at: privateKeyPath) {
+                throw passphraseSupplied
+                    ? SSHError.privateKeyPassphraseIncorrect
+                    : SSHError.privateKeyPassphraseRequired
+            }
+            throw SSHError.privateKeyFileUnreadable
+        case LIBSSH2_ERROR_PUBLICKEY_UNVERIFIED, LIBSSH2_ERROR_AUTHENTICATION_FAILED:
+            // 密钥可加载但服务器拒绝（不在 authorized_keys）。
+            throw SSHError.privateKeyAuthenticationFailed
+        default:
+            throw SSHError.privateKeyAuthenticationFailed
+        }
+    }
+
+    /// 判断私钥文件是否为加密的 OpenSSH 格式私钥。
+    ///
+    /// OpenSSH 私钥文件是 PEM 文本（BEGIN/END OPENSSH PRIVATE KEY 之间的 base64），
+    /// base64 解码后才是 "openssh-key-v1" 二进制头部；头部第二字段 ciphername
+    /// 不等于 "none" 表示私钥已加密（如 "aes256-ctr" + kdf "bcrypt"）。
+    /// 只读取文件头，不加载整个私钥，不记录任何 Secret；无法解析时按未加密处理。
+    private static func isEncryptedOpenSSHPrivateKey(at path: String) -> Bool {
+        guard
+            let fileData = FileManager.default.contents(atPath: path),
+            let text = String(data: fileData, encoding: .utf8)
+        else {
+            return false
+        }
+
+        let lines = text.components(separatedBy: .newlines)
+        guard
+            let beginIndex = lines.firstIndex(of: "-----BEGIN OPENSSH PRIVATE KEY-----"),
+            let endIndex = lines.firstIndex(of: "-----END OPENSSH PRIVATE KEY-----"),
+            beginIndex < endIndex
+        else {
+            return false
+        }
+
+        let base64 = lines[(beginIndex + 1)..<endIndex].joined()
+        guard let data = Data(base64Encoded: base64) else {
+            return false
+        }
+
+        let magic = Data("openssh-key-v1\0".utf8)
+        guard data.count > magic.count + 4,
+              data.prefix(magic.count) == magic
+        else {
+            return false
+        }
+
+        var offset = magic.count
+        guard let cipherLength = readUInt32(data, at: &offset),
+              cipherLength > 0,
+              offset + Int(cipherLength) <= data.count
+        else {
+            return false
+        }
+
+        let cipherName = String(
+            data: data[offset..<(offset + Int(cipherLength))],
+            encoding: .utf8
+        )
+        return cipherName != "none"
+    }
+
+    /// 读取 big-endian UInt32；不足 4 字节返回 nil。
+    private static func readUInt32(_ data: Data, at offset: inout Int) -> UInt32? {
+        guard offset + 4 <= data.count else { return nil }
+        let value = data.subdata(in: offset..<(offset + 4)).reduce(UInt32(0)) {
+            ($0 << 8) | UInt32($1)
+        }
+        offset += 4
+        return value
     }
 
     /// 查询服务器支持的认证方法列表；返回 nil 表示请求本身失败。
@@ -705,6 +1020,24 @@ actor SSHConnection {
     }
 
     // MARK: - 工具
+
+    /// 逐字节覆写 Secret 字节数组并尽快结束其生命周期。
+    ///
+    /// Swift 没有跨版本稳定暴露 explicit_bzero；统一入口便于 Password 与
+    /// Passphrase 保持相同安全标准，并作为测试 hook 验证清零机制。
+    /// defer 路径调用本方法，保证成功 / 失败 / 取消 / 异常路径都执行清理。
+    static func zeroSecretBytes(_ bytes: inout [CChar]) {
+        for index in bytes.indices {
+            bytes[index] = 0
+        }
+    }
+
+    /// `UnsafeMutableBufferPointer` 版本的 Secret 清零；用后立即覆写再释放。
+    static func zeroSecretBytes(_ buffer: UnsafeMutableBufferPointer<CChar>) {
+        for index in buffer.indices {
+            buffer[index] = 0
+        }
+    }
 
     private static func mapConnectError(_ errnoValue: Int32) -> SSHError {
         switch errnoValue {

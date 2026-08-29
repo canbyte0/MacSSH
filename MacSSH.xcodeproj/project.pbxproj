@@ -41,9 +41,14 @@
 		D10000000000000000000002 /* SSHConnectionState.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000002 /* SSHConnectionState.swift */; };
 		D10000000000000000000003 /* SSHConnection.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000003 /* SSHConnection.swift */; };
 		D10000000000000000000004 /* SSHService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* SSHService.swift */; };
+		D1000000000000000000000E /* KnownHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000C /* KnownHostService.swift */; };
+		A1000000000000000000001C /* KnownHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* KnownHost.swift */; };
 		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
+		D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000E /* HostKeyChangedDialogView.swift */; };
 		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
 		D1000000000000000000000A /* DependencyIdentityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000B /* DependencyIdentityTests.swift */; };
+		D1000000000000000000000F /* KnownHostServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000D /* KnownHostServiceTests.swift */; };
+		D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000011 /* HostEditorValidationTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -98,13 +103,18 @@
 		D20000000000000000000002 /* SSHConnectionState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionState.swift; sourceTree = "<group>"; };
 		D20000000000000000000003 /* SSHConnection.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnection.swift; sourceTree = "<group>"; };
 		D20000000000000000000004 /* SSHService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHService.swift; sourceTree = "<group>"; };
+		D2000000000000000000000C /* KnownHostService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownHostService.swift; sourceTree = "<group>"; };
+		A2000000000000000000001C /* KnownHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownHost.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
 		D20000000000000000000008 /* libssl.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libssl.a"; sourceTree = "<group>"; };
 		D20000000000000000000009 /* HostTrustDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostTrustDialogView.swift; sourceTree = "<group>"; };
+		D2000000000000000000000E /* HostKeyChangedDialogView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostKeyChangedDialogView.swift; sourceTree = "<group>"; };
 		D2000000000000000000000A /* SSHConnectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHConnectionTests.swift; sourceTree = "<group>"; };
 		D2000000000000000000000B /* DependencyIdentityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DependencyIdentityTests.swift; sourceTree = "<group>"; };
+		D2000000000000000000000D /* KnownHostServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownHostServiceTests.swift; sourceTree = "<group>"; };
+		D20000000000000000000011 /* HostEditorValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostEditorValidationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -184,6 +194,7 @@
 				A20000000000000000000016 /* AuthenticationType.swift */,
 				A20000000000000000000017 /* Host.swift */,
 				A20000000000000000000018 /* HostGroup.swift */,
+				A2000000000000000000001C /* KnownHost.swift */,
 				A20000000000000000000012 /* TerminalSession.swift */,
 			);
 			path = Models;
@@ -240,21 +251,31 @@
 		A4000000000000000000000A /* Tests */ = {
 			isa = PBXGroup;
 			children = (
-				C40000000000000000000001 /* Security */,
-				D40000000000000000000002 /* SSH */,
-			);
-			path = Tests;
-			sourceTree = "<group>";
-		};
-		D40000000000000000000002 /* SSH */ = {
-			isa = PBXGroup;
-			children = (
-				D2000000000000000000000A /* SSHConnectionTests.swift */,
-				D2000000000000000000000B /* DependencyIdentityTests.swift */,
-			);
-			path = SSH;
-			sourceTree = "<group>";
-		};
+			C40000000000000000000001 /* Security */,
+			D40000000000000000000002 /* SSH */,
+			D40000000000000000000003 /* Hosts */,
+		);
+		path = Tests;
+		sourceTree = "<group>";
+	};
+	D40000000000000000000002 /* SSH */ = {
+		isa = PBXGroup;
+		children = (
+			D2000000000000000000000A /* SSHConnectionTests.swift */,
+			D2000000000000000000000B /* DependencyIdentityTests.swift */,
+			D2000000000000000000000D /* KnownHostServiceTests.swift */,
+		);
+		path = SSH;
+		sourceTree = "<group>";
+	};
+	D40000000000000000000003 /* Hosts */ = {
+		isa = PBXGroup;
+		children = (
+			D20000000000000000000011 /* HostEditorValidationTests.swift */,
+		);
+		path = Hosts;
+		sourceTree = "<group>";
+	};
 		A4000000000000000000000B /* Products */ = {
 			isa = PBXGroup;
 			children = (
@@ -309,6 +330,7 @@
 				D20000000000000000000002 /* SSHConnectionState.swift */,
 				D20000000000000000000003 /* SSHConnection.swift */,
 				D20000000000000000000004 /* SSHService.swift */,
+				D2000000000000000000000C /* KnownHostService.swift */,
 			);
 			path = SSH;
 			sourceTree = "<group>";
@@ -372,6 +394,7 @@
 			isa = PBXGroup;
 			children = (
 				D20000000000000000000009 /* HostTrustDialogView.swift */,
+				D2000000000000000000000E /* HostKeyChangedDialogView.swift */,
 			);
 			path = Dialogs;
 			sourceTree = "<group>";
@@ -530,7 +553,10 @@
 				D10000000000000000000002 /* SSHConnectionState.swift in Sources */,
 				D10000000000000000000003 /* SSHConnection.swift in Sources */,
 				D10000000000000000000004 /* SSHService.swift in Sources */,
+				D1000000000000000000000E /* KnownHostService.swift in Sources */,
+				A1000000000000000000001C /* KnownHost.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
+				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -541,6 +567,8 @@
 				C10000000000000000000004 /* CredentialServiceTests.swift in Sources */,
 				D10000000000000000000009 /* SSHConnectionTests.swift in Sources */,
 				D1000000000000000000000A /* DependencyIdentityTests.swift in Sources */,
+				D1000000000000000000000F /* KnownHostServiceTests.swift in Sources */,
+				D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

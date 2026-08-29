@@ -23,14 +23,33 @@ enum SSHError: Error, Equatable, Sendable {
     case hostKeyUnavailable
     /// 用户在身份确认对话框选择了 Cancel。
     case hostTrustRejected
+    /// 服务器 Host Key 与已信任的记录不一致（中间人攻击或服务器重装）。
+    /// 这是硬性阻断：在用户明确替换之前，绝不发送任何 Password 或私钥。
+    case hostKeyChanged
+    /// 信任决策（Trust Always / Replace Trusted Key）的 KnownHost 持久化失败。
+    /// 安全决策必须成功落盘才允许继续认证；此错误表示连接已在认证前中止，
+    /// 未发送任何 Password 或私钥。
+    case knownHostPersistenceFailed
     /// Keychain 中找不到该 Host 保存的 Password。
     case credentialNotFound
     /// 服务器不支持 Password Authentication。
     case passwordAuthenticationUnsupported
     /// 用户名或密码被服务器拒绝。
     case authenticationFailed
-    /// Private Key Authentication 属于后续阶段，当前不可用。
-    case privateKeyAuthenticationUnavailable
+    /// Private Key Host 未配置私钥文件路径。
+    case privateKeyPathMissing
+    /// 配置的私钥文件不存在。
+    case privateKeyFileNotFound
+    /// 配置的私钥文件存在但无法读取（权限不足等）。
+    case privateKeyFileUnreadable
+    /// 私钥需要 Passphrase 但未配置，或 Keychain 中找不到对应 Passphrase。
+    case privateKeyPassphraseRequired
+    /// Passphrase 错误，无法解密私钥。
+    case privateKeyPassphraseIncorrect
+    /// 服务器不支持 publickey 认证方式。
+    case publicKeyAuthenticationUnsupported
+    /// 私钥认证被服务器拒绝（密钥不在 authorized_keys）或认证失败。
+    case privateKeyAuthenticationFailed
     /// 已建立的连接意外中断。
     case connectionLost
     /// 用户在连接过程中主动取消。
@@ -61,14 +80,30 @@ extension SSHError: LocalizedError {
             "The server identity could not be read after the handshake."
         case .hostTrustRejected:
             "The connection was cancelled because the server identity was not trusted."
+        case .hostKeyChanged:
+            "The server's host key has changed. The connection was blocked to protect against a possible man-in-the-middle attack."
+        case .knownHostPersistenceFailed:
+            "The trusted host key could not be saved, so the connection was closed before signing in. Please try again."
         case .credentialNotFound:
             "No saved password was found for this host. Save a password before connecting."
         case .passwordAuthenticationUnsupported:
             "This server does not support password authentication."
         case .authenticationFailed:
             "Authentication failed. Check your username and password."
-        case .privateKeyAuthenticationUnavailable:
-            "Private key authentication is not available in Phase 5."
+        case .privateKeyPathMissing:
+            "No private key file is configured for this host. Choose a private key before connecting."
+        case .privateKeyFileNotFound:
+            "The configured private key file could not be found. It may have been moved or deleted."
+        case .privateKeyFileUnreadable:
+            "The private key file exists but could not be read. Check its file permissions."
+        case .privateKeyPassphraseRequired:
+            "This private key requires a passphrase, but none is saved. Save a passphrase before connecting."
+        case .privateKeyPassphraseIncorrect:
+            "The saved passphrase is incorrect and could not decrypt the private key."
+        case .publicKeyAuthenticationUnsupported:
+            "This server does not support public key authentication."
+        case .privateKeyAuthenticationFailed:
+            "Private key authentication was rejected by the server. Check that the key is authorized."
         case .connectionLost:
             "The SSH connection was lost."
         case .cancelled:

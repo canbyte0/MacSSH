@@ -78,16 +78,35 @@ struct HostListView: View {
             HostGroupEditorView(group: request.group)
         }
         .sheet(item: hostTrustDialogBinding) { request in
-            HostTrustDialogView(
-                info: request.info,
-                onTrustOnce: {
-                    sshService.trustOnce(hostID: request.id)
-                },
-                onCancel: {
-                    sshService.cancelHostTrust(hostID: request.id)
-                }
-            )
-            .interactiveDismissDisabled(true)
+            // Phase 6：根据 KnownHost 验证结果决定显示未知主机对话框或 Host Key Changed 警告。
+            if case let .changed(storedFingerprint, storedKeyType) = request.info.hostKeyVerification {
+                HostKeyChangedDialogView(
+                    info: request.info,
+                    storedFingerprint: storedFingerprint,
+                    storedKeyType: storedKeyType,
+                    onReplace: {
+                        sshService.replaceTrustedKey(hostID: request.id)
+                    },
+                    onCancel: {
+                        sshService.cancelHostTrust(hostID: request.id)
+                    }
+                )
+                .interactiveDismissDisabled(true)
+            } else {
+                HostTrustDialogView(
+                    info: request.info,
+                    onTrustOnce: {
+                        sshService.trustOnce(hostID: request.id)
+                    },
+                    onTrustAlways: {
+                        sshService.trustAlways(hostID: request.id)
+                    },
+                    onCancel: {
+                        sshService.cancelHostTrust(hostID: request.id)
+                    }
+                )
+                .interactiveDismissDisabled(true)
+            }
         }
         .alert(
             "Delete Host?",

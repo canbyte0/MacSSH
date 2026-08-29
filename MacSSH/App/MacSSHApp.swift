@@ -20,7 +20,8 @@ struct MacSSHApp: App {
 
         let schema = Schema([
             Host.self,
-            HostGroup.self
+            HostGroup.self,
+            KnownHost.self
         ])
         let configuration = ModelConfiguration(
             "MacSSH",

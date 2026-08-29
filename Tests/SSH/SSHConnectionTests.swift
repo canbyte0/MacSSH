@@ -24,12 +24,36 @@ final class SSHConnectionTests: XCTestCase {
     /// 仅用于真实 SSH 验收；与测试脚本中的 account 保持一致，不属于生产 Host 数据。
     private let liveCredentialID = UUID(uuidString: "7d54a5bf-3032-4db2-9267-a643fe75c229")!
 
+    /// 测试专用私钥文件（由 Scripts/run-ssh-tests.sh 生成并在退出时删除）。
+    private enum TestKeys {
+        static let ed25519NoPass = "/tmp/macssh_phase6_ed25519"
+        static let ed25519WithPass = "/tmp/macssh_phase6_ed25519_pass"
+        /// 带 Passphrase 私钥的随机 Passphrase（脚本写入 600 权限临时文件；读后即删，不进任何日志）。
+        static let ed25519WithPassSecret = "/tmp/macssh_phase6_ed25519_pass.secret"
+        /// 未加入 authorized_keys 的私钥（用于“错误 Private Key”验收）。
+        static let unauthorized = "/tmp/macssh_phase6_ed25519_unauthorized"
+        static let rsa = "/tmp/macssh_phase6_rsa"
+        static let ecdsa = "/tmp/macssh_phase6_ecdsa"
+    }
+
     /// 每个测试独立的 Keychain 凭据标识。
     private var credentialID: UUID!
+
+    /// 每个测试独立的 KnownHost 持久化容器（内存），保证 KnownHost 状态不跨测试泄漏。
+    private var knownHostContainer: ModelContainer!
+    private var knownHostService: KnownHostService!
+
+    /// 测试中临时创建的 Private Key Passphrase 凭据；在 tearDown 统一清理。
+    private var extraPassphraseIDs: [UUID] = []
 
     override func setUp() async throws {
         continueAfterFailure = false
         credentialID = UUID()
+        extraPassphraseIDs = []
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        knownHostContainer = try ModelContainer(for: schema, configurations: [configuration])
+        knownHostService = KnownHostService(modelContainer: knownHostContainer)
     }
 
     override func tearDown() async throws {
@@ -37,6 +61,14 @@ final class SSHConnectionTests: XCTestCase {
         if let credentialID {
             _ = try? await CredentialService.shared.deletePassword(credentialID: credentialID)
         }
+        for passID in extraPassphraseIDs {
+            _ = try? await CredentialService.shared.deletePrivateKeyPassphrase(privateKeyID: passID)
+        }
+        extraPassphraseIDs.removeAll()
+        // 清理本测试可能持久化的 KnownHost，避免影响真实 App 的持久化存储（内存容器本身已隔离）。
+        await MainActor.run { knownHostService.removeAll() }
+        knownHostService = nil
+        knownHostContainer = nil
     }
 
     // MARK: - 测试 A：正确凭据完整流程
@@ -301,19 +333,21 @@ final class SSHConnectionTests: XCTestCase {
         }
     }
 
-    // MARK: - 测试 I：Private Key Host 明确不支持
+    // MARK: - 测试 I：Private Key Host 未配置私钥路径（Phase 6 前置校验）
 
     @MainActor
-    func testI_PrivateKeyHostExplicitlyUnavailable() async throws {
+    func testI_PrivateKeyHostWithoutPathFailsFast() async throws {
         let container = try makeInMemoryContainer()
         let context = container.mainContext
         let host = Host(
-            name: "Phase 5 Test Private Key",
+            name: "Phase 6 Test Private Key No Path",
             hostname: testHostname,
             port: Int(testPort),
             username: testUsername,
             authenticationType: .privateKey,
-            credentialID: nil
+            credentialID: nil,
+            privateKeyID: nil,
+            privateKeyPath: nil
         )
         context.insert(host)
 
@@ -323,13 +357,13 @@ final class SSHConnectionTests: XCTestCase {
         let info = service.connectionInfo(for: host.id)
         XCTAssertNotNil(info)
         if case let .failed(error) = info?.phase {
-            XCTAssertEqual(error, .privateKeyAuthenticationUnavailable)
+            XCTAssertEqual(error, .privateKeyPathMissing)
             XCTAssertEqual(
                 info?.failureMessage,
-                "Private key authentication is not available in Phase 5."
+                SSHError.privateKeyPathMissing.errorDescription
             )
         } else {
-            XCTFail("Private Key Host 应明确提示 Phase 5 不支持")
+            XCTFail("无路径的 Private Key Host 应立即 failed(.privateKeyPathMissing)，实际：\(String(describing: info?.phase))")
         }
     }
 
@@ -467,6 +501,810 @@ final class SSHConnectionTests: XCTestCase {
         )
     }
 
+    // MARK: - 测试 J：Trust Always 持久化 + 第二次连接免对话框（Phase 6 A+B）
+
+    /// 首次 Trust Always → KnownHost 持久化；第二次连接（同一 knownHostService）直接 trusted，
+    /// 不再进入 awaitingHostTrust 即到达 connected。证明不是内存缓存。
+    func testJ_TrustAlwaysPersistsAndSecondConnectSkipsDialog() async throws {
+        try await requireLocalSSHAndLiveCredential()
+
+        // 第一次连接：未知主机 → Trust Always → connected，并持久化 KnownHost。
+        let info1 = makeInfo()
+        let connection1 = makeConnection(info: info1, credentialID: liveCredentialID)
+        let task1 = Task { await connection1.connect() }
+
+        _ = try await waitForPhase(info1, "首次等待 Host Trust") { $0 == .awaitingHostTrust }
+        let verification1 = await MainActor.run { info1.hostKeyVerification }
+        XCTAssertEqual(verification1, .unknown, "首次连接应为未知主机")
+
+        await connection1.resolveHostTrust(.trustAlways)
+        _ = try await waitForPhase(info1, "Trust Always 后 connected") { $0 == .connected }
+
+        // KnownHost 必须已持久化（hostname + port 命中）。
+        let stored = await MainActor.run {
+            knownHostService.lookup(hostname: testHostname, port: Int(testPort))
+        }
+        XCTAssertNotNil(stored, "Trust Always 必须写入 KnownHost")
+        XCTAssertFalse(stored?.hostKey.isEmpty ?? true, "KnownHost 必须保存完整 Host Key 字节")
+
+        await connection1.disconnect()
+        _ = try await waitForPhase(info1, "首次断开") { $0 == .disconnected }
+        _ = await task1.result
+
+        // 第二次连接（新 SSHConnection，复用同一 knownHostService）：
+        // Host Key 匹配 → trusted → 直接认证，不进入 awaitingHostTrust。
+        let info2 = makeInfo()
+        let connection2 = makeConnection(info: info2, credentialID: liveCredentialID)
+        let task2 = Task { await connection2.connect() }
+
+        _ = try await waitForPhase(info2, "第二次连接直接 connected", timeout: 20) { $0 == .connected }
+        let verification2 = await MainActor.run { info2.hostKeyVerification }
+        XCTAssertEqual(verification2, .trusted, "第二次连接 Host Key 应匹配已信任记录")
+
+        await connection2.disconnect()
+        _ = try await waitForPhase(info2, "第二次断开") { $0 == .disconnected }
+        _ = await task2.result
+    }
+
+    // MARK: - 测试 K：Host Key Changed 硬性阻断，绝不发送凭据（Phase 6 D，无需凭据）
+
+    /// 预置一个错误的 KnownHost（与真实服务器 Host Key 不同），
+    /// 连接应识别为 changed 并在认证前阻断；Cancel 后以 hostKeyChanged 失败，
+    /// 全程不进入 authenticating。
+    func testK_HostKeyChangedBlocksBeforeAuth() async throws {
+        try await requireLocalSSH()
+
+        // 预置错误 KnownHost：用一段不可能匹配真实 Host Key 的字节。
+        let bogusKey = Data(repeating: 0xDE, count: 33)
+        _ = try knownHostService.trust(
+            hostname: testHostname,
+            port: Int(testPort),
+            keyType: "ssh-ed25519",
+            hostKey: bogusKey,
+            fingerprint: "SHA256:bbbbogusbbbbogusbbbbogusbbbbogusbbbbogusbbb="
+        )
+
+        let info = makeInfo()
+        // 即使存在凭据也不会被使用；不保存任何真实 Secret。
+        let connection = makeConnection(info: info, credentialID: nil)
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "Changed 后等待 Host Trust") { $0 == .awaitingHostTrust }
+        let verification = await MainActor.run { info.hostKeyVerification }
+        if case .changed = verification {
+            // 期望：changed
+        } else {
+            XCTFail("Host Key 不匹配时应为 .changed，实际：\(String(describing: verification))")
+        }
+
+        // Cancel：必须以 hostKeyChanged 失败，绝不进入认证。
+        await connection.resolveHostTrust(.cancel)
+
+        let final = try await waitForPhase(info, "Changed Cancel 后阻断", timeout: 10) {
+            if case let .failed(error) = $0 { return error == .hostKeyChanged }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(error, .hostKeyChanged, "Changed 阻断不得发送 Password 或私钥")
+            XCTAssertNotEqual(error, .authenticationFailed, "阻断阶段绝不能发送凭据")
+        }
+
+        await connection.disconnect()
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 L：ED25519 私钥（无 Passphrase）认证成功（Phase 6）
+
+    /// 使用测试专用 ed25519 私钥（无 Passphrase）认证。
+    /// 测试 key 由 Scripts/run-ssh-tests.sh 生成并加入 authorized_keys，测试结束删除。
+    func testL_PrivateKeyEd25519NoPassphraseAuthenticates() async throws {
+        try await requireLocalSSH()
+        let keyPath = TestKeys.ed25519NoPass
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: keyPath),
+            "缺少测试 ed25519 私钥：请使用 Scripts/run-ssh-tests.sh 生成并加入 authorized_keys"
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: keyPath,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "私钥连接等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        _ = try await waitForPhase(info, "私钥认证成功 connected", timeout: 20) { $0 == .connected }
+
+        await connection.disconnect()
+        _ = try await waitForPhase(info, "私钥连接断开") { $0 == .disconnected }
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 M：错误 Passphrase 认证失败（Phase 6）
+
+    /// 使用带 Passphrase 的测试私钥，但保存一个错误 Passphrase，
+    /// 应得到 privateKeyPassphraseIncorrect，不崩溃、不泄漏 Passphrase。
+    func testM_WrongPassphraseFails() async throws {
+        try await requireLocalSSH()
+        let keyPath = TestKeys.ed25519WithPass
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: keyPath),
+            "缺少测试带 Passphrase 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        // 保存一个确定错误的 Passphrase；在 tearDown 统一清理。
+        let wrongPassID = UUID()
+        extraPassphraseIDs.append(wrongPassID)
+        try await CredentialService.shared.savePrivateKeyPassphrase(
+            "macssh-wrong-passphrase-\(UUID().uuidString)",
+            privateKeyID: wrongPassID
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: keyPath,
+            privateKeyID: wrongPassID
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "私钥连接等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        let final = try await waitForPhase(info, "错误 Passphrase 得到失败", timeout: 20) {
+            if case let .failed(error) = $0 {
+                return error == .privateKeyPassphraseIncorrect
+            }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(error, .privateKeyPassphraseIncorrect)
+        }
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 N：私钥文件不存在（Phase 6 Fix：保存有效路径后文件被删除）
+
+    /// 模拟“Host 保存了有效私钥路径、之后文件被删除”：
+    /// 复制有效测试私钥到临时路径后立即删除，连接必须以 privateKeyFileNotFound 失败，
+    /// 不卡在认证中。
+    func testN_PrivateKeyFileNotFound() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ed25519NoPass),
+            "缺少测试 ed25519 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let deletedKeyPath = "/tmp/macssh_phase6_deleted_\(UUID().uuidString)"
+        try FileManager.default.copyItem(atPath: TestKeys.ed25519NoPass, toPath: deletedKeyPath)
+        try FileManager.default.removeItem(atPath: deletedKeyPath)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: deletedKeyPath))
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: deletedKeyPath,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        let final = try await waitForPhase(info, "私钥文件不存在失败", timeout: 15) {
+            if case let .failed(error) = $0 { return error == .privateKeyFileNotFound }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(error, .privateKeyFileNotFound)
+        }
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 O：Trust Always 持久化失败必须中止认证（Phase 6 Fix 安全阻塞项）
+
+    /// Trust Always → KnownHost save failure → Authentication MUST NOT start。
+    ///
+    /// 注入“读正常、写失败”的 KnownHostService；knownHostPersistenceFailed 只可能由
+    /// 信任决策持久化失败抛出，且抛出点位于进入 authenticating 之前——
+    /// 若实现错误地继续认证，会得到 credentialNotFound / authenticationFailed 而非本错误。
+    /// 同时高频采样阶段历史，双重验证从未进入 authenticating。
+    func testO_TrustAlwaysPersistFailureBlocksAuthentication() async throws {
+        try await requireLocalSSH()
+
+        let failingService = makeFailingSaveKnownHostService()
+        let info = makeInfo()
+        // credentialID 为 nil：错误地继续认证会得到 credentialNotFound，可被断言区分。
+        let connection = makeConnection(info: info, credentialID: nil, knownHostService: failingService)
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        let verification = await MainActor.run { info.hostKeyVerification }
+        XCTAssertEqual(verification, .unknown, "无已存记录时应为未知主机")
+
+        let recorder = PhaseRecorder()
+        let sampler = Task {
+            while !Task.isCancelled {
+                let phase = await MainActor.run { info.phase }
+                recorder.record(phase)
+                if phase == .disconnected || Self.isFailed(phase) { break }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        defer { sampler.cancel() }
+
+        await connection.resolveHostTrust(.trustAlways)
+
+        let final = try await waitForPhase(info, "Trust Always 持久化失败必须显式失败", timeout: 15) {
+            if case let .failed(error) = $0 { return error == .knownHostPersistenceFailed }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(
+                error,
+                .knownHostPersistenceFailed,
+                "KnownHost 保存失败必须中止认证并返回明确业务错误"
+            )
+        }
+
+        try await Task.sleep(nanoseconds: 200_000_000) // 让采样器收尾。
+        XCTAssertFalse(
+            recorder.sawAuthenticating,
+            "持久化失败后绝不能进入 authenticating（采样到的阶段均未包含）"
+        )
+
+        // 保存失败后不得残留任何信任记录（回滚验证）。
+        let stored = knownHostService.lookup(hostname: testHostname, port: Int(testPort))
+        XCTAssertNil(stored, "持久化失败后不得留下内存中的信任记录")
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 P：Replace Trusted Key 持久化失败必须中止认证（Phase 6 Fix 安全阻塞项）
+
+    /// Host Key Changed → Replace → Persist failure → Authentication not called → 连接显式失败。
+    /// 旧 KnownHost 不得被错误标记为已成功替换。
+    func testP_ReplaceTrustedKeyPersistFailureBlocksAuthentication() async throws {
+        try await requireLocalSSH()
+
+        // 正常服务预置与真实服务器不同的旧 Host Key（Changed 前提）。
+        let bogusKey = Data(repeating: 0xDE, count: 33)
+        _ = try knownHostService.trust(
+            hostname: testHostname,
+            port: Int(testPort),
+            keyType: "ssh-ed25519",
+            hostKey: bogusKey,
+            fingerprint: "SHA256:oldbogusoldbogusoldbogusoldbogusoldbogusold="
+        )
+
+        let failingService = makeFailingSaveKnownHostService()
+        let info = makeInfo()
+        let connection = makeConnection(info: info, credentialID: nil, knownHostService: failingService)
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Key Changed 警告") { $0 == .awaitingHostTrust }
+        let verification = await MainActor.run { info.hostKeyVerification }
+        guard case .changed = verification else {
+            XCTFail("预置旧 Key 与真实 Key 不同时应为 .changed，实际：\(String(describing: verification))")
+            return
+        }
+
+        let recorder = PhaseRecorder()
+        let sampler = Task {
+            while !Task.isCancelled {
+                let phase = await MainActor.run { info.phase }
+                recorder.record(phase)
+                if phase == .disconnected || Self.isFailed(phase) { break }
+                try? await Task.sleep(nanoseconds: 10_000_000)
+            }
+        }
+        defer { sampler.cancel() }
+
+        // 用户选择 Replace（UI 二次确认之后的决策）。
+        await connection.resolveHostTrust(.replaceTrustedKey)
+
+        let final = try await waitForPhase(info, "Replace 持久化失败必须显式失败", timeout: 15) {
+            if case let .failed(error) = $0 { return error == .knownHostPersistenceFailed }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(
+                error,
+                .knownHostPersistenceFailed,
+                "替换保存失败必须中止认证并返回明确业务错误"
+            )
+        }
+
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertFalse(
+            recorder.sawAuthenticating,
+            "替换持久化失败后绝不能进入 authenticating"
+        )
+
+        // 旧 KnownHost 保持原样（不得被标记为已成功替换）。
+        let stored = knownHostService.lookup(hostname: testHostname, port: Int(testPort))
+        XCTAssertEqual(stored?.hostKey, bogusKey, "替换失败后旧 KnownHost 必须保持不变")
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 Q：Replace Trusted Key 成功后重连免警告（Phase 6 Fix 真实验收）
+
+    /// 预置旧 Key（与真实服务器不同，等价于服务器换钥后的客户端视角）→
+    /// Changed 警告 → Replace → 持久化成功 → Private Key 认证 → Connected；
+    /// 再次连接：当前 Key 与新保存的 Key 匹配 → 无警告、直接 Connected。
+    func testQ_ReplaceTrustedKeyPersistsAndReconnectsWithoutWarning() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ed25519NoPass),
+            "缺少测试 ed25519 私钥：请使用 Scripts/run-ssh-tests.sh 生成并加入 authorized_keys"
+        )
+
+        let bogusKey = Data(repeating: 0xDE, count: 33)
+        _ = try knownHostService.trust(
+            hostname: testHostname,
+            port: Int(testPort),
+            keyType: "ssh-ed25519",
+            hostKey: bogusKey,
+            fingerprint: "SHA256:oldbogusoldbogusoldbogusoldbogusoldbogusold="
+        )
+
+        // 第一次连接：Changed → Replace → 持久化 → 私钥认证 → Connected。
+        let info1 = makeInfo()
+        let connection1 = makeConnection(
+            info: info1,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.ed25519NoPass,
+            privateKeyID: nil
+        )
+        let task1 = Task { await connection1.connect() }
+
+        _ = try await waitForPhase(info1, "等待 Host Key Changed 警告") { $0 == .awaitingHostTrust }
+        let verification1 = await MainActor.run { info1.hostKeyVerification }
+        guard case .changed = verification1 else {
+            XCTFail("预置旧 Key 不同时应为 .changed，实际：\(String(describing: verification1))")
+            return
+        }
+
+        await connection1.resolveHostTrust(.replaceTrustedKey)
+        _ = try await waitForPhase(info1, "Replace 后私钥认证成功", timeout: 20) { $0 == .connected }
+
+        // 替换后的 KnownHost 必须已保存真实服务器 Key。
+        let realKey = await MainActor.run { info1.hostKey?.hostKeyBlob }
+        let stored = knownHostService.lookup(hostname: testHostname, port: Int(testPort))
+        XCTAssertEqual(stored?.hostKey, realKey, "Replace 必须持久化当前真实 Host Key")
+
+        await connection1.disconnect()
+        _ = try await waitForPhase(info1, "首次断开") { $0 == .disconnected }
+        _ = await task1.result
+
+        // 第二次连接：Key 匹配新保存记录 → 不再警告，直接认证连接。
+        let info2 = makeInfo()
+        let connection2 = makeConnection(
+            info: info2,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.ed25519NoPass,
+            privateKeyID: nil
+        )
+        let task2 = Task { await connection2.connect() }
+
+        _ = try await waitForPhase(info2, "第二次连接直接 connected", timeout: 20) { $0 == .connected }
+        let verification2 = await MainActor.run { info2.hostKeyVerification }
+        XCTAssertEqual(verification2, .trusted, "第二次连接 Host Key 应匹配替换后的记录")
+
+        await connection2.disconnect()
+        _ = try await waitForPhase(info2, "第二次断开") { $0 == .disconnected }
+        _ = await task2.result
+    }
+
+    // MARK: - 测试 R：Trust Always 落盘持久化（容器重建等价于 App 重启）
+
+    /// Trust Always 写入的是磁盘 SwiftData 存储；用同一 store URL 重建 ModelContainer
+    /// （等价于完全退出后重新启动的持久化语义），第二次连接免对话框直达 connected。
+    func testR_TrustAlwaysOnDiskPersistenceAcrossContainerReload() async throws {
+        try await requireLocalSSHAndLiveCredential()
+
+        let storeURL = URL(fileURLWithPath: "/tmp/macssh_phase6_ondisk_\(UUID().uuidString).store")
+        defer {
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: storeURL.path + suffix))
+            }
+        }
+
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let onDiskConfiguration = ModelConfiguration(schema: schema, url: storeURL)
+        let container1 = try ModelContainer(for: schema, configurations: [onDiskConfiguration])
+        let service1 = KnownHostService(modelContainer: container1)
+
+        // 第一次连接：Trust Always → 认证成功 → 落盘。
+        let info1 = makeInfo()
+        let connection1 = SSHConnection(
+            configuration: makeConfiguration(info: info1, credentialID: liveCredentialID),
+            info: info1,
+            knownHostService: service1
+        )
+        let task1 = Task { await connection1.connect() }
+
+        _ = try await waitForPhase(info1, "首次等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection1.resolveHostTrust(.trustAlways)
+        _ = try await waitForPhase(info1, "Trust Always 后 connected") { $0 == .connected }
+        await connection1.disconnect()
+        _ = try await waitForPhase(info1, "首次断开") { $0 == .disconnected }
+        _ = await task1.result
+
+        // 重建容器（等价于重启后从磁盘加载）：必须读到已保存的 KnownHost。
+        let container2 = try ModelContainer(for: schema, configurations: [onDiskConfiguration])
+        let service2 = KnownHostService(modelContainer: container2)
+        let reloaded = service2.lookup(hostname: testHostname, port: Int(testPort))
+        XCTAssertNotNil(reloaded, "Trust Always 必须真实落盘，容器重建后仍可读取")
+        let firstHostKey = await MainActor.run { info1.hostKey?.hostKeyBlob }
+        XCTAssertEqual(
+            reloaded?.hostKey,
+            firstHostKey,
+            "落盘的必须是真实服务器 Host Key"
+        )
+
+        // 第二次连接（新容器 + 新服务）：免对话框直接 connected。
+        let info2 = makeInfo()
+        let connection2 = SSHConnection(
+            configuration: makeConfiguration(info: info2, credentialID: liveCredentialID),
+            info: info2,
+            knownHostService: service2
+        )
+        let task2 = Task { await connection2.connect() }
+
+        _ = try await waitForPhase(info2, "重启等价后直接 connected", timeout: 20) { $0 == .connected }
+        let verification2 = await MainActor.run { info2.hostKeyVerification }
+        XCTAssertEqual(verification2, .trusted)
+
+        await connection2.disconnect()
+        _ = try await waitForPhase(info2, "第二次断开") { $0 == .disconnected }
+        _ = await task2.result
+    }
+
+    // MARK: - 测试 S：Forget Known Host 后回到 Unknown Host（回归）
+
+    /// Trust Always 持久化 → Forget（remove）→ 重新连接必须重新出现 Unknown Host 对话框。
+    func testS_ForgetRestoresUnknownHostDialog() async throws {
+        try await requireLocalSSH()
+
+        // 第一次连接：Trust Always 持久化（credentialID 为 nil，认证会失败，
+        // 但信任记录在认证开始前已写入；失败状态不影响本测试关注点）。
+        let info1 = makeInfo()
+        let connection1 = makeConnection(info: info1, credentialID: nil)
+        let task1 = Task { await connection1.connect() }
+
+        _ = try await waitForPhase(info1, "首次等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection1.resolveHostTrust(.trustAlways)
+        _ = try await waitForPhase(info1, "首次连接终结", timeout: 15) {
+            $0 == .failed(.credentialNotFound) || $0 == .connected
+        }
+        await connection1.disconnect()
+        _ = await task1.result
+
+        let stored = knownHostService.lookup(hostname: testHostname, port: Int(testPort))
+        XCTAssertNotNil(stored, "Trust Always 应已写入记录")
+
+        // Forget：删除信任记录。
+        try knownHostService.remove(stored!)
+        XCTAssertNil(knownHostService.lookup(hostname: testHostname, port: Int(testPort)))
+
+        // 重新连接：必须重新出现 Unknown Host 对话框（Trust Once / Trust Always / Cancel）。
+        let info2 = makeInfo()
+        let connection2 = makeConnection(info: info2, credentialID: nil)
+        let task2 = Task { await connection2.connect() }
+
+        _ = try await waitForPhase(info2, "Forget 后重新等待 Host Trust") { $0 == .awaitingHostTrust }
+        let verification2 = await MainActor.run { info2.hostKeyVerification }
+        XCTAssertEqual(verification2, .unknown, "Forget 后再次连接必须回到 Unknown Host")
+
+        await connection2.resolveHostTrust(.cancel)
+        _ = try await waitForPhase(info2, "Cancel 后结束", timeout: 10) {
+            $0 == .disconnected || $0 == .failed(.hostTrustRejected)
+        }
+        await connection2.disconnect()
+        _ = await task2.result
+    }
+
+    // MARK: - 测试 T：未授权 Private Key 认证失败（不回退 Password）
+
+    /// 使用未加入 authorized_keys 的私钥：必须 privateKeyAuthenticationFailed，
+    /// 不崩溃、不卡死、不自动尝试 Password。
+    func testT_UnauthorizedPrivateKeyFails() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.unauthorized),
+            "缺少未授权测试私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.unauthorized,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        let final = try await waitForPhase(info, "未授权私钥认证失败", timeout: 20) {
+            if case let .failed(error) = $0 { return error == .privateKeyAuthenticationFailed }
+            return false
+        }
+        if case let .failed(error) = final {
+            XCTAssertEqual(
+                error,
+                .privateKeyAuthenticationFailed,
+                "未授权私钥必须 privateKeyAuthenticationFailed，且不得自动回退 Password"
+            )
+        }
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 U：正确 Passphrase 认证成功（Phase 6 Fix 真实验收）
+
+    /// ED25519 + Passphrase：Passphrase 经 CredentialService 存入 Keychain，
+    /// 真实连接读取并解密私钥认证成功。Passphrase 值不进入任何日志、断言或输出。
+    func testU_CorrectPassphraseAuthenticates() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ed25519WithPass)
+                && FileManager.default.fileExists(atPath: TestKeys.ed25519WithPassSecret),
+            "缺少带 Passphrase 测试私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        // 读取脚本生成的随机 Passphrase 后立即删除临时文件；
+        // 通过 CredentialService（真实 Keychain）保存，tearDown 统一清理。
+        let passphrase = try String(
+            contentsOf: URL(fileURLWithPath: TestKeys.ed25519WithPassSecret),
+            encoding: .utf8
+        ).trimmingCharacters(in: .whitespacesAndNewlines)
+        try? FileManager.default.removeItem(atPath: TestKeys.ed25519WithPassSecret)
+        XCTAssertFalse(passphrase.isEmpty)
+
+        let passID = UUID()
+        extraPassphraseIDs.append(passID)
+        try await CredentialService.shared.savePrivateKeyPassphrase(passphrase, privateKeyID: passID)
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.ed25519WithPass,
+            privateKeyID: passID
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        _ = try await waitForPhase(info, "正确 Passphrase 认证成功", timeout: 20) { $0 == .connected }
+
+        await connection.disconnect()
+        _ = try await waitForPhase(info, "断开") { $0 == .disconnected }
+        _ = await connectTask.result
+    }
+
+    // MARK: - 测试 V / W：RSA / ECDSA 私钥认证（真实测试边界）
+
+    /// RSA 私钥（无 Passphrase）真实认证。只有真实执行通过才算“已验证支持”。
+    func testV_RSAKeyAuthenticates() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.rsa),
+            "缺少测试 RSA 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.rsa,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        _ = try await waitForPhase(info, "RSA 私钥认证成功", timeout: 20) { $0 == .connected }
+
+        await connection.disconnect()
+        _ = try await waitForPhase(info, "断开") { $0 == .disconnected }
+        _ = await connectTask.result
+    }
+
+    /// ECDSA 私钥（无 Passphrase）真实认证。只有真实执行通过才算“已验证支持”。
+    func testW_ECDSAKeyAuthenticates() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ecdsa),
+            "缺少测试 ECDSA 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.ecdsa,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+
+        _ = try await waitForPhase(info, "ECDSA 私钥认证成功", timeout: 20) { $0 == .connected }
+
+        await connection.disconnect()
+        _ = try await waitForPhase(info, "断开") { $0 == .disconnected }
+        _ = await connectTask.result
+    }
+
+    // MARK: - 20 次 Private Key Connect / Disconnect 资源泄漏验证（Phase 6 Fix）
+
+    func test_TwentyPrivateKeyConnectDisconnectCyclesNoLeak() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ed25519NoPass),
+            "缺少测试 ed25519 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let fdProbeBefore = probeFileDescriptor()
+        let threadsBefore = threadCount()
+        let memoryBefore = residentMemoryBytes()
+
+        for cycle in 1...20 {
+            let info = makeInfo()
+            let connection = makeConnection(
+                info: info,
+                credentialID: nil,
+                authenticationType: .privateKey,
+                privateKeyPath: TestKeys.ed25519NoPass,
+                privateKeyID: nil
+            )
+            let connectTask = Task { await connection.connect() }
+
+            _ = try await waitForPhase(
+                info,
+                "第 \(cycle) 轮等待 Host Trust",
+                timeout: 15
+            ) { $0 == .awaitingHostTrust }
+
+            await connection.resolveHostTrust(.trustOnce)
+
+            _ = try await waitForPhase(
+                info,
+                "第 \(cycle) 轮私钥连接成功",
+                timeout: 20
+            ) { $0 == .connected }
+
+            await connection.disconnect()
+            _ = try await waitForPhase(info, "第 \(cycle) 轮断开") { $0 == .disconnected }
+
+            _ = await connectTask.result
+        }
+
+        let fdProbeAfter = probeFileDescriptor()
+        let threadsAfter = threadCount()
+        let memoryAfter = residentMemoryBytes()
+
+        XCTAssertLessThanOrEqual(
+            fdProbeAfter - fdProbeBefore,
+            2,
+            "20 次私钥连接后 FD 不应持续增长（before=\(fdProbeBefore), after=\(fdProbeAfter)）"
+        )
+        XCTAssertLessThanOrEqual(
+            threadsAfter - threadsBefore,
+            4,
+            "20 次私钥连接后线程数不应持续增长（before=\(threadsBefore), after=\(threadsAfter)）"
+        )
+        XCTAssertLessThanOrEqual(
+            memoryAfter - memoryBefore,
+            32 * 1024 * 1024,
+            "20 次私钥连接后常驻内存不应持续增长（before=\(memoryBefore), after=\(memoryAfter)）"
+        )
+    }
+
+    // MARK: - Private Key 连接空闲 CPU 验证（Phase 6 Fix）
+
+    func test_IdleCPUAfterPrivateKeyConnected() async throws {
+        try await requireLocalSSH()
+        try XCTSkipUnless(
+            FileManager.default.fileExists(atPath: TestKeys.ed25519NoPass),
+            "缺少测试 ed25519 私钥：请使用 Scripts/run-ssh-tests.sh 生成"
+        )
+
+        let info = makeInfo()
+        let connection = makeConnection(
+            info: info,
+            credentialID: nil,
+            authenticationType: .privateKey,
+            privateKeyPath: TestKeys.ed25519NoPass,
+            privateKeyID: nil
+        )
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+        _ = try await waitForPhase(info, "私钥连接成功", timeout: 20) { $0 == .connected }
+
+        // 认证成功进入 Connected 后空闲 30 秒：不得 EAGAIN busy-loop。
+        let usageBefore = Self.processCPUSeconds()
+        try await Task.sleep(nanoseconds: 30_000_000_000)
+        let cpuDelta = Self.processCPUSeconds() - usageBefore
+
+        XCTAssertLessThanOrEqual(
+            cpuDelta,
+            1.0,
+            "私钥连接空闲 30 秒 CPU 增量应接近 0（实测 \(String(format: "%.3f", cpuDelta)) 秒）"
+        )
+
+        await connection.disconnect()
+        _ = await connectTask.result
+    }
+
+    // MARK: - Secret 字节清零机制（Phase 6 Fix：Passphrase 清零测试边界）
+
+    /// 直接断言清零机制本身。真实成功路径（testL/testU）与失败路径（testM/testT）
+    /// 都执行 defer 清零代码路径；物理内存清零无法从 Swift 直接断言，
+    /// 该边界在 DevelopmentStatus 中如实说明。
+    func test_zeroSecretBytesOverwritesArray() {
+        var bytes = Array("macssh-secret-test-value".utf8CString)
+        XCTAssertTrue(
+            bytes.contains { $0 != 0 },
+            "前置：缓冲区应含非零 Secret 字节"
+        )
+
+        SSHConnection.zeroSecretBytes(&bytes)
+
+        XCTAssertTrue(
+            bytes.allSatisfy { $0 == 0 },
+            "清零后所有字节必须为 0"
+        )
+    }
+
+    func test_zeroSecretBytesOverwritesManualBuffer() {
+        let buffer = UnsafeMutableBufferPointer<CChar>.allocate(capacity: 16)
+        defer { buffer.deallocate() }
+        for index in 0..<16 {
+            buffer[index] = CChar(truncatingIfNeeded: 0x41 + index)
+        }
+
+        SSHConnection.zeroSecretBytes(buffer)
+
+        XCTAssertTrue(
+            buffer.allSatisfy { $0 == 0 },
+            "清零后手动缓冲区所有字节必须为 0"
+        )
+    }
+
     // MARK: - 辅助
 
     private func makeInfo() -> SSHConnectionInfo {
@@ -478,20 +1316,79 @@ final class SSHConnectionTests: XCTestCase {
         )
     }
 
-    /// 构造被测连接；credentialID 为 nil 表示无凭据配置。
-    private func makeConnection(
+    private func makeConfiguration(
         info: SSHConnectionInfo,
-        credentialID: UUID?
-    ) -> SSHConnection {
-        let config = SSHConnection.Configuration(
+        credentialID: UUID?,
+        authenticationType: AuthenticationType = .password,
+        privateKeyPath: String? = nil,
+        privateKeyID: UUID? = nil
+    ) -> SSHConnection.Configuration {
+        SSHConnection.Configuration(
             hostID: info.hostID,
             hostname: info.hostname,
             port: info.port,
             username: info.username,
-            authenticationType: .password,
-            credentialID: credentialID
+            authenticationType: authenticationType,
+            credentialID: credentialID,
+            privateKeyPath: privateKeyPath,
+            privateKeyID: privateKeyID
         )
-        return SSHConnection(configuration: config, info: info)
+    }
+
+    /// 构造被测连接；credentialID 为 nil 表示无凭据配置；
+    /// knownHostService 可注入“保存失败”的服务以覆盖持久化失败路径。
+    private func makeConnection(
+        info: SSHConnectionInfo,
+        credentialID: UUID?,
+        authenticationType: AuthenticationType = .password,
+        privateKeyPath: String? = nil,
+        privateKeyID: UUID? = nil,
+        knownHostService service: KnownHostService? = nil
+    ) -> SSHConnection {
+        let config = makeConfiguration(
+            info: info,
+            credentialID: credentialID,
+            authenticationType: authenticationType,
+            privateKeyPath: privateKeyPath,
+            privateKeyID: privateKeyID
+        )
+        return SSHConnection(
+            configuration: config,
+            info: info,
+            knownHostService: service ?? knownHostService
+        )
+    }
+
+    /// 注入“读正常、写失败”的 KnownHostService（共享本测试的内存容器）。
+    private func makeFailingSaveKnownHostService() -> KnownHostService {
+        KnownHostService(modelContainer: knownHostContainer) { _ in
+            throw NSError(domain: "SSHConnectionTests", code: 1)
+        }
+    }
+
+    private static func isFailed(_ phase: SSHConnectionPhase) -> Bool {
+        if case .failed = phase { return true }
+        return false
+    }
+
+    /// 高频采样连接阶段历史，用于断言“从未进入 authenticating”。
+    /// 与终态错误断言（knownHostPersistenceFailed 只能在进入 authenticating 之前抛出）
+    /// 互为补充的双重验证。
+    private final class PhaseRecorder: @unchecked Sendable {
+        private let lock = NSLock()
+        private var samples: [SSHConnectionPhase] = []
+
+        func record(_ phase: SSHConnectionPhase) {
+            lock.lock()
+            defer { lock.unlock() }
+            samples.append(phase)
+        }
+
+        var sawAuthenticating: Bool {
+            lock.lock()
+            defer { lock.unlock() }
+            return samples.contains { $0 == .authenticating }
+        }
     }
 
     /// 轮询等待阶段满足条件；超时记录失败并返回最后状态。
@@ -515,7 +1412,7 @@ final class SSHConnectionTests: XCTestCase {
     }
 
     private func makeInMemoryContainer() throws -> ModelContainer {
-        let schema = Schema([Host.self, HostGroup.self])
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: [configuration])
     }
@@ -640,6 +1537,21 @@ final class SSHConnectionTests: XCTestCase {
             size
         )
         return Int(count)
+    }
+
+    /// 当前进程常驻内存（字节），用于 20 次连接循环的内存增长检查。
+    private func residentMemoryBytes() -> Int64 {
+        var info = mach_task_basic_info_data_t()
+        var count = mach_msg_type_number_t(
+            MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size
+        )
+        let kr = withUnsafeMutablePointer(to: &info) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return -1 }
+        return Int64(info.resident_size)
     }
 
     /// 进程累计 CPU 时间（用户 + 系统，秒）。

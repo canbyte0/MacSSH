@@ -43,3 +43,6 @@ ThirdParty/openssl/lib/pkgconfig/
 ThirdParty/openssl/openssl.cnf
 ThirdParty/openssl/ct_log_list.cnf
 ThirdParty/openssl/*.dist
+
+# LLVM profiling output (build/test artifacts, not source)
+*.profraw
