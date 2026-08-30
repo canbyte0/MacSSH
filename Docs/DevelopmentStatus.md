@@ -937,11 +937,563 @@ Passphrase 清零测试边界（如实说明）：
   密码），脚本退出自动清理；本轮验证结束后确认测试密钥与 Keychain item 已清理。
 - 其余无未解决的功能缺陷。
 
+### Phase 7：Remote SSH Terminal
+
+状态：**第三轮验收未通过（P1 并发断开 double-free）；已按验收意见完成整改，等待复验**
+
+完成日期：2026-08-29（初版）／ 2026-08-29（第一轮整改）／
+2026-08-30（第二、三轮整改）
+
+#### 1. 总体架构
+
+在 Phase 5/6 已建立的 SSH 安全架构之上，把已认证的 `SSHConnection` 接入
+SwiftTerm，形成真正可交互的 Remote SSH Terminal：
+
+```text
+Host → TCP → SSH Handshake → KnownHost 验证 → Password / Private Key 认证
+    → SSHConnection（actor，复用，绝不重新认证）
+    → SSH Channel（open session channel）
+    → Request PTY（xterm-256color + SwiftTerm 真实初始尺寸）
+    → Start Remote Shell
+    → SwiftTerm ↔ SSH Channel（输入 / 输出 / Resize）
+```
+
+职责划分（任务书第 6 节）：
+
+- `SSHConnection`（不变）：TCP / Handshake / KnownHost / Authentication /
+  Session 生命周期。
+- `SSHChannel.swift`（`SSHConnection` 的 actor extension）：Channel / PTY /
+  Shell 建立、Channel 读写、Resize、优雅关闭——所有 `LIBSSH2_CHANNEL *`
+  调用都发生在 `SSHConnection` actor 隔离内，与 `LIBSSH2_SESSION *` 共享
+  同一串行边界，read / write / resize / disconnect 绝不并发进入同一 handle。
+- `RemoteTerminalService`（`@MainActor`）：持有 SwiftTerm `TerminalView` 与
+  读取循环，是 Remote Shell 的拥有者；由 `AppState` 持有，生命周期独立于
+  SwiftUI View（切换 Sidebar / Tab 不销毁远端 Shell，不重启 Shell）。
+- `RemoteTerminalSession`（`@Observable`）：View 观察的状态对象
+  （phase / columns / rows / 标题 / cwd）。
+- `RemoteTerminalRepresentable`（`NSViewRepresentable`）：SwiftTerm AppKit
+  视图接入 SwiftUI，与 Phase 2 `TerminalRepresentable` 同构。
+
+#### 2. SSH Channel 生命周期
+
+- `openInteractiveShell(columns:rows:)`：幂等且并发安全；open session channel
+  （`libssh2_channel_open_ex`）→ `libssh2_channel_request_pty_ex`
+  （xterm-256color + 真实初始尺寸，非固定 80×24）→
+  `libssh2_channel_process_startup("shell")`。任一步失败立即
+  `closeShellChannel()` 并抛业务错误，绝不留下半开 Channel。打开流程
+  跨 await（actor 可重入），在途打开以 Task 登记（`shellChannelOpenTask`）：
+  并发调用先等待在途结果再决策（成功幂等复用 / 失败重新尝试），
+  杜绝"两个并发打开各自通过 nil 守卫、后者覆盖前者"造成的 Channel 泄漏。
+  第二轮验收整改：打开入口还必须先等待在途关闭任务
+  （`shellChannelCloseTask`）——否则 close → reopen → disconnect 交错时，
+  新 Channel 可能在旧清理进行中打开，随后随 Session 释放成为悬空指针。
+- `readChannelOutput()`：非阻塞读 + `EAGAIN` 时按
+  `libssh2_session_block_directions` → poll 有界等待（复用 Phase 5 的
+  `waitForLibssh2Readiness`）；0 字节时区分 EOF 与暂无数据；空闲等待不是
+  错误。返回 `(bytes, isEOF)`，输出按原始 byte stream 传递（不做 String
+  重编码，保护 UTF-8 / ANSI / 二进制序列边界）。
+- `writeChannelInput(_:)`：partial write 处理——offset + remaining 循环
+  直到写完 / 出错 / 超预算；`EAGAIN` 走同一 poll 等待，无 busy-loop。
+- `resizeChannelPTY(columns:rows:)`：`libssh2_channel_request_pty_size_ex`，
+  同样处理 `EAGAIN`；远端 `stty size` / `tput cols` 实时一致。
+- `closeShellChannel()`：幂等且并发安全；send EOF → close → wait closed →
+  free，每步尽力而为，最终必释放 `LIBSSH2_CHANNEL *`，任何路径（用户断开 /
+  远端退出 / 失败清理 / 连接丢失）都不泄漏 Channel。清理步骤跨 await
+  （actor 可重入），在途清理以 Task 登记（`shellChannelCloseTask`）：
+  并发调用等待在途清理真正完成后才返回。语义边界（第二轮验收整改）：
+  本方法只关闭"当前登记的"Channel，等待在途清理后直接返回、不重新检查
+  `shellChannel`——等待期间完成的新打开属于新会话（close → reopen），
+  由其自身关闭路径负责；若在此重新检查并关闭，旧会话的关闭路径会在
+  reopen 后误杀新 Terminal 的 Channel（按 actor 恢复顺序非确定性触发）。
+  断开路径需要的"关闭全部 Channel"由 `closeAllShellChannelsForTeardown()`
+  保证（见下）。
+- `closeAllShellChannelsForTeardown()`（第二轮验收整改新增，
+  `disconnect()` 调用）：teardown 语义——等待在途打开 / 关闭任务并
+  **循环检查直到清空**（无 Channel、无在途任务）。修复 P1：
+  此前 `disconnect()` 只调用一次 `closeShellChannel()`，旧清理在途、
+  新 Channel 恰好在等待期间打开时，"等完旧任务即返回"而不检查新
+  Channel，Session 释放后 `shellChannel` 成为悬空指针。收敛保证：
+  断开标志已置位、打开入口拒绝新打开，循环必然终止。
+- 并发安全：`validateChannelOperation` 在每次 poll 恢复后校验 session /
+  channel 指针身份与 disconnect 标志，杜绝 actor 可重入等待期间的
+  use-after-free；`disconnect()` **从断开一开始**就置位 disconnect 标志
+  （第二轮验收整改：此前在 Session 释放前才置位，断开期间仍可能有新
+  Channel 被打开），再经 `closeAllShellChannelsForTeardown()` 等待全部
+  Channel 释放后才释放 session；优雅断开消息改用不检查该标志的专用
+  发送路径（`sendGracefulDisconnectMessage`）。第三轮整改后，并发断开
+  还统一等待共享 `disconnectTask`；释放前在无 await 的 actor 同步段先将
+  Session 从共享状态摘除，再执行第一次 free，杜绝同一 Session 被两条
+  任务重复释放。打开 / 关闭 / 断开任务的在途登记均由任务体自身在结束时
+  清空（actor 隔离 defer，成功 / 失败都执行），保证"任务完成后槽位必为空"，
+  等待方不会看到残留登记。
+
+#### 3. SwiftTerm Bridge
+
+- 输入：Keyboard / paste → SwiftTerm 产生真实 terminal input bytes →
+  `TerminalViewDelegate.send` → `Task { @MainActor }` → actor
+  `writeChannelInput`（支持英文 / 中文 / Enter / Backspace / Tab / Ctrl 组合 /
+  方向键 / Home/End / PageUp/Down / Escape / 功能键，由 SwiftTerm 转义层
+  产生，不把键盘事件拼成 Shell 命令字符串）。
+- 输出：读取循环持续调用 `readChannelOutput()`，非空字节直接
+  `terminalView.feed(byteArray:)`；`isEOF` → `[Remote shell exited]` 状态
+  （保留屏幕与历史，不 Crash，不自动重建 Shell）。
+- Resize：SwiftTerm `sizeChanged`（首次 layout 与窗口 Resize 都触发）→
+  更新 session 尺寸 → actor `resizeChannelPTY`。
+- 显示层与 Local Terminal 同源：同 `monospacedSystemFont(13)`、
+  xterm-256color、10,000 行 scrollback；标题栏 / 状态栏显示
+  `SSH ● hostname · cols × rows`（不含任何 Secret）。
+
+#### 4. 会话与 UI 集成（第一轮整改后）
+
+- `AppState.openRemoteTerminal(for:)`：仅在 `info.phase == .connected` 时
+  复用已认证 `SSHConnection`（绝不重新认证 / 重读凭据）；同一主机的活动
+  会话不重建 Shell；换主机先优雅关闭旧 Channel。
+- HostListView 为已连接主机提供 Open Terminal 入口；连接成功后可直接
+  打开 Terminal，无需再次输入密码。
+- Phase 7 范围（整改后）：Remote Terminal 会话存在期间直接占用 Terminal
+  工作区（隐藏 Tab Bar）；Local/SSH Tab、Close、Switch、Reconnect 属于
+  计划书 Phase 8，本阶段不实现（第一轮验收确认原 Tab 化实现越界，
+  已回退）。Remote 会话的收起由连接生命周期驱动：Hosts 页断开主机
+  （`hostDidDisconnect`）或再次 Open Terminal 替换；远端 `exit` /
+  连接丢失后保留终端展示终止状态。
+- Terminal Tab Bar：保持 Phase 2 原样（仅静态 Local Tab + 禁用的
+  新建按钮），零改动恢复。
+- 生命周期：`RemoteTerminalService` 由 `AppState` 持有；View 重建
+  （Sidebar 往返）不销毁远端 Shell——cwd / 屏幕内容 / Shell 进程保持。
+  `startIfNeeded()` 的打开任务登记在 `openTask` 并携带 `hasStopped`
+  停止标志：`stop()` 先于打开完成到达时，打开任务完成或被取消后必须
+  补偿关闭刚打开的 Channel，杜绝孤儿 Channel（修复第一轮验收指出的
+  立即关闭竞态）。
+
+#### 5. 业务错误（`RemoteTerminalError`）
+
+`channelOpenFailed / ptyRequestFailed / shellRequestFailed /
+channelReadFailed / channelWriteFailed / channelClosed / connectionLost /
+resizeFailed`；libssh2 原始错误码只进 OSLog 诊断日志（
+"Channel read failed with libssh2 code N"），不进入用户可见信息，
+日志不含终端内容 / 命令 / 凭据。
+
+#### 6. 日志安全
+
+OSLog 仅记录：channel opened / PTY requested（含尺寸与 term 类型）/
+shell started / PTY resized（含尺寸）/ shell exited / channel closed /
+Channel 错误码。禁止并实际未记录：终端命令、终端输出、Password、
+Passphrase、私钥内容、剪贴板。
+
+#### 7. 新增 / 修改文件
+
+新增：
+
+- `MacSSH/Services/SSH/SSHChannel.swift`（actor extension：Channel / PTY /
+  Shell / 读写 / Resize / 优雅关闭 / 断开 teardown 循环）
+- `MacSSH/Services/SSH/RemoteTerminalError.swift`
+- `MacSSH/Services/Terminal/RemoteTerminalService.swift`
+- `MacSSH/Models/RemoteTerminalSession.swift`
+- `MacSSH/Features/Terminal/RemoteTerminalRepresentable.swift`
+- `Tests/SSH/RemoteTerminalTests.swift`（17 项真实集成测试，A–Q；
+  L–Q 为第一至第三轮验收整改新增）
+
+修改：
+
+- `MacSSH/App/AppState.swift`（remoteTerminalService 生命周期 + 状态栏 +
+  连接生命周期驱动的收起）
+- `MacSSH/App/RootView.swift`（Phase 7 标识更新）
+- `MacSSH/Features/Hosts/HostListView.swift`（已连接主机 Open Terminal 入口 +
+  断开时收起 Remote Terminal）
+- `MacSSH/Features/Hosts/HostRowView.swift`（Open Terminal 按钮注入）
+- `MacSSH/Features/Terminal/TerminalWorkspaceView.swift`（Remote 会话存在
+  期间直接占用工作区；Tab 切换属 Phase 8，已回退）
+- `MacSSH/Services/SSH/SSHConnection.swift`（disconnect 从断开一开始置位
+  标志 + teardown 关闭循环 + 共享 disconnectTask + Session 所有权摘除后
+  单次释放 + 优雅断开消息专用发送路径）
+- `MacSSH/Services/SSH/SSHService.swift`（connectionActor 访问）
+- `MacSSH.xcodeproj/project.pbxproj`（新文件注册）
+- `Scripts/run-ssh-tests.sh`（纳入 RemoteTerminalTests）
+- `Docs/DevelopmentStatus.md`（本节）
+
+注：`TerminalTabBar.swift` 第一轮验收整改后已零改动恢复 Phase 2 原样
+（不在修改列表中）。
+
+`git diff --check`：无空白错误。Local Terminal 核心实现
+（`LocalTerminalService` / `TerminalSession` / `TerminalRepresentable`）
+零修改，Phase 2 路径保持。
+
+#### 8. 测试与回归结果
+
+真实环境：本机 sshd + 真实 libssh2 + 真实 PTY + 真实 login shell + 真实
+SwiftTerm 依赖链（测试 Host App 即真实 App）；凭据 / 密钥由
+`Scripts/run-ssh-tests.sh` 交互式预置，退出自动清理（已验证清理干净）。
+
+Phase 7 初版的完整交互式 XCTest 结果：**70 passed / 0 failed / 1 skipped**（skip 为
+`testConfiguredProductionPasswordState` 的既定环境跳过，Phase 5 起一致），
+`Test Suite 'All tests' passed`，脚本 exit 0。第三轮新增 testQ 后的本轮
+非交互回归结果见本节后文与第 13 节，未把缺失交互凭据的 skip 冒充通过。
+
+RemoteTerminalTests（Phase 7，17 项，A–Q；L–Q 为第一至第三轮整改新增）：
+
+- testA Password 认证 Shell Channel echo 往返 → EOF → 关闭：**通过**。
+- testB Private Key（ed25519）认证 Shell echo 往返 → EOF：**通过**。
+- testC PTY Resize 同步：resize 101×37 后远端 `stty size` 报告
+  `37 101`：**通过**（真实交互式 PTY 链路证明）。
+- testD 中文 + Emoji（`中文测试 😀🚀`）UTF-8 byte stream 往返：**通过**。
+- testE 大量输出 `seq 1 100000`（> 400KB 流式通过 Channel，无崩溃、
+  无额外无限累积）：**通过**（实测输出数百 KB 量级）。
+- testF 未认证 Session 请求 Shell：明确失败且无半开 Channel 残留：**通过**。
+- testG 空闲 30 秒 CPU（Channel 打开 + 读取循环运行）：**通过**（30 秒
+  墙钟内完成，CPU 远低于墙钟，无 busy-loop；阈值校准说明见测试注释）。
+- testH 20 × Connect → Terminal → Echo → Disconnect 资源循环：**通过**
+  （FD / 线程 / 内存增量均在断言界内，无持续增长）。
+- testI vim 全屏交互：进入 alternate screen（ESC[?1049h）→ `:q` 退出
+  （ESC[?1049l）→ shell 恢复可继续执行命令：**通过**（真实全屏程序，
+  非 `vim --version`）。
+- testJ Ctrl+C（0x03）中断远端 `ping`：远端进程真实中断，shell 恢复：**通过**。
+- testK `ls --color=always`：原始 ANSI CSI 转义序列（ESC[...）直通：**通过**。
+- testL top 全屏交互（第一轮整改，计划书验收命令）：top 进入 alternate
+  screen → 刷新 2 秒 → `q` 退出 → shell 恢复继续执行命令：**通过**。
+- testM nano 全屏编辑（第一轮整改，计划书验收命令）：nano 进入全屏 →
+  真实输入文本 → `^X` 触发 "Save modified buffer" 询问（证明输入进入
+  编辑缓冲）→ `N` 放弃修改退出 → shell 恢复：**通过**。
+- testN htop 全屏交互（第一轮整改，计划书验收命令）：htop 进入全屏 →
+  刷新 2 秒 → `q` 退出 → shell 恢复（绝对路径启动，不依赖 login shell
+  PATH；本机 Homebrew 安装）：**通过**。
+- testO 打开与立即关闭竞态（第一轮整改）：startIfNeeded 后立即 stop，
+  等待打开任务尘埃落定后断言无孤儿 Channel，且同一连接还能打开新
+  Shell：**通过**。
+- testP close → reopen → disconnect 并发（第二轮整改）：旧 Channel 在途
+  关闭 + 重新打开新 Channel + disconnect 并发；4 个到达偏移覆盖多种
+  顺序，断言 disconnect 后 `shellChannel` 为 nil、无在途打开 / 关闭
+  登记（不残留悬空指针）：**通过**（连续 4 次运行稳定，耗时 0.9–4.1s
+  波动表明交错真实覆盖）。
+- testQ 并发双 disconnect + `session_disconnect EAGAIN`（第三轮整改）：
+  第一条断开在注入的 EAGAIN 异步闸门稳定挂起，第二条同时进入 actor；
+  断言第二条调用等待共享 `disconnectTask`、挂起窗口内未提前 free、Session
+  只成功释放一次且重复 free 为 0：**通过**（真实本机 SSH 连续 10 次，
+  10/10 通过）。
+
+marker 匹配说明：测试命令中的 marker 以引号拆分（如
+`echo PHASE7_SEQ_"DONE"`），PTY 回显的命令行不含连续 marker，只有远端
+真实输出才会匹配——排除"命令回显假阳性"（该问题在本轮开发中由 testE
+的输出量断言捕获并修复，属测试方法缺陷，非实现缺陷）。
+
+回归套件（Phase 2–6 全部保留）：CredentialServiceTests /
+DependencyIdentityTests / HostEditorValidationTests /
+KnownHostServiceTests / SSHConnectionTests 全部通过（含 Phase 6 全密钥
+矩阵：ED25519 无/有 Passphrase、错误 Passphrase、未授权 Key、RSA、ECDSA）。
+
+第三轮整改后的非交互回归（不依赖 Keychain 交互凭据，可自动跑）：
+SSHConnectionTests + RemoteTerminalTests 合计 **48 项执行 / 20 项 skip
+（凭据缺失既定跳过）/ 0 失败**；其中 RemoteTerminalTests 17 项执行 8 项
+（testB/F/L/M/N/O/P/Q 私钥路径）全部通过，9 项凭据依赖跳过。依赖交互凭据
+的完整回归仍需在系统 Terminal 跑 `Scripts/run-ssh-tests.sh`。
+
+本轮开发中修复的实现缺陷（Phase 7 范围内，如实记录）：
+
+- `readChannelOutput` EAGAIN 空闲路径在 `idleWait` 后 `continue` 内部
+  轮询而非返回空数据（与设计注释相悖）：空闲 Channel 上该方法永不返回，
+  挂起所有调用方（由 testG 卡死捕获，进程采样定位）。修复为返回
+  `([], false)` 由调用方按需重试；0 字节路径等待同步为 `idleReadPoll`。
+
+App 运行冒烟（Phase 6 同款验收方式）：Debug 构建实际启动成功，窗口正常；
+App 空闲 CPU 实测 0.0% → 0.0%；正常退出无崩溃。Local Terminal 路径未改动
+（Phase 2 实现保持，`git status` 确认 Local Terminal 相关文件零修改）。
+
+测试边界（如实说明，整改后更新）：
+
+- 已由自动化真实测试覆盖：Password / Private Key 双认证路径、echo 往返、
+  EOF / 远端 exit、PTY resize（stty 远端验证）、中文 / Emoji、大输出流、
+  空闲 CPU、20 轮资源循环、vim 全屏（alternate screen 进入/退出）、
+  Ctrl+C 中断、ANSI 转义直通、未认证失败清理、top 全屏（testL）、
+  nano 全屏编辑含输入与保存询问（testM）、htop 全屏（testN，本机
+  Homebrew 安装）、打开与立即关闭竞态（testO）、close → reopen →
+  disconnect 交错（testP）、并发双 disconnect 的 EAGAIN 重入窗口
+  （testQ）。
+- 未由自动化覆盖（UI 层交互，受代理沙箱无法脚本化，同 Phase 6 限制）：
+  状态栏文字实际显示、Sidebar 往返后的 cwd / 屏幕保持、paste、
+  Remote exit 后 Terminal UI 状态展示（实现已按 `.exited` 状态编写）。
+  以上项需用户验收时人工确认。
+
+#### 9. Build / 签名 / Linkage / 体积
+
+- Debug arm64 clean build：成功，**project compiler warning = 0**。
+- Release arm64 clean build：成功，**project compiler warning = 0**。
+- build-for-testing：`** TEST BUILD SUCCEEDED **`。
+- 产物 Mach-O arm64；Release `codesign --verify --strict` 通过；
+  Hardened Runtime 启用（flags 0x10002，Runtime Version 26.5.0）。
+- `otool -L`：无 `/opt/homebrew`、`/usr/local`、动态 libssh2 / libssl /
+  libcrypto 依赖；libssh2 静态链接（Release 二进制含 81 个 `libssh2_*`
+  符号，pinned commit `be937743a85c4064a6399cee39e606672a401069`）。
+- Release `MacSSH.app` 体积：**12 MB**（Phase 6 约 11 MB，增长约 1 MB，
+  来自 Phase 7 新增代码，属合理范围）。
+- 本轮构建环境说明：代理沙箱会拦截 xcodebuild 对 Metal Toolchain
+  （cryptex）的解析，导致代理内构建出现 "missing Metal Toolchain" 误报；
+  按既有惯例 Debug/Release clean build 与 XCTest 均在系统 Terminal
+  （`Scripts/build-app.sh` / `Scripts/run-ssh-tests.sh`）执行，构建产物
+  的 Metal 调用直连 `/var/run/com.apple.security.cryptexd/mnt/…/usr/bin/metal`
+  （与 Phase 6 相同）。该限制为环境问题，非 App 代码缺陷。
+
+#### 10. 当前已知问题
+
+- 凭据 / 密钥相关测试依赖 `Scripts/run-ssh-tests.sh` 交互式创建（安全
+  提示输入本机密码），脚本退出自动清理。
+- 其余无未解决的功能缺陷。
+
+#### 11. 第一轮验收整改记录（2026-08-29）
+
+用户第一轮验收结论：Phase 7 不通过。阻塞项与对应整改：
+
+1. **验收命令未完整执行（top / nano / htop 未实测）**：
+   - 本机安装 htop（Homebrew，`/opt/homebrew/bin/htop`）。
+   - 新增三项真实集成测试并全部通过：
+     - `testL_TopFullScreenRoundtrip`：top 进入 alternate screen（ESC[?1049h）
+       → 刷新 2 秒 → `q` 退出（ESC[?1049l）→ shell 恢复可继续执行命令。**通过**。
+     - `testM_NanoFullScreenRoundtrip`：nano 进入全屏 → 真实输入文本进编辑缓冲 →
+       `^X` 触发 "Save modified buffer" 询问（证明输入真实生效）→ `N` 放弃
+       修改退出 → shell 恢复。**通过**。
+     - `testN_HtopFullScreenRoundtrip`：htop 进入全屏 → 刷新 2 秒 → `q` 退出 →
+       shell 恢复（绝对路径启动，不依赖 login shell PATH）。**通过**。
+   - 计划书验收命令至此全覆盖：ls（testK）、top（testL）、vim（testI）、
+     nano（testM）、htop（testN）、窗口 Resize（testC stty 远端验证 +
+     用户 UI 实测已通过）。
+2. **越界实现 Phase 8（Local/SSH Tab、Close、Switch）**：
+   - `TerminalTabBar.swift` 零改动恢复 Phase 2 原样（HEAD 版本：静态
+     Local Tab + 禁用的新建按钮）。
+   - `AppState` 删除 `TerminalTab` / `selectedTerminalTab`（Switch）与
+     `closeRemoteTerminal()`（Close）。
+   - `TerminalWorkspaceView` 移除 Tab 切换：Remote 会话存在期间直接占用
+     整个工作区（隐藏 Tab Bar），无会话时恢复 Phase 2 Local 视图。
+   - Remote 会话收起改为连接生命周期驱动：`AppState.hostDidDisconnect`
+     （Hosts 页断开时调用）与 `openRemoteTerminal` 替换，均非 Tab Close。
+   - Hosts 页 Open Terminal 入口保留（验收意见未判定越界）。
+3. **closeShellChannel() 并发释放竞态**：
+   - 清理流程以 Task 登记在 `shellChannelCloseTask`；所有并发调用方
+     （disconnect / stop / 读取循环退出 / 失败清理）等待在途清理真正
+     完成后才返回。`disconnect()` 释放 session 前的 `closeShellChannel()`
+     由此获得"返回即 Channel 已释放"的契约，杜绝"另一条断开流程先
+     free session、原清理流程继续触碰已失效 channel"的 use-after-free。
+4. **立即关闭 Terminal 留下孤儿 Channel**：
+   - `RemoteTerminalService` 登记打开任务（`openTask`）与停止标志
+     （`hasStopped`）；`stop()` 取消打开任务，打开任务完成或失败后
+     检测停止标志并补偿关闭刚打开的 Channel；`stop()` 自身的
+     `closeShellChannel()` 兜底。新增
+     `testO_ImmediateStopDuringOpenLeavesNoOrphanChannel`：发起打开后
+     立即停止，等待打开任务尘埃落定后断言无孤儿 Channel，且同一连接
+     还能正常打开新 Shell。**通过**。
+   - 整改过程中由 testO 首轮失败暴露并同步修复：`openInteractiveShell`
+     并发调用时的在途去重缺陷（两个并发打开各自通过 nil 守卫、后者
+     覆盖前者导致泄漏），同样以 Task 登记（`shellChannelOpenTask`），
+     并发调用先等待在途结果再决策。
+
+整改轮自动化验证（真实本机 sshd + 真实 libssh2 + 真实 PTY）：
+
+- `testB / testF / testL / testM / testN / testO` 全部通过（私钥认证路径，
+  测试密钥与 authorized_keys 标记块用后已清理）。
+- 其余依赖 Keychain 交互凭据的测试（testA/C/D/E/G/H/I/J/K 与 Phase 5/6
+  回归）需由 `Scripts/run-ssh-tests.sh` 完整回归（交互式预置凭据）。
+- Debug / Release arm64 全新 DerivedData clean build：成功，
+  **project compiler warning = 0**；`codesign --verify --strict` 通过；
+  `otool -L` 无 `/opt/homebrew`、`/usr/local`、动态 libssh2/libssl/
+  libcrypto 依赖；Release 产物 12 MB。
+
+遗留环境说明（非代码问题）：
+
+- `/tmp/macssh_phase6_ed25519{,.pub}`（本轮临时测试密钥，无 Passphrase，
+  授权条目已从 authorized_keys 移除）：代理沙箱无法删除 /tmp 文件，
+  可手动删除。
+
+#### 12. 第二轮验收整改记录（2026-08-30）
+
+用户第二轮验收结论：其余问题已解决，剩 1 个 P1 生命周期竞态——
+新 Channel 可能在断开时遗留为悬空指针。修复如下：
+
+**竞态分析**：`close → reopen → disconnect` 交错时，旧 Channel 的关闭
+任务在途，`openInteractiveShell()`（此前未等在途关闭）建立新 Channel，
+`disconnect()` 调用 `closeShellChannel()` 只等待旧关闭任务即返回、不
+重新检查新 Channel，随后释放 `LIBSSH2_SESSION`；`shellChannel` 仍指向
+随 Session 释放的 Channel，后续 `stop()` / 读取循环退出路径再关闭它时
+use-after-free。此前 `disconnectRequested` 仅在 Session 释放前才置位，
+断开期间仍可能打开新 Channel。
+
+**修复**（计划书与验收建议方向）：
+
+1. `disconnect()` 一开始就置位 `disconnectRequested`：新的 Channel 打开
+   在 `openInteractiveShell()` 入口校验立即失败，在途打开 / 读写 / Resize
+   在下一个校验点尽快退出。新增 `closeAllShellChannelsForTeardown()`：
+   等待在途打开 / 关闭任务并**循环检查直到清空**（无 Channel、无在途任务），
+   保证 disconnect 返回即"Channel 全部释放"后才释放 Session。收敛保证：
+   断开标志已置位、打开入口拒绝新打开，循环必然终止；在途打开最迟在其
+   各步骤预算内结束（成功 → Channel 被本轮关闭；失败 → 打开路径自身
+   失败清理已释放半开 Channel）。
+2. `openInteractiveShell()` 打开前等待在途关闭任务（入口循环等待
+   `shellChannelOpenTask` / `shellChannelCloseTask` 全部尘埃落定）：
+   不在旧 Channel 的在途清理进行中打开新 Channel。
+3. `closeShellChannel()` 等完已有关闭任务后的语义边界（已写明）：
+   只关闭"当前登记的"Channel、不重新检查——等待期间完成的新打开
+   属于新会话（close → reopen），由其自身关闭路径负责；若在此重新检查
+   并关闭，旧会话的关闭路径会在 reopen 后**误杀新 Terminal 的 Channel**
+   （按 actor 恢复顺序非确定性触发）。**断开路径需要的"关闭全部 Channel"
+   由 `closeAllShellChannelsForTeardown()` 保证**，而非把循环检查塞进
+   通用 `closeShellChannel()`——这是与验收建议的细微偏离，理由是
+   保证 close → reopen 语义不被破坏。
+4. 任务登记清空改在任务体自身（actor 隔离 defer，成功 / 失败都执行），
+   保证"任务完成后槽位必为空"——等待方恢复时不会看到已完成任务的
+   残留登记，`disconnect()` 的关闭循环不会在残留登记上空转。此前
+   "失败不清除登记、由创建者在 await 后清除"的设计可能让残留已完成
+   任务导致并发等待方忙等。
+5. 优雅断开消息：`disconnectRequested` 提前置位后，原 `runWithRetry`
+   会在入口即抛出、跳过发送；改用不检查该标志的专用发送路径
+   `sendGracefulDisconnectMessage`（含 session 身份校验，防止并发
+   double-disconnect 交错后触碰已释放指针），保持 Phase 5 的优雅断开行为。
+6. `AppState` 注释更新：`openRemoteTerminal` 换主机替换与
+   `hostDidDisconnect` 的 stop+disconnect 异步交错，安全性由 actor 层
+   （open 入口等待在途关闭、disconnect teardown 循环）保证，无需把
+   stop() 改为 await（保留 fire-and-forget 设计）。
+
+**新增测试**：`testP_CloseReopenDisconnectConcurrentNoDanglingChannel`
+覆盖该竞态：旧 Channel 在途关闭 + 重新打开新 Channel + disconnect 并发，
+4 个到达偏移（0 / 5 / 20 / 50 ms）覆盖多种顺序，断言 disconnect 后
+`shellChannel` 为 nil、无在途打开 / 关闭登记。连续 4 次运行通过
+（耗时 0.9–4.1s 波动表明交错真实覆盖）。
+
+**文档同步**：本轮同步修正第 7 节文件清单（移除已回退的
+`TerminalTabBar.swift`、修正 `TerminalWorkspaceView` / `SSHConnection`
+描述）、第 8 节测试清单（11 项 → 16 项 A–P）、第 2 节 Channel 生命周期
+（open 等在途关闭、closeAllShellChannelsForTeardown、disconnect 提前
+置位标志、任务体清空登记）。
+
+**验证结果**：
+
+- `testB / testF / testL / testM / testN / testO / testP` 7/7 通过
+  （私钥路径，测试密钥与 authorized_keys 标记块用后已清理）。
+- 非交互回归：SSHConnectionTests + RemoteTerminalTests 合计 47 项执行 /
+  20 项 skip（凭据缺失既定跳过）/ 0 失败。
+- Debug / Release arm64 全新 DerivedData clean build：成功，
+  **project compiler warning = 0**；`codesign --verify --strict` 通过；
+  `otool -L` 无 `/opt/homebrew`、`/usr/local`、动态 libssh2/libssl/
+  libcrypto 依赖；Release 产物 12 MB。
+
+遗留环境说明（非代码问题）：
+
+- `/tmp/macssh_phase6_ed25519{,.pub}`（上轮遗留测试密钥，无 Passphrase，
+  授权条目已从 authorized_keys 移除）：代理沙箱无法删除 /tmp 文件，
+  可手动删除。
+
+#### 13. 第三轮验收整改记录（2026-08-30）
+
+用户第三轮验收结论：上一轮 close → reopen → disconnect P1 已修复，剩
+1 个 P1——两条并发 `disconnect()` 可在第一条等待
+`session_disconnect EAGAIN` 时分别释放同一个 `LIBSSH2_SESSION *`，造成
+double-free。修复如下：
+
+1. `SSHConnection` 新增共享 `disconnectTask`。第一条断开只创建一条
+   teardown 任务并登记，之后的并发断开全部等待同一任务，不再捕获第二份
+   Session 所有权；任务体以 actor 隔离的 `defer` 清空登记。
+2. Session 释放前重新校验 `ownedSession == self.session`，并在没有任何
+   `await` 的 actor 同步段先执行 `self.session = nil`，再调用第一次
+   `libssh2_session_free`。即使未来调用链再次增加重入点，其他调用也无法
+   从共享状态取得同一指针。
+3. 按 vendored libssh2 官方文档处理 `libssh2_session_free` 自身可能返回的
+   EAGAIN：已摘除所有权的唯一任务按 socket readiness 有界重试；错误或
+   超时只记录日志，不把指针重新暴露给其他任务。
+4. 新增最小 `SessionTeardownOperations` 测试注入边界，仅替换 Session
+   disconnect/free 与 EAGAIN 后测试闸门；生产默认仍直接调用真实 libssh2，
+   未改变认证、Host Key、Channel、UI 或 Phase 8 范围。
+5. 新增
+   `testQ_ConcurrentDisconnectsCoalesceDuringSessionDisconnectEAGAIN`：使用真实
+   本机 SSH Session，第一次 disconnect 固定返回 EAGAIN 并稳定挂起，随后
+   并发调用第二次 disconnect；断言挂起窗口内 disconnect 调用数为 1、free
+   调用数为 0，完成后成功 free 为 1、重复 free 为 0，Session 与共享任务
+   登记均清空。
+
+**第三轮验证结果**：
+
+- testQ 单独真实 SSH 连续 10 次：**10/10 通过，0 失败**。
+- SSHConnectionTests + RemoteTerminalTests：**48 项执行 / 20 项 skip /
+  0 失败**（28 passed；skip 均为本轮无交互式 Keychain 密码或对应临时
+  密钥，未冒充为已执行）。RemoteTerminalTests 为 17 项，其中私钥路径
+  testB/F/L/M/N/O/P/Q 8/8 通过。
+- 首次全套回归中，旧的 20 轮私钥循环第 15 轮出现一次本机 sshd
+  `LIBSSH2_ERROR_KEY_EXCHANGE_FAILURE (-8)`；隔离重跑 20/20 通过，随后
+  第二次全套回归同样 20/20 通过，最终 xcresult 为 0 失败。该瞬态如实保留，
+  没有作为本次代码通过证据。
+- CredentialServiceTests / DependencyIdentityTests /
+  HostEditorValidationTests / KnownHostServiceTests：**29 项执行 / 1 项既定
+  skip / 0 失败**（28 passed）。
+- Debug / Release arm64 全新 DerivedData clean build：成功，静默构建
+  **compiler warning = 0**；build-for-testing 成功。
+- Release：Mach-O arm64、12 MB；`codesign --verify --deep --strict` 通过；
+  Hardened Runtime 开启（flags 0x10002）；`otool -L` 无 `/opt/homebrew`、
+  `/usr/local` 或动态 libssh2/libssl/libcrypto；静态二进制含 81 个
+  `libssh2_*` 符号。
+- 最终 Release `.app` 实际启动并完成 App / Local Terminal 初始化，无崩溃；
+  冒烟完成后仅终止本次启动进程。控制台仍有 AppKit `NSFontManager` 的运行时
+  notice（SwiftTerm/AppKit 初始化期间输出），不是 compiler warning。
+- 测试临时 `authorized_keys` 唯一标记块已清理；探测时临时新增的
+  `known_hosts` 127.0.0.1 条目也已恢复为不存在；仓库外没有保留新的凭据。
+
+#### 14. 最终复验记录（2026-08-30）
+
+用户要求对 Phase 7 做全凭据最终复验：上一轮 48 项测试中 20 项因缺少
+交互式凭据被 skip，核心 Remote Terminal 用例不允许以 skip 收尾。本轮
+用真实凭据（密码 / 私钥 / passphrase）完整重跑，期间发现并修复 2 个
+真实 Phase 7 缺陷，随后按 29 项清单出具终验报告。
+
+**本轮发现的 2 个真实缺陷与修复**（均由 PTY Resize 自动化测试
+`testPTYResizeMatchesSwiftTermLayout` 稳定复现，修复前 5/5 失败）：
+
+1. **丢失的 Resize（竞态 A）**：SwiftTerm 首次 layout 落在
+   `openInteractiveShell` 参数捕获（80×24）之后、Channel 建立之前的窗口
+   内，`resizeChannelPTY` 因 `shellChannel == nil` 静默返回，远端永久停留
+   在 80×24。修复：`RemoteTerminalService.startIfNeeded` 的打开任务在
+   打开完成后按当前已知尺寸补偿同步一次，保证远端 PTY 必与视图一致。
+2. **打开序列被穿插破坏（竞态 B）**：`shellChannel` 在
+   `performInteractiveShellOpen` 中于 PTY / Shell 请求完成**之前**赋值；
+   打开期间到达的 `resizeChannelPTY` / `writeChannelInput` 借 actor EAGAIN
+   挂起点穿插进同一 Channel，触发 `LIBSSH2_ERROR_BAD_USE (-37)` 并破坏
+   打开序列（随后 shell request 以 -13 失败）。修复：`resizeChannelPTY`
+   与 `writeChannelInput` 入口加入与 `openInteractiveShell` /
+   `closeAllShellChannelsForTeardown` 相同的在途打开 / 关闭 settle-wait，
+   打开窗口期内的 resize / 写入顺延到打开尘埃落定后执行（字节不丢）。
+
+**最终复验结果**：
+
+- 全凭据回归（`Scripts/run-ssh-tests.sh`，188.7s）：**84 项执行 /
+  83 项通过 / 1 项既定 skip / 0 失败 / 0 次框架重启**。既定 skip 为
+  `CredentialServiceTests.testConfiguredProductionPasswordState`
+  （"Production credential verification was not requested"，与本轮无关）。
+- RemoteTerminalTests 24/24 全部真实执行通过，核心用例无一 skip：
+  密码 / 私钥 / passphrase 终端、PTY Resize、vim、nano、top、htop、less、
+  Ctrl+C（ping）、中文/Emoji、ANSI/256/TrueColor、Sidebar 往返、远端
+  exit、Connection Lost、20× 完整生命周期（21.5s）、30s idle CPU
+  （31.3s，含 Shell 打开）、`seq 1 100000` 大量输出、Partial Write/EAGAIN。
+  Resize 链证据：80×24 → 97×32 → 135×41，远端 `tput` 与 SwiftTerm 完全一致。
+- testQ（并发 disconnect / double-free）单独真实 SSH 连续 10 次：
+  **10/10 通过**（单次 1.37–1.63s）。
+- SSHConnectionTests 全部通过，含 20× 密钥循环（3.27s）与 30s idle CPU。
+- CredentialServiceTests / DependencyIdentityTests /
+  HostEditorValidationTests / KnownHostServiceTests：全部通过（0 失败）。
+- 手动回归（用户本机实跑并截图）：Local Terminal 输出
+  `PHASE7_LOCAL_TERMINAL_OK`（状态栏 142 × 40）；Host Manager 列表 /
+  编辑 / 分组 / 收藏 / 搜索 / Connect 正常。
+- 最终 `Scripts/build-app.sh`（全新 Derived Data）：Debug + Release arm64
+  clean build 均 **BUILD SUCCEEDED**，项目代码 **compiler warning = 0**
+  （Debug / Release 各 0）；`git diff --check` 通过。
+- Release `.app`（本轮新鲜产物复核）：Mach-O arm64、12 MB；
+  `codesign --verify --deep --strict` 通过（valid on disk + satisfies its
+  Designated Requirement）；Hardened Runtime 开启（flags 0x10002
+  adhoc,runtime）；`otool -L` 仅系统库，无 `/opt/homebrew`、`/usr/local`
+  或动态 libssh2/libssl/libcrypto；静态二进制含 81 个 `libssh2_*` 符号，
+  内嵌锁定版本：libssh2 `1.11.2_DEV`（commit
+  `be937743a85c4064a6399cee39e606672a401069`）+ OpenSSL `3.5.8`。
+- 已知非阻塞事项：AppKit `NSFontManager` 运行时 notice（非 compiler
+  warning）；Xcode 26 hosted test 机制在**存在失败**时会让宿主进程退出并
+  记录 "Restarting after unexpected exit"——修复后所有轮次 0 次重启，
+  属框架行为而非产品缺陷。
+- 测试临时 `authorized_keys` 标记块与 `/tmp` 临时密钥均已清理；
+  仓库外没有保留新的凭据。
+
 ## 下一阶段
 
-Phase 6 已复验通过（PASS），Phase 6 final cleanup（`default.profraw` 清理 +
-Known Hosts Forget 失败错误提示）已完成。本轮修改不触及 SSH 安全流程，
-13 项 KnownHostServiceTests 全过，Debug/Release arm64 clean build 零 warning，
-`git diff --check` 通过。停止开发，等待用户确认。
+Phase 7 最终复验完成：全凭据 29 项清单已出具，复验中发现的 2 个
+Resize 竞态缺陷已修复并稳定覆盖，0 失败。停止开发，等待用户最终验收。
 
-下一阶段是 Phase 7（Remote SSH Terminal），只有用户明确要求后才能开始。
+下一阶段是 Phase 8，只有用户明确要求后才能开始。

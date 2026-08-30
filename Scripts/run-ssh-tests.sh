@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MacSSH Phase 5 / Phase 6 SSH 连接真实测试脚本
+# MacSSH Phase 5 / Phase 6 / Phase 7 SSH 连接真实测试脚本
 #
 # 前置要求：
 #   1. 系统设置 → 通用 → 共享 → 远程登录 已开启（本机 sshd 作为测试服务器）
@@ -38,6 +38,9 @@ PHASE6_KEY_NOPASS="/tmp/macssh_phase6_ed25519"
 PHASE6_KEY_PASS="/tmp/macssh_phase6_ed25519_pass"
 # 带 Passphrase 私钥的随机 Passphrase（600 权限临时文件；测试读取后即删，不进任何日志）。
 PHASE6_PASSPHRASE_FILE="/tmp/macssh_phase6_ed25519_pass.secret"
+# Phase 7 Remote Terminal 带 Passphrase 用例（RemoteTerminalTests.testT）的独立副本：
+# SSHConnectionTests.testU 读取原始 .secret 后会立即删除该文件，副本保证两个测试互不影响。
+PHASE6_PASSPHRASE_FILE_P7="/tmp/macssh_phase6_ed25519_pass.secret.p7"
 # 未加入 authorized_keys 的私钥（testT：错误 Private Key）。
 PHASE6_KEY_UNAUTHORIZED="/tmp/macssh_phase6_ed25519_unauthorized"
 # RSA / ECDSA 测试私钥（testV / testW：真实 Key Type 验证）。
@@ -62,6 +65,7 @@ cleanup_phase6_keys() {
     rm -f "$PHASE6_KEY_NOPASS" "$PHASE6_KEY_NOPASS.pub" \
           "$PHASE6_KEY_PASS" "$PHASE6_KEY_PASS.pub" \
           "$PHASE6_PASSPHRASE_FILE" \
+          "$PHASE6_PASSPHRASE_FILE_P7" \
           "$PHASE6_KEY_UNAUTHORIZED" "$PHASE6_KEY_UNAUTHORIZED.pub" \
           "$PHASE6_KEY_RSA" "$PHASE6_KEY_RSA.pub" \
           "$PHASE6_KEY_ECDSA" "$PHASE6_KEY_ECDSA.pub" \
@@ -74,7 +78,7 @@ cleanup_all() {
 }
 trap cleanup_all EXIT
 
-echo "==> MacSSH Phase 5 / Phase 6 SSH connection tests"
+echo "==> MacSSH Phase 5 / Phase 6 / Phase 7 SSH connection tests"
 echo ""
 
 # 检查本机 sshd
@@ -102,6 +106,8 @@ PHASE6_PASSPHRASE="$(openssl rand -base64 18)"
 ssh-keygen -t ed25519 -f "$PHASE6_KEY_PASS" -N "$PHASE6_PASSPHRASE" -C "macssh-phase6-test-pass" -q
 printf '%s' "$PHASE6_PASSPHRASE" > "$PHASE6_PASSPHRASE_FILE"
 chmod 600 "$PHASE6_PASSPHRASE_FILE"
+printf '%s' "$PHASE6_PASSPHRASE" > "$PHASE6_PASSPHRASE_FILE_P7"
+chmod 600 "$PHASE6_PASSPHRASE_FILE_P7"
 unset PHASE6_PASSPHRASE
 # 未授权密钥：testT 使用（正确格式但不在 authorized_keys），公钥不授权。
 ssh-keygen -t ed25519 -f "$PHASE6_KEY_UNAUTHORIZED" -N "" -C "macssh-phase6-test-unauthorized" -q
@@ -152,7 +158,8 @@ security add-generic-password \
 
 echo ""
 echo "==> 运行 SSHConnectionTests（Phase 5 A-I + Phase 6 J-W + 持久化失败注入 + 20 次循环 + 空闲 CPU）"
-echo "    同时运行 KnownHostServiceTests / HostEditorValidationTests / CredentialServiceTests / DependencyIdentityTests"
+echo "    同时运行 RemoteTerminalTests（Phase 7 Shell Channel/PTY/Resize/EOF/大输出/空闲 CPU/20 轮循环 + top/nano/htop 全屏 + 打开立即关闭 / close-reopen-disconnect / 双 disconnect EAGAIN 并发）"
+echo "    以及 KnownHostServiceTests / HostEditorValidationTests / CredentialServiceTests / DependencyIdentityTests"
 xcodebuild test-without-building \
     -project MacSSH.xcodeproj \
     -scheme MacSSH \

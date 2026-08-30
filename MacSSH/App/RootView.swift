@@ -1,7 +1,7 @@
 import AppKit
 import SwiftUI
 
-/// 主界面容器，保留 Local Terminal、Host Manager、凭据安全与 Phase 6 SSH 安全能力。
+/// 主界面容器，保留 Local Terminal、Host Manager、SSH 安全与 Remote SSH Terminal 能力。
 struct RootView: View {
     /// 从应用入口注入的全局状态。
     @Environment(AppState.self) private var appState
@@ -33,7 +33,7 @@ struct RootView: View {
             AppToolbarContent()
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("MacSSH Phase 6")
+        .accessibilityLabel("MacSSH Phase 7")
     }
 
     /// 根据 Sidebar 选择装配当前阶段允许的 Workspace。

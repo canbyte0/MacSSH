@@ -84,6 +84,32 @@ actor SSHConnection {
         let privateKeyID: UUID?
     }
 
+    /// libssh2 Session teardown 的最小可注入边界。
+    ///
+    /// 生产环境使用真实 libssh2 API；测试可稳定制造
+    /// `libssh2_session_disconnect_ex` 的 EAGAIN 与 actor 重入窗口，并记录
+    /// Session 实际释放次数，避免依赖网络时序碰运气。
+    struct SessionTeardownOperations: Sendable {
+        let disconnect: @Sendable (OpaquePointer, String) -> Int32
+        let free: @Sendable (OpaquePointer) -> Int32
+        let afterDisconnectEAGAIN: @Sendable () async -> Void
+
+        static let live = SessionTeardownOperations(
+            disconnect: { session, reason in
+                libssh2_session_disconnect_ex(
+                    session,
+                    SSH_DISCONNECT_BY_APPLICATION,
+                    reason,
+                    ""
+                )
+            },
+            free: { session in
+                libssh2_session_free(session)
+            },
+            afterDisconnectEAGAIN: {}
+        )
+    }
+
     /// 各阶段独立超时（计划书第 42 节：Connection Timeout 10 秒）。
     private enum Timeouts {
         static let dnsAndTCP: TimeInterval = 10
@@ -105,12 +131,65 @@ actor SSHConnection {
     private let info: SSHConnectionInfo
     private let credentialService: CredentialService
     private let knownHostService: KnownHostService
+    private let sessionTeardownOperations: SessionTeardownOperations
 
     /// 只允许本 actor 访问的 libssh2 session。
-    private var session: OpaquePointer?
+    ///
+    /// `internal` 供同模块的 `SSHChannel.swift` 扩展（Phase 7 Remote Terminal）
+    /// 复用；actor 隔离保证所有访问仍串行发生在本 actor 内。
+    var session: OpaquePointer?
 
     /// 只允许本 actor 访问的 TCP socket。
     private var socketFD: Int32 = -1
+
+    /// Phase 7：Interactive Shell Channel（`LIBSSH2_CHANNEL *`）。
+    ///
+    /// 与 session 相同的并发边界：只允许本 actor（含 `SSHChannel.swift` 扩展）
+    /// 访问；断开 / 失败路径由 `closeShellChannel()` 统一释放，不泄漏。
+    var shellChannel: OpaquePointer?
+
+    /// Phase 7：进行中的 Shell Channel 优雅关闭任务。
+    ///
+    /// `closeShellChannel()` 的清理步骤跨 await（actor 可重入）：
+    /// 并发的 `disconnect()` 可能在清理进行中进入；若不等待，它会先释放
+    /// session，清理流程随后继续触碰已失效的 channel（use-after-free）。
+    /// 该任务让所有关闭调用方都等到清理真正完成后才返回。
+    ///
+    /// 不变式（第二轮验收整改）：登记由任务体自身在结束时清空
+    /// （`performTrackedGracefulShellChannelClose` 的 defer），保证
+    /// "任务完成后槽位必为空"——等待方恢复时不会看到已完成任务的残留
+    /// 登记，`disconnect()` 的关闭循环也因此不会在残留登记上空转。
+    var shellChannelCloseTask: Task<Void, Never>?
+
+    /// Phase 7：进行中的 Shell Channel 打开任务。
+    ///
+    /// `openInteractiveShell()` 的打开步骤跨 await（actor 可重入）：
+    /// 并发调用都会通过 `shellChannel == nil` 守卫、各自打开 Channel，
+    /// 后完成者覆盖前者，被覆盖的 Channel 无人释放（泄漏）。
+    /// 该任务让并发打开去重：后来者等待在途打开的结果后再决策
+    /// （成功幂等复用 / 失败重新尝试）。
+    ///
+    /// 不变式（第二轮验收整改）：登记由任务体自身在结束时清空
+    /// （`performTrackedInteractiveShellOpen` 的 defer）。`disconnect()`
+    /// 依赖该不变式等待在途打开，并确认没有 Channel 残留后才释放 Session。
+    var shellChannelOpenTask: Task<Void, Error>?
+
+    /// 进行中的 Session 断开任务。
+    ///
+    /// `disconnect()` 会跨 Channel teardown、disconnect EAGAIN 等多个 await，
+    /// actor 在等待期间可重入。所有并发断开调用必须等待同一个任务，绝不各自
+    /// 捕获并释放同一个 `LIBSSH2_SESSION *`。
+    private var disconnectTask: Task<Void, Never>?
+
+    /// 只暴露可跨 actor 读取的所有权状态，不把非 Sendable 的 C 指针带出 actor。
+    var hasLiveSession: Bool {
+        session != nil
+    }
+
+    /// 测试只观察任务登记状态，不把任务句柄带出 actor。
+    var hasActiveDisconnectTask: Bool {
+        disconnectTask != nil
+    }
 
     /// Host Trust 对话框等待中的 continuation。
     private var trustContinuation: CheckedContinuation<SSHHostTrustDecision, Never>?
@@ -130,12 +209,14 @@ actor SSHConnection {
         configuration: Configuration,
         info: SSHConnectionInfo,
         credentialService: CredentialService = .shared,
-        knownHostService: KnownHostService
+        knownHostService: KnownHostService,
+        sessionTeardownOperations: SessionTeardownOperations = .live
     ) {
         self.configuration = configuration
         self.info = info
         self.credentialService = credentialService
         self.knownHostService = knownHostService
+        self.sessionTeardownOperations = sessionTeardownOperations
     }
 
     // MARK: - 连接主流程
@@ -300,6 +381,23 @@ actor SSHConnection {
     ///
     /// 连接流程运行中只登记请求，由 establish 的失败路径统一清理，
     /// 防止在 libssh2 调用进行中释放 session 造成 use-after-free。
+    ///
+    /// 第二轮验收整改（P1：close → reopen → disconnect 交错时，新 Channel
+    /// 可能随 Session 释放成为悬空 `shellChannel`，后续关闭路径
+    /// use-after-free）：
+    /// - 断开**一开始**就置位断开标志：新的 Channel 打开在入口校验立即
+    ///   失败，在途打开 / 读写 / Resize 在下一个校验点尽快退出
+    ///   （此前标志在 Session 释放前才置位，断开期间仍可能有新 Channel
+    ///   被打开）；
+    /// - 关闭循环：等待在途打开 / 关闭任务并反复检查，直到无 Channel 且
+    ///   无在途任务——保证本方法返回即"Channel 全部释放"，之后才释放
+    ///   Session。等待期间不会再有新打开（入口已被断开标志拒绝），
+    ///   循环必然收敛。
+    ///
+    /// 第三轮验收整改（P1：并发 disconnect double-free）：断开工作登记为
+    /// 共享 `disconnectTask`，所有并发调用等待同一任务；Session 释放前在
+    /// 无 await 的 actor 同步段重新确认指针所有权并先把 `self.session` 置 nil，
+    /// 即使未来调用链再次引入重入点，也不会由两个任务释放同一指针。
     func disconnect() async {
         // 对话框还挂着时先结束等待，走取消路径。
         resolveHostTrust(.cancel)
@@ -309,28 +407,133 @@ actor SSHConnection {
             return
         }
 
+        // 已有断开流程：合并并等待同一个任务，禁止第二条 teardown 流程。
+        if let running = disconnectTask {
+            await running.value
+            return
+        }
+
         guard session != nil || socketFD >= 0 else { return }
+
+        // 断开从一开始就生效（此前在 Session 释放前才置位）：
+        // - openInteractiveShell 入口校验立即失败，不再接受新打开；
+        // - 在途 Channel 操作在下一个校验点尽快退出。
+        disconnectRequested = true
+
+        let task = Task {
+            await performTrackedDisconnect()
+        }
+        disconnectTask = task
+        await task.value
+    }
+
+    /// 共享断开任务体；登记由任务自身清空，保证任务完成后槽位必为空。
+    private func performTrackedDisconnect() async {
+        defer { disconnectTask = nil }
 
         await transition(to: .disconnecting)
 
-        if let session {
+        // 关闭全部 Shell Channel（等待在途打开 / 关闭并循环检查）。
+        await closeAllShellChannelsForTeardown()
+
+        if let ownedSession = session {
             // 尽力发送 disconnect 消息（最多等待 1 秒），失败也不阻塞清理。
-            // libssh2_session_disconnect 是函数式宏，Swift 必须调用 _ex 函数。
-            _ = try? await runWithRetry(session: session, budget: Timeouts.gracefulDisconnect) {
-                libssh2_session_disconnect_ex(
-                    session,
-                    SSH_DISCONNECT_BY_APPLICATION,
-                    "Disconnected by user",
-                    ""
+            // 断开标志已提前置位，不能走会检查该标志的 runWithRetry，
+            // 改用不检查标志的专用发送路径，保持 Phase 5 的优雅断开行为。
+            await sendGracefulDisconnectMessage(
+                session: ownedSession,
+                reason: "Disconnected by user"
+            )
+
+            // libssh2_session_free 会连带回收属于该 Session 的全部 Channel；
+            // 上方关闭循环已保证 shellChannel 为 nil，不存在对已释放指针的
+            // 后续访问（后续任何 stop()/读取循环退出路径调用的
+            // closeShellChannel 都是幂等空操作）。
+            // 所有权确认、置 nil 与第一次 free 调用之间没有 await：actor 不可
+            // 重入。先从共享状态摘除指针，再释放，构成 double-free 的最后防线。
+            if ownedSession == self.session {
+                self.session = nil
+                let initialFreeResult = sessionTeardownOperations.free(ownedSession)
+                await finishReleasingOwnedSession(
+                    ownedSession,
+                    initialResult: initialFreeResult
                 )
             }
-            libssh2_session_free(session)
-            self.session = nil
         }
 
         closeSocket()
         await transition(to: .disconnected)
         AppLogger.ssh.info("SSH connection closed")
+    }
+
+    /// 尽力发送 SSH disconnect 消息（EAGAIN 时按阻塞方向等待，1 秒预算）。
+    ///
+    /// 专用于断开流程：不检查 `disconnectRequested`（断开开始时已置位，
+    /// 该标志只用于让在途 Channel 操作尽快退出）；每次调用前校验
+    /// session 身份，防止与并发的第二次 disconnect 交错后
+    /// 触碰已释放指针。
+    private func sendGracefulDisconnectMessage(session: OpaquePointer, reason: String) async {
+        let deadline = Date().addingTimeInterval(Timeouts.gracefulDisconnect)
+
+        while true {
+            // 身份校验：并发的另一个 disconnect 可能已释放 session。
+            guard session == self.session else {
+                return
+            }
+
+            // libssh2_session_disconnect 是函数式宏，Swift 必须调用 _ex 函数。
+            let rc = sessionTeardownOperations.disconnect(session, reason)
+            if rc != LIBSSH2_ERROR_EAGAIN {
+                return
+            }
+
+            let remaining = deadline.timeIntervalSinceNow
+            guard remaining > 0 else {
+                return
+            }
+            // EAGAIN：与 Phase 5 相同的 poll 等待（无 busy-loop）；
+            // 超时 / 异常按尽力而为处理，不阻塞清理。
+            do {
+                try await waitForLibssh2Readiness(session: session, deadline: deadline)
+            } catch {
+                return
+            }
+
+            // readiness 已完成且下一轮身份校验尚未开始：生产环境为空操作；
+            // 测试在这里打开异步闸门，缺陷版本也不会先读取已释放的 Session。
+            await sessionTeardownOperations.afterDisconnectEAGAIN()
+        }
+    }
+
+    /// 释放已从 `self.session` 摘除、由当前断开任务独占的 Session。
+    ///
+    /// libssh2 官方文档说明 `libssh2_session_free` 在 non-blocking 模式同样
+    /// 可能返回 EAGAIN，因此按 socket readiness 重试；共享状态已经置 nil，
+    /// 等待期间其他 actor 调用无法重新取得或释放该指针。
+    private func finishReleasingOwnedSession(
+        _ ownedSession: OpaquePointer,
+        initialResult: Int32
+    ) async {
+        let deadline = Date().addingTimeInterval(Timeouts.gracefulDisconnect)
+        var rc = initialResult
+
+        while true {
+            if rc == 0 {
+                return
+            }
+            guard rc == LIBSSH2_ERROR_EAGAIN else {
+                AppLogger.ssh.error("SSH session free failed with libssh2 code \(rc)")
+                return
+            }
+
+            do {
+                try await waitForLibssh2Readiness(session: ownedSession, deadline: deadline)
+            } catch {
+                AppLogger.ssh.error("SSH session free timed out")
+                return
+            }
+            rc = sessionTeardownOperations.free(ownedSession)
+        }
     }
 
     // MARK: - Handshake
@@ -892,7 +1095,9 @@ actor SSHConnection {
     }
 
     /// 按 libssh2 报告的阻塞方向等待 socket 就绪；超时抛出错误。
-    private func waitForLibssh2Readiness(
+    ///
+    /// `internal` 供同模块的 `SSHChannel.swift` 扩展复用（actor 隔离不变）。
+    func waitForLibssh2Readiness(
         session: OpaquePointer,
         deadline: Date
     ) async throws {
@@ -971,28 +1176,37 @@ actor SSHConnection {
     // MARK: - 清理
 
     /// 连接流程中被请求断开时使用的内部取消信号。
-    private func throwIfDisconnectRequested() throws {
+    ///
+    /// `internal` 供同模块的 `SSHChannel.swift` 扩展复用（actor 隔离不变）。
+    func throwIfDisconnectRequested() throws {
         if disconnectRequested {
             throw SSHError.cancelled
         }
     }
 
-    /// 失败路径统一清理；保证不留 socket / session 泄漏。
+    /// 失败路径统一清理；保证不留 socket / session / channel 泄漏。
     private func fail(with error: SSHError) async {
-        if let session {
+        // Phase 7：失败同样先释放 Shell Channel。
+        await closeShellChannel()
+
+        if let ownedSession = session {
             _ = try? await runWithRetry(
-                session: session,
+                session: ownedSession,
                 budget: Timeouts.gracefulDisconnect
             ) {
-                libssh2_session_disconnect_ex(
-                    session,
-                    SSH_DISCONNECT_BY_APPLICATION,
-                    "Connection failed",
-                    ""
+                self.sessionTeardownOperations.disconnect(
+                    ownedSession,
+                    "Connection failed"
                 )
             }
-            libssh2_session_free(session)
-            self.session = nil
+            if ownedSession == self.session {
+                self.session = nil
+                let initialFreeResult = sessionTeardownOperations.free(ownedSession)
+                await finishReleasingOwnedSession(
+                    ownedSession,
+                    initialResult: initialFreeResult
+                )
+            }
         }
         closeSocket()
 

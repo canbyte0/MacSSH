@@ -33,6 +33,15 @@ final class SSHService {
         connections[hostID]
     }
 
+    /// Phase 7：取出已认证连接的 actor 引用，供 Remote Terminal 复用。
+    ///
+    /// 只在连接存在时返回；调用方（AppState.openRemoteTerminal）自行校验
+    /// `connectionInfo.phase == .connected` 后再打开 Shell Channel——
+    /// Terminal 永远发生在认证成功之后，且绝不重新认证。
+    func connectionActor(for hostID: UUID) -> SSHConnection? {
+        connectionActors[hostID]
+    }
+
     /// 该 Host 是否处于连接中途（需要 UI 禁用重复 Connect）。
     func isConnectionActive(_ hostID: UUID) -> Bool {
         guard let info = connections[hostID] else { return false }

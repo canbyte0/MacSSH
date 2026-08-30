@@ -7,6 +7,8 @@ struct HostRowView: View {
     let toggleFavorite: () -> Void
     let connect: () -> Void
     let disconnect: () -> Void
+    /// Phase 7：在已认证连接上打开 Remote Terminal。
+    let openTerminal: () -> Void
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.regular) {
@@ -71,6 +73,7 @@ struct HostRowView: View {
                 Circle()
                     .fill(Color.green)
                     .frame(width: 8, height: 8)
+                openTerminalButton
                 disconnectButton(label: "Connected")
             }
 
@@ -114,5 +117,17 @@ struct HostRowView: View {
         .buttonStyle(.bordered)
         .help("Disconnect from this host")
         .accessibilityIdentifier("hostRow.disconnect")
+    }
+
+    /// Phase 7：已认证连接上打开 Remote Terminal（复用连接，不重新认证）。
+    private var openTerminalButton: some View {
+        Button(action: openTerminal) {
+            Image(systemName: "chevron.left.forwardslash.chevron.right")
+        }
+        .controlSize(.small)
+        .buttonStyle(.borderless)
+        .help("Open Remote Terminal")
+        .accessibilityLabel("Open Remote Terminal")
+        .accessibilityIdentifier("hostRow.openTerminal")
     }
 }

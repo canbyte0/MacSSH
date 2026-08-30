@@ -238,7 +238,10 @@ struct HostListView: View {
                                 connect(host)
                             },
                             disconnect: {
-                                sshService.disconnect(hostID: host.id)
+                                disconnectHost(host)
+                            },
+                            openTerminal: {
+                                appState.openRemoteTerminal(for: host)
                             }
                         )
                         .tag(host.id)
@@ -257,8 +260,12 @@ struct HostListView: View {
                         )
                         .contextMenu {
                             if isHostConnected(host.id) {
+                                Button("Open Terminal") {
+                                    appState.openRemoteTerminal(for: host)
+                                }
+
                                 Button("Disconnect") {
-                                    sshService.disconnect(hostID: host.id)
+                                    disconnectHost(host)
                                 }
                             } else if !sshService.isConnectionActive(host.id) {
                                 Button("Connect") {
@@ -381,6 +388,14 @@ struct HostListView: View {
     /// 发起连接；前置校验失败（Private Key、缺失凭据等）直接显示 failed 状态。
     private func connect(_ host: Host) {
         sshService.connect(to: host)
+    }
+
+    /// 断开连接（幂等）；先收起该主机的 Remote Terminal（由连接生命周期
+    /// 驱动，Channel 关闭与 session 释放在 SSHConnection actor 内
+    /// 按序完成），再断开连接本身。
+    private func disconnectHost(_ host: Host) {
+        appState.hostDidDisconnect(hostname: host.hostname, port: host.port)
+        sshService.disconnect(hostID: host.id)
     }
 
     private func isHostConnected(_ hostID: UUID) -> Bool {
