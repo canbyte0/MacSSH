@@ -1,14 +1,16 @@
 import SwiftUI
 
-/// Host 列表中的原生行，只展示普通元数据与连接状态，不展示任何凭据。
+/// Host 列表中的原生行，只展示普通元数据与该 Host 的 Terminal Session
+/// 聚合状态，不展示任何凭据。
 struct HostRowView: View {
     let host: Host
-    let connectionInfo: SSHConnectionInfo?
+    /// 该 Host 在 Terminal 侧的聚合会话状态（Phase 8 per-session 连接）。
+    let summary: SessionManager.HostSessionSummary
     let toggleFavorite: () -> Void
+    /// Connect：创建新的 Remote Terminal Session（同 Host 多会话，任务书 37）。
     let connect: () -> Void
+    /// Disconnect：关闭该 Host 的全部 Terminal Session（经确认）。
     let disconnect: () -> Void
-    /// Phase 7：在已认证连接上打开 Remote Terminal。
-    let openTerminal: () -> Void
 
     var body: some View {
         HStack(spacing: AppTheme.Spacing.regular) {
@@ -48,55 +50,49 @@ struct HostRowView: View {
         .padding(.vertical, 5)
     }
 
-    /// 行尾连接状态：真实状态机阶段 + Connect/Disconnect 动作。
+    /// 行尾状态：按该 Host 的 Terminal Session 聚合展示。
+    ///
+    /// - 活跃会话 > 0：绿点 + Open Terminal（新会话）+ Disconnect；
+    /// - 连接中：进度与阶段文案；
+    /// - 其他（无会话）：Connect。
+    /// 连接失败不再驱动行状态——失败详情保留在 Terminal Tab
+    ///（Retry / Close，任务书 38）。
     @ViewBuilder
     private var connectionStatusView: some View {
-        let phase = connectionInfo?.phase ?? .idle
-
-        switch phase {
-        case .idle, .disconnected:
-            connectButton(label: "Connect", help: "Connect to this host")
-
-        case .connecting, .handshaking, .awaitingHostTrust, .authenticating:
-            HStack(spacing: 6) {
-                ProgressView()
-                    .controlSize(.small)
-                Text(phase.statusText)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .help(phase.statusText)
-            }
-
-        case .connected:
+        if summary.activeSessionCount > 0 {
             HStack(spacing: 6) {
                 Circle()
                     .fill(Color.green)
                     .frame(width: 8, height: 8)
-                openTerminalButton
-                disconnectButton(label: "Connected")
-            }
 
-        case .disconnecting:
+                openTerminalButton
+
+                disconnectButton()
+            }
+        } else if summary.busySessionCount > 0 {
             HStack(spacing: 6) {
                 ProgressView()
                     .controlSize(.small)
-                Text("Disconnecting…")
+                Text(busyText)
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .help(busyText)
             }
-
-        case .failed:
-            HStack(spacing: 6) {
-                Image(systemName: "xmark.circle.fill")
-                    .foregroundStyle(.red)
-                connectButton(label: "Retry", help: failureHelpText)
-            }
+        } else {
+            connectButton(label: "Connect", help: "Open a new terminal session on this host")
         }
     }
 
-    private var failureHelpText: String {
-        connectionInfo?.failureMessage ?? "The connection failed."
+    private var busyText: String {
+        if let statusText = summary.busyStatusText {
+            let components = statusText.components(separatedBy: " · ")
+            if components.count > 2 {
+                return components.dropFirst(2).joined(separator: " · ")
+            }
+            return statusText
+        }
+        return "Connecting…"
     }
 
     private func connectButton(label: String, help: String) -> some View {
@@ -109,19 +105,19 @@ struct HostRowView: View {
         .accessibilityIdentifier("hostRow.connect")
     }
 
-    private func disconnectButton(label: String) -> some View {
+    private func disconnectButton() -> some View {
         Button(action: disconnect) {
-            Text(label)
+            Text("Disconnect")
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
-        .help("Disconnect from this host")
+        .help("Close all terminal sessions for this host")
         .accessibilityIdentifier("hostRow.disconnect")
     }
 
-    /// Phase 7：已认证连接上打开 Remote Terminal（复用连接，不重新认证）。
+    /// 打开新的 Remote Terminal Session（同 Host 可多开）。
     private var openTerminalButton: some View {
-        Button(action: openTerminal) {
+        Button(action: connect) {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
         }
         .controlSize(.small)

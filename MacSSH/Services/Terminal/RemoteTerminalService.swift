@@ -25,7 +25,10 @@ final class RemoteTerminalService: NSObject {
     let terminalView: TerminalView
 
     /// 已认证的 SSH 连接（actor 引用）；Channel 操作全部经由它串行执行。
-    private let connection: SSHConnection
+    ///
+    /// Reconnect（Phase 8）时通过 `reattach(connection:)` 替换为新连接；
+    /// 调用前旧连接必须已完成 disconnect（SessionManager 保证顺序）。
+    private var connection: SSHConnection
 
     /// 持续拉取远端输出的读取循环。
     private var readLoopTask: Task<Void, Never>?
@@ -42,6 +45,19 @@ final class RemoteTerminalService: NSObject {
 
     /// 防止 SwiftUI 重建包装层时重复打开 Channel。
     private var hasStarted = false
+
+    /// 运行时代次：每次 `reattach` 递增。打开任务与读取循环在启动时
+    /// 捕获当前代次，任何延迟恢复的旧代次任务都不得再写入状态或
+    /// 操作连接（P1：旧任务跨越 reattach 时硬性失效）。
+    private var runtimeGeneration: UInt64 = 0
+
+    /// stop() 屏障任务：取消旧任务并等待其完全退出 + 关闭旧连接
+    /// Channel。`stopBarrier()` 等待它，使拆除成为可等待的屏障。
+    private var stopBarrierTask: Task<Void, Never>?
+
+    /// 测试接缝（确定性竞态）：读取循环判定终止事件后、提交任何
+    /// 状态写入前调用。生产环境恒为 nil。
+    var testReadLoopExitHook: (@MainActor () async -> Void)?
 
     init(connection: SSHConnection, hostname: String, port: Int) {
         self.connection = connection
@@ -72,6 +88,9 @@ final class RemoteTerminalService: NSObject {
     /// 打开 Remote Shell（幂等）：复用已认证 Session 建立 Channel → PTY → Shell，
     /// 成功后启动读取循环。初始尺寸使用当前已知值；SwiftTerm 完成 layout 后
     /// 通过 `sizeChanged` 立即同步真实尺寸。
+    ///
+    /// P1：打开任务在创建时捕获代次与连接——任何延迟恢复都只作用于
+    /// 打开它的那条连接，绝不读取可被 `reattach` 替换的可变属性。
     func startIfNeeded() {
         guard !hasStarted else {
             return
@@ -83,11 +102,16 @@ final class RemoteTerminalService: NSObject {
         }
         session.phase = .opening
 
-        openTask = Task { @MainActor in
+        let generation = runtimeGeneration
+        let openConnection = connection
+        openTask = Task { @MainActor [weak self] in
+            guard let self else {
+                return
+            }
             do {
                 let initialColumns = session.columns
                 let initialRows = session.rows
-                try await connection.openInteractiveShell(
+                try await openConnection.openInteractiveShell(
                     columns: initialColumns,
                     rows: initialRows
                 )
@@ -95,7 +119,14 @@ final class RemoteTerminalService: NSObject {
                 // stop() 在打开进行中到达：读取循环从未启动，无人再关这个
                 // Channel——立即补偿关闭，不留孤儿。
                 guard !hasStopped else {
-                    await connection.closeShellChannel()
+                    await openConnection.closeShellChannel()
+                    return
+                }
+
+                // 代次已更换（屏障语义下不应发生；防御）：不触碰新一代
+                // 状态，只清理自己打开的 Channel。
+                guard runtimeGeneration == generation else {
+                    await openConnection.closeShellChannel()
                     return
                 }
 
@@ -104,7 +135,7 @@ final class RemoteTerminalService: NSObject {
                 // 完成后按当前已知尺寸补偿同步一次，远端 PTY 必与视图一致。
                 if session.columns != initialColumns || session.rows != initialRows {
                     do {
-                        try await connection.resizeChannelPTY(
+                        try await openConnection.resizeChannelPTY(
                             columns: session.columns,
                             rows: session.rows
                         )
@@ -118,6 +149,10 @@ final class RemoteTerminalService: NSObject {
             } catch {
                 // stop() 已请求（打开被取消等）：静默退出，不更新状态。
                 guard !hasStopped else {
+                    return
+                }
+                // 代次已更换：旧代次的失败不得覆盖新一代状态。
+                guard runtimeGeneration == generation else {
                     return
                 }
 
@@ -137,26 +172,49 @@ final class RemoteTerminalService: NSObject {
         }
     }
 
-    /// 停止 Remote Terminal：取消打开与读取任务并关闭 Channel（幂等）。
+    /// 停止 Remote Terminal（幂等）：取消打开与读取任务并关闭 Channel。
     ///
     /// 与 `startIfNeeded()` 的竞态（打开进行中就收到关闭）由三层补偿闭合：
     /// - 打开任务被取消后失败：`openInteractiveShell` 失败路径自身清理；
     /// - 打开恰好已完成：打开任务检测 `hasStopped` 后立即关闭 Channel；
-    /// - 本方法的 `closeShellChannel()` 兜底（与上述并发时，
+    /// - 屏障任务的 `closeShellChannel()` 兜底（与上述并发时，
     ///   actor 内的在途等待保证互不重复释放、不留孤儿）。
     ///
-    /// 打开任务引用保留（已取消）：供 `waitForOpenTaskToFinish()`
-    /// 等待"打开 + 补偿关闭"全部尘埃落定；`hasStopped` 防止再次使用。
-    ///
-    /// 不销毁终端缓冲——用户仍可查看历史内容。
+    /// 需要确认旧任务**完全退出**（关闭 / Reconnect）时，必须使用
+    /// `stopBarrier()` 而不是本方法。不销毁终端缓冲——用户仍可查看历史。
     func stop() {
+        beginStop()
+    }
+
+    /// 可等待的拆除屏障（P1）：发起停止并等待旧打开任务、读取循环
+    /// **完全退出**（含其 Channel 补偿关闭）后才返回。关闭与 Reconnect
+    /// 必须经过本屏障——旧任务尘埃落定前，绝不允许 reattach 或释放
+    /// 旧连接，结构性消除"旧任务跨越 reattach 恢复"的竞态。
+    func stopBarrier() async {
+        beginStop()
+        await stopBarrierTask?.value
+    }
+
+    /// 停止的同步部分（幂等）：置标志、取消任务、登记屏障任务。
+    ///
+    /// 屏障任务捕获**当时的**连接与任务引用：延迟关闭绝不读取可被
+    /// `reattach` 替换的可变属性（P1 修复要求）。
+    private func beginStop() {
+        guard !hasStopped else {
+            return
+        }
         hasStopped = true
         openTask?.cancel()
         readLoopTask?.cancel()
-        readLoopTask = nil
 
-        Task { @MainActor in
-            await connection.closeShellChannel()
+        let capturedConnection = connection
+        let open = openTask
+        let read = readLoopTask
+        stopBarrierTask = Task { @MainActor in
+            // 先等待旧任务真正退出，再关闭旧连接上的 Channel。
+            await open?.value
+            await read?.value
+            await capturedConnection.closeShellChannel()
         }
     }
 
@@ -167,6 +225,27 @@ final class RemoteTerminalService: NSObject {
     /// 的失败路径清理、取消被 catch 分支静默吸收（同样已清理）。
     func waitForOpenTaskToFinish() async {
         await openTask?.value
+    }
+
+    /// 手动 Reconnect（Phase 8）：挂接一条全新已认证连接并复位运行时，
+    /// 复用同一 `TerminalView` 保留终端历史（任务书 25）。
+    ///
+    /// P1：reattach 自带防御屏障——旧运行时若未完全停止，先取消并
+    /// **等待**旧任务全部退出，随后才替换连接并递增代次。绝不复用
+    /// 已释放的 `LIBSSH2_SESSION *` / `LIBSSH2_CHANNEL *`。
+    func reattach(connection newConnection: SSHConnection) async {
+        if hasStarted {
+            await stopBarrier()
+        }
+        runtimeGeneration &+= 1
+        connection = newConnection
+        hasStarted = false
+        hasStopped = false
+        session.phase = .opening
+        session.terminalTitle = nil
+        session.currentDirectory = nil
+        feedLocalNotice("--- Reconnected ---")
+        AppLogger.terminal.info("Remote terminal reattached to a new connection")
     }
 
     /// 终端重新进入可见 Workspace 后恢复键盘焦点。
@@ -183,63 +262,118 @@ final class RemoteTerminalService: NSObject {
 
     // MARK: - 读取循环
 
+    /// 读取循环终止时携带的事件类型（先判定、后提交，中间插入测试接缝）。
+    private enum ReadLoopTerminalEvent {
+        case shellExited
+        case readError(RemoteTerminalError)
+        case cancelled
+        case readTimeout
+    }
+
     /// 持续读取远端输出并喂给 SwiftTerm；空闲时阻塞在 poll（无 CPU busy-loop）。
+    ///
+    /// P1：循环启动时捕获代次与连接；任何状态写入前都重新校验代次，
+    /// 延迟恢复的旧代次循环绝不更新新一代 Session、绝不触碰新连接。
     private func startReadLoop() {
+        let generation = runtimeGeneration
+        let loopConnection = connection
         readLoopTask = Task { @MainActor [weak self] in
-            while !Task.isCancelled {
-                guard let self else {
+            await self?.readLoopBody(generation: generation, loopConnection: loopConnection)
+        }
+    }
+
+    /// 读取循环主体：采集输出直到出现终止事件（EOF/错误/取消），
+    /// 经测试接缝后，在代次校验通过的前提下一次性提交状态。
+    private func readLoopBody(
+        generation: UInt64,
+        loopConnection: SSHConnection
+    ) async {
+        var event: ReadLoopTerminalEvent?
+
+        while event == nil && !Task.isCancelled {
+            do {
+                let output = try await loopConnection.readChannelOutput()
+
+                // 读取可能在挂起中被 reattach 跨越（测试接缝 / 异常路径）：
+                // 旧代次的输出不得喂给新一代终端。
+                guard runtimeGeneration == generation else {
                     return
                 }
 
-                do {
-                    let output = try await self.connection.readChannelOutput()
-
-                    if !output.bytes.isEmpty {
-                        // 原始 byte stream 直接交给 SwiftTerm 消费，
-                        // 不做 String 重编码（保护 UTF-8 / ANSI / 二进制序列边界）。
-                        self.terminalView.feed(byteArray: output.bytes[...])
-                    }
-
-                    if output.isEOF {
-                        // 远端 `exit` / Channel 关闭：保留屏幕与历史，标记退出。
-                        self.handleShellExit()
-                        return
-                    }
-                } catch let error as RemoteTerminalError {
-                    self.handleReadError(error)
-                    return
-                } catch let error as SSHError where error == .cancelled {
-                    // 用户断开：连接层已清理，读取循环安静退出。
-                    if self.session.phase == .active || self.session.phase == .opening {
-                        self.session.phase = .connectionLost
-                        self.feedLocalNotice("[Connection closed]")
-                    }
-                    return
-                } catch let error as SSHError where error == .connectionTimeout {
-                    // 读取等待超预算（传输长时间无响应）：按连接丢失处理。
-                    self.session.phase = .connectionLost
-                    self.feedLocalNotice("[Connection lost]")
-                    return
-                } catch {
-                    self.handleReadError(.channelReadFailed)
-                    return
+                if !output.bytes.isEmpty {
+                    // 原始 byte stream 直接交给 SwiftTerm 消费，
+                    // 不做 String 重编码（保护 UTF-8 / ANSI / 二进制序列边界）。
+                    terminalView.feed(byteArray: output.bytes[...])
                 }
+
+                if output.isEOF {
+                    // 远端 `exit` / Channel 关闭：保留屏幕与历史，标记退出。
+                    event = .shellExited
+                }
+            } catch is CancellationError {
+                event = .cancelled
+            } catch let error as RemoteTerminalError {
+                event = .readError(error)
+            } catch let error as SSHError where error == .cancelled {
+                // 用户断开：连接层已清理，读取循环安静退出。
+                event = .cancelled
+            } catch let error as SSHError where error == .connectionTimeout {
+                // 读取等待超预算（传输长时间无响应）：按连接丢失处理。
+                event = .readTimeout
+            } catch {
+                event = Task.isCancelled
+                    ? .cancelled
+                    : .readError(.channelReadFailed)
             }
+        }
+
+        if event == nil {
+            event = .cancelled
+        }
+
+        // 测试接缝（确定性竞态）：终止事件已判定、状态尚未提交。
+        if let hook = testReadLoopExitHook {
+            await hook()
+        }
+
+        // 释放后代次可能已更换：旧代次不得再写入任何状态或操作连接。
+        guard runtimeGeneration == generation else {
+            return
+        }
+
+        switch event! {
+        case .shellExited:
+            await handleShellExit(connection: loopConnection)
+        case .readError(let error):
+            await handleReadError(error, connection: loopConnection)
+        case .cancelled:
+            if session.phase == .active || session.phase == .opening {
+                session.phase = .connectionLost
+                feedLocalNotice("[Connection closed]")
+            }
+        case .readTimeout:
+            session.phase = .connectionLost
+            feedLocalNotice("[Connection lost]")
         }
     }
 
     /// 远端 Shell 退出（EOF）：Channel 由读取循环侧触发关闭，状态明确。
-    private func handleShellExit() {
+    ///
+    /// 关闭使用**捕获的**连接并在本任务内等待完成：`stopBarrier()`
+    /// 等待读取循环退出即同时覆盖该清理，不留延迟关闭跨越 reattach。
+    private func handleShellExit(connection closedConnection: SSHConnection) async {
         session.phase = .exited
         feedLocalNotice("[Remote shell exited]")
-        Task { @MainActor in
-            await connection.closeShellChannel()
-        }
+        await closedConnection.closeShellChannel()
         AppLogger.terminal.info("Remote shell exited")
     }
 
     /// 读取失败：区分 Channel 关闭 / 连接丢失 / 传输错误。
-    private func handleReadError(_ error: RemoteTerminalError) {
+    /// 关闭同样使用捕获的连接并在本任务内等待完成。
+    private func handleReadError(
+        _ error: RemoteTerminalError,
+        connection closedConnection: SSHConnection
+    ) async {
         switch error {
         case .channelClosed:
             session.phase = .exited
@@ -253,9 +387,7 @@ final class RemoteTerminalService: NSObject {
             feedLocalNotice("[Connection lost]")
         }
         AppLogger.terminal.error("Remote terminal read loop ended: \(error)")
-        Task { @MainActor in
-            await connection.closeShellChannel()
-        }
+        await closedConnection.closeShellChannel()
     }
 
     /// 在终端本地显示一条非交互提示（不进入任何日志，仅终端缓冲）。

@@ -317,19 +317,21 @@ final class SSHConnectionTests: XCTestCase {
         context.insert(host)
 
         let service = SSHService(modelContainer: container)
-        service.connect(to: host)
 
         // 前置校验应立即失败，明确 credentialNotFound，而非假的认证失败。
-        let info = service.connectionInfo(for: host.id)
-        XCTAssertNotNil(info)
-        if case let .failed(error) = info?.phase {
+        let preparation = service.prepareConnection(for: host)
+        guard case let .rejected(info) = preparation else {
+            XCTFail("缺少凭据应立即 rejected，实际：\(String(describing: preparation))")
+            return
+        }
+        if case let .failed(error) = info.phase {
             XCTAssertEqual(error, .credentialNotFound)
             XCTAssertEqual(
-                info?.failureMessage,
+                info.failureMessage,
                 SSHError.credentialNotFound.errorDescription
             )
         } else {
-            XCTFail("缺少凭据应立即 failed(.credentialNotFound)，实际：\(String(describing: info?.phase))")
+            XCTFail("缺少凭据应立即 failed(.credentialNotFound)，实际：\(info.phase)")
         }
     }
 
@@ -352,18 +354,20 @@ final class SSHConnectionTests: XCTestCase {
         context.insert(host)
 
         let service = SSHService(modelContainer: container)
-        service.connect(to: host)
 
-        let info = service.connectionInfo(for: host.id)
-        XCTAssertNotNil(info)
-        if case let .failed(error) = info?.phase {
+        let preparation = service.prepareConnection(for: host)
+        guard case let .rejected(info) = preparation else {
+            XCTFail("无路径的 Private Key Host 应立即 rejected，实际：\(String(describing: preparation))")
+            return
+        }
+        if case let .failed(error) = info.phase {
             XCTAssertEqual(error, .privateKeyPathMissing)
             XCTAssertEqual(
-                info?.failureMessage,
+                info.failureMessage,
                 SSHError.privateKeyPathMissing.errorDescription
             )
         } else {
-            XCTFail("无路径的 Private Key Host 应立即 failed(.privateKeyPathMissing)，实际：\(String(describing: info?.phase))")
+            XCTFail("无路径的 Private Key Host 应立即 failed(.privateKeyPathMissing)，实际：\(info.phase)")
         }
     }
 

@@ -939,10 +939,10 @@ Passphrase 清零测试边界（如实说明）：
 
 ### Phase 7：Remote SSH Terminal
 
-状态：**第三轮验收未通过（P1 并发断开 double-free）；已按验收意见完成整改，等待复验**
+状态：**已通过用户验收**（基线提交 `9af8b91`）
 
 完成日期：2026-08-29（初版）／ 2026-08-29（第一轮整改）／
-2026-08-30（第二、三轮整改）
+2026-08-30（第二、三轮整改与最终复验）
 
 #### 1. 总体架构
 
@@ -1491,9 +1491,352 @@ double-free。修复如下：
 - 测试临时 `authorized_keys` 标记块与 `/tmp` 临时密钥均已清理；
   仓库外没有保留新的凭据。
 
+### Phase 8：Session Tabs / Multi-Terminal Session Management
+
+状态：**已通过用户验收（复验，2026-08-30）**
+
+完成日期：2026-08-30 ／ 验收阻塞整改日期：2026-08-30 ／
+验收通过日期：2026-08-30
+
+#### 1. 总体架构
+
+在 Phase 2（Local Terminal）与 Phase 7（Remote SSH Terminal）之上，建立统一的
+多 Terminal Session / Tab 管理层，支持同时运行多个 Local 与多个 Remote SSH
+Terminal：
+
+```text
+AppState（App 级 @MainActor 稳定对象）
+  └── SessionManager（@Observable，唯一 Session 生命周期所有者）
+        ├── ManagedTerminalSession（统一模型，纯内存，不进 SwiftData）
+        │     ├── .local     → LocalTerminalService（SwiftTerm LocalProcess/PTY）
+        │     └── .remoteSSH → SSHService.prepareConnection(for:) 工厂
+        │                       → 每 Session 独立 SSHConnection（独立 LIBSSH2_SESSION）
+        │                       → RemoteTerminalService（SwiftTerm SSH Bridge）
+        └── sessions / activeSessionID / pendingCloseConfirmation / pendingHostClose
+```
+
+核心不变量：
+
+- SessionManager 由 `AppState` 持有（App 级稳定对象，不是 SwiftUI View 的
+  附属对象）；切换 Sidebar、切换 Tab、窗口变化均不销毁任何运行中的会话。
+- 每个 Remote Session 拥有**独立** `SSHConnection`（actor）与独立
+  `LIBSSH2_SESSION`；同一 Host 的多个会话之间没有共享 Channel 或共享认证状态。
+- `TerminalSession` 是纯内存模型（`ManagedTerminalSession`），不写 SwiftData；
+  Host 数据与 KnownHost 持久化保持 Phase 3/6 原样。
+- Tab 切换只切换可见的 SwiftTerm 视图（已创建的 `NSView` 复用），绝不重建
+  Shell、绝不重新认证、绝不重建 Channel。
+
+#### 2. SessionManager（`MacSSH/Services/Terminal/SessionManager.swift`）
+
+- `@MainActor @Observable final class`，公开 `sessions`、`activeSessionID`、
+  `pendingCloseConfirmation`、`pendingHostClose` 四个只读状态。
+- 初始化时创建一个默认 Local Session（保持 Phase 2 启动即得一个终端的行为）。
+- 会话创建：`createLocalSession()`（⌘T 与 Toolbar 入口）、
+  `createRemoteSession(host:)`（Host 行 Connect 入口）。
+- 标题编号（P2 整改后）：`nextTitle(base:)` 使用按基准名的**单调计数器**
+  （`titleCounters`，随 Manager 存活、不回收不复用），生成
+  `Local` / `Local 2` / `Local 3`… 与 `HostName` / `HostName 2`…；
+  关闭中间 Tab（或全部关闭）后再创建，编号继续前进，绝不产生同名 Tab。
+- 激活：`activateSession(id:)` / `activateTab(at:)`（⌘1~⌘9，越界忽略）。
+- 关闭：`requestClose(id:)` 依据 `requiresCloseConfirmation` 分流——
+  需要确认的 Remote 活跃会话进入 `pendingCloseConfirmation` 流程
+  （`confirmClose()` / `cancelCloseConfirmation()`）；已退出 / 已断开 /
+  失败 / Local 会话直接 `closeSession(id:)`。
+- `closeSession(id:)`：先同步 `removeSession`（列表移除 + 激活相邻 Tab：
+  关闭非首位取左邻，否则取现存第一个），再异步 `teardown`——
+  Local 终止进程与 PTY；Remote 走**可等待的拆除屏障**
+  （`RemoteTerminalService.stopBarrier()`：取消并等待旧打开任务与读取
+  循环完全退出、关闭旧连接 Channel，之后才 `SSHConnection.disconnect()`），
+  全部幂等，重复关闭无 double-free。
+- Host 维度：`hostSessionSummary(hostID:)` 供 Host 行展示
+  （`N Sessions` / `Connecting…` / `Connected`）；
+  `requestCloseAllSessions(hostID:hostName:)` / `confirmHostClose()` 在
+  Hosts 页 Disconnect 时**关闭该 Host 的全部会话**（用户确认的产品决策）。
+- 重连：`reconnectSession(id:)` 对 `canReconnect`（exited / disconnected /
+  failed 且无在途任务）的 Remote Session 先经 `stopBarrier()` 完整拆除
+  旧运行时并断开旧连接，再走**完整新连接流程**
+  （TCP → KnownHost 重新验证 → 认证 → Channel），不自动重连；
+  成功后经 `RemoteTerminalService.reattach(connection:)`（自带屏障与
+  代次递增）复用同一终端视图，并插入 "--- Reconnected ---" 标记。
+- `resolveHostTrust(sessionID:decision:)`：把 Phase 5/6 的 Host Trust 决策
+  路由到对应 Session 的 `SSHConnection`。
+- `runConnectFlow` 在 `await connect()` 返回后若发现 Session 已被关闭，
+  执行补偿性 `disconnect()`，不留孤儿连接。
+
+#### 3. 统一会话模型（`MacSSH/Models/ManagedTerminalSession.swift`）
+
+- `@MainActor @Observable final class ManagedTerminalSession`：
+  `kind`（local / remoteSSH）、`title`、`hostID`、
+  `localTerminal` / `remoteTerminal`（SwiftTerm 视图服务）、
+  `connection` / `connectionInfo`（Remote 运行时）、
+  `connectTask` / `reconnectTask`、`isClosed`、`failureMessage`。
+- `displayState`：综合连接阶段与终端状态产出
+  idle / connecting / authenticating / opening / active / exited /
+  disconnected / failed(message) / closing，驱动 Tab 图标、状态文本与按钮。
+- `requiresCloseConfirmation`：仅 Remote 处于
+  connecting / authenticating / opening / active 时为真；
+  Local 一律免确认（用户确认的产品决策）。
+- `canReconnect`：仅 Remote 且无在途连接 / 重连任务且状态为
+  exited / disconnected / failed 时为真。
+
+#### 4. SSHService 工厂化改造（`MacSSH/Services/SSH/SSHService.swift`）
+
+- Phase 5–7 的“每 Host 单连接”服务重构为**无状态连接工厂**：
+  `prepareConnection(for: host) async -> ConnectionPreparation`——
+  `.ready(connection, info)` 或 `.rejected(info)`（Private Key 路径缺失等
+  前置失败，携带用户可读 `failureMessage`，不进入假认证失败）。
+- 每个 Remote Session 调用一次工厂得到自己的 `SSHConnection`；
+  SSHService 不再持有任何共享连接，`LIBSSH2_SESSION` 与会话一一对应。
+- Host Key Trust 决策、KnownHost 验证、超时预算（各 10 秒）与
+  日志安全边界（不记录密码 / Fingerprint / 终端内容）保持 Phase 5/6 不变。
+
+#### 5. UI 集成
+
+- `TerminalTabBar`：多 Tab 渲染（标题 + 状态点/转圈/红叉），单击切换、
+  中键/右键关闭入口、`+` 新建 Local；活跃 Tab 高亮。
+- `TerminalWorkspaceView`：持有全部已创建 Session 的终端视图（`ZStack`
+  按活跃切换可见性），空态提示；Remote Session 首次激活时启动连接流，
+  Trust 对话框 / 失败态 / Reconnect 按钮由 `displayState` 驱动。
+- `HostListView` / `HostRowView`：行状态列接入 `hostSessionSummary`；
+  Disconnect 弹出“关闭该 Host 全部 N 个会话”确认（存在活跃会话时），
+  确认后逐会话安全拆除。
+- `RootView` / `AppToolbarContent`：Sidebar 选择与会话创建入口接线。
+- `MacSSHApp` 新增 `terminalCommands`：`CommandMenu("Terminal")` 提供
+  ⌘T（New Local Terminal）与 ⌘1~⌘9（Show Tab N）；
+  `CommandGroup(replacing: .newItem)` 以应用语义的 Close（⌘W）替换系统
+  File 菜单中 Close Window 位置的行为——活跃会话走
+  `requestClose`，无会话时回退 `performClose`。
+
+#### 6. 测试（`Tests/SSH/SessionManagerTests.swift`，A–AA 共 27 项）
+
+- A 默认 Local Session；B 多 Local 独立运行时（各自 PTY、独立输出）；
+  C Tab 切换不重建（同一视图身份保持）。
+- D–H 关闭语义：关闭非活跃保留活跃；关闭活跃激活左邻；关闭首位激活右邻；
+  关闭末位进入空态；全关后可重新创建（P2 整改后断言更新：编号不回收，
+  全关后再建为 `Local 2`）。
+- I 重复关闭幂等（不崩溃、不重复移除）。
+- J 被拒绝的 Remote Session 保留 failed Tab（前置失败不弹窗、不进假认证）；
+  K Reconnect 状态迁移；L `hostSessionSummary` 聚合（活跃 / 连接中计数，
+  failed / exited / disconnected 不计）；M failed 会话免确认直接关闭。
+- N 同 Host 双 Remote Session Shell 完全独立（各自 cwd、互不影响、
+  关闭其一不断开另一）——需真实 sshd + 测试密钥。
+- O Connecting 中关闭：连接被取消清理、无孤儿连接、状态收敛
+  （不可路由地址下收敛为 `.disconnected`（cancel）或
+  `.failed(.connectionTimeout)`（10 秒 TCP 预算耗尽））。
+- P double close + disconnect 三任务并发：单次移除、无崩溃、状态收敛
+  ——需真实连接。
+- Q Remote `exit` 后关闭不崩溃；R exit 后 Reconnect 建立全新连接；
+  S Reconnect teardown 期间关闭不留下孤儿；T `closeAllSessions(hostID:)`
+  关闭同一 Host 全部会话——均需真实连接。
+- U 20× New Local → Close 循环：FD / 线程 / 常驻内存无持续增长
+  （任务书 61/93，无凭据要求，实测 1.19s 通过）。
+- V 5 个空闲 Session 保持 30 秒：进程 CPU 增量 ≤ 1.0 秒，无 busy-loop
+  （任务书 94，实测通过）。
+- W 20× New Remote → Connect → Open Shell → Close（SessionManager 层级）：
+  每轮连接收敛、无孤儿，最终 FD / 线程不持续增长——需真实连接。
+
+P1 验收整改新增（确定性竞态与 Reconnect 补覆盖）：
+
+- X 屏障扣留 reattach（确定性竞态）：旧读取循环判定终止事件后由测试
+  接缝（`testReadLoopExitHook`）阻塞在门闩 → 期间发起 `reattach`，
+  断言 300ms 后 reattach **仍未完成**（被拆除屏障扣住）→ 释放门闩 →
+  reattach 落定、新 Shell active、新 Channel 打开且可执行命令；
+  旧代次终止通知先于 "--- Reconnected ---" 提交（串行不交错）
+  ——需真实连接。
+- Y 取消分支代次防护：活跃会话 `stop()` 触发读取循环取消路径，同样
+  被门闩阻塞；释放后断言新一代状态不被旧代次覆盖（最终 active、
+  重连标记之后无旧断开通知）——需真实连接。
+- Z 真实 Connection Lost 后的手动 Reconnect：连接前后 `ps -u` 差集
+  唯一识别本连接的 sshd 子进程并 SIGKILL → 会话进入 `.disconnected` →
+  `canReconnect` → Reconnect 恢复 active、连接对象为全新实例
+  （绝不复用旧 `LIBSSH2_SESSION`）、Shell 可执行命令——需真实连接。
+
+P2 验收整改新增：
+
+- AA 关闭中间 Tab 后再创建：Local / Local 2 / Local 3 关闭 Local 2 后
+  新建必须为 `Local 4`（编号不回收），存活标题集合无重复；同 Host
+  SSH Session 同规则（前置拒绝路径验证，无需真实连接）。
+
+既有测试迁移（SSHService 工厂化导致旧 API 移除）：
+
+- `HostEditorValidationTests`：5 项改用 `prepareConnection(for:)` 的
+  `.rejected(info)` 模式匹配，验证 `.privateKeyPathMissing` 等前置失败。
+- `SSHConnectionTests` testH / testI：同法迁移，断言
+  `.credentialNotFound` / `.privateKeyPathMissing` 与 `failureMessage`。
+- Phase 4–7 全部测试类保持注册并随整套运行。
+
+#### 7. 构建与验证结果（2026-08-30，验收阻塞整改后复跑）
+
+- `Scripts/build-app.sh`（全新 Derived Data）：Debug + Release arm64
+  clean build 均 **BUILD SUCCEEDED**，项目代码 **compiler warning = 0**
+  （Debug / Release 各 0）。
+- build-for-testing 成功；测试目标代码 **0 warning**。
+- 全套 XCTest（`test-without-building`）：**111 项执行 /
+  0 失败 / 50 项凭据门控 skip**。
+  - `SessionManagerTests`：27 项中 **17 项真实执行通过 / 10 项凭据门控
+    skip / 0 失败**（skip 为 N、P–T、W、X、Y、Z，需要
+    `run-ssh-tests.sh` 生成的测试密钥 + authorized_keys 授权）。
+  - `SSHConnectionTests`：31 项 / 16 skip / 0 失败（skip 为密码 / 密钥
+    认证用例）；`RemoteTerminalTests`：24 项 / 23 skip / 0 失败；
+    `KnownHostServiceTests` 13、`DependencyIdentityTests` 6、
+    `HostEditorValidationTests` 5、`CredentialServiceTests` 5（1 项
+    既定 production 状态 skip）——全部 0 失败。
+- Release `.app`：Mach-O arm64、12 MB；`codesign --verify --strict` 通过
+  （satisfies its Designated Requirement）；`otool -L` 仅系统库，无
+  `/opt/homebrew`、`/usr/local` 或动态 libssh2/libssl/libcrypto；
+  libssh2 与 OpenSSL 静态链接（`nm` 实测含 `libssh2_*` 与
+  `EVP_`/`OSSL_` 符号）。本地 `Sign to Run Locally` 下 Xcode 对
+  ad-hoc 签名按系统行为关闭 Hardened Runtime，与 Phase 0–7 一致；
+  正式签名发布阶段复测。
+
+#### 8. 当前已知问题 / 待验收复验项
+
+- 凭据门控测试（密码 / 私钥 / passphrase 全套真实回归，含整改新增的
+  X / Y / Z 三项确定性竞态与 Connection Lost Reconnect 用例）需在
+  正常终端运行 `Scripts/run-ssh-tests.sh`（交互式输入本机密码进测试
+  专用 Keychain item；脚本自动生成测试密钥、维护 authorized_keys
+  标记块并在退出时清理）。该脚本也会顺带清理上一轮异常中断遗留的
+  authorized_keys 标记块。
+- ⌘T / ⌘W / ⌘1~⌘9、Tab 切换、关闭确认、Reconnect 的运行时 UI 验证
+  需在真实桌面交互下完成（本轮开发环境对 GUI 自动化的限制使
+  菜单覆盖与按键行为未能由代理自动复测）。
+- 除已整改的 P1 / P2 外未发现 Phase 8 范围内的功能缺陷；整改后
+  0 失败贯穿所有已执行轮次。
+
+#### 9. 验收阻塞修复（首轮验收不通过 → 整改，2026-08-30）
+
+首轮验收指出两个缺陷，均已修复：
+
+**P1 生命周期竞态：Reconnect 的旧任务可能关闭新连接**
+
+缺陷成因：`stop()` 只取消旧 `openTask` / `readLoopTask` 而不等待其结束；
+异步关闭闭包在执行时读取可变的 `connection` 属性。旧任务若在 `reattach`
+换上**新连接**之后才恢复，`closeShellChannel()` 会作用于新连接；旧读取
+循环的取消分支也可能在新一代进入 `.opening`/`.active` 后把状态覆盖回
+`connectionLost`。
+
+整改措施（`MacSSH/Services/Terminal/RemoteTerminalService.swift`）：
+
+1. **可等待的拆除屏障**：`stop()` 拆为同步部分 `beginStop()`（置
+   `hasStopped`、取消两个任务、**捕获当时的连接与任务引用**）+
+   屏障任务（等待旧打开任务与读取循环**完全退出**，再关闭捕获连接上
+   的 Channel）。新增 `stopBarrier()`；`SessionManager` 的 `teardown`
+   与 `reconnectSession` 均改为 `await remote.stopBarrier()` 后才
+   `disconnect()`——旧任务尘埃落定前绝不换新连接。
+2. **延迟操作一律捕获连接**：打开任务、读取循环、屏障任务、
+   `handleShellExit` / `handleReadError` 全部使用创建时捕获的
+   `SSHConnection`，不再在执行时读取可被 `reattach` 替换的属性；
+   终止路径的 Channel 关闭改为任务内联 `await`（屏障等待读取循环退出
+   即同时覆盖该清理，不留跨越 reattach 的延迟关闭）。
+3. **运行时代次（generation）**：`runtimeGeneration` 于每次
+   `reattach` 递增；打开任务与读取循环启动时捕获代次，任何状态写入 /
+   输出喂入前重新校验，旧代次延迟恢复一律硬性失效、只清理自己打开的
+   Channel。`reattach` 自身先经屏障再换连接、递增代次，结构上使
+   "旧任务跨越 reattach 恢复"在生产路径不可能发生。
+4. **读取循环重排**：先判定终止事件（EOF / 读错误 / 取消 / 读超时）、
+   再经测试接缝（`testReadLoopExitHook`，生产恒 nil）、最后校验代次并
+   一次性提交状态——杜绝半提交被新代次交错覆盖。
+
+**P2 重复标题：关闭中间 Tab 后再创建产生同名 Tab**
+
+缺陷成因：`nextTitle(base:)` 用当前同名会话数量生成编号，关闭中间
+Tab 后计数回落，新建会话复用了仍被占用的编号。
+
+整改措施（`SessionManager.swift`）：按基准名维护**单调计数器**
+`titleCounters`，编号只前进不回收；计数器随 Manager 存活（Session
+纯内存，无需持久化）。
+
+验证结果：
+
+- 整改新增测试 4 项（X / Y / Z / AA）；testH 断言随单调语义更新
+  （全关后再建为 `Local 2`）。
+- build-for-testing 与全套回归：**111 项 / 0 失败 / 61 通过 /
+  50 凭据门控 skip**；Debug + Release clean build 0 warning。
+- X / Y / Z 为确定性竞态与真实 Connection Lost 用例，需要测试密钥 +
+  authorized_keys 授权（本机沙箱无法写 `~/.ssh/authorized_keys`），
+  本轮按规则 skip，**待 `Scripts/run-ssh-tests.sh` 全凭据复验后
+  记为通过**；AA 无需凭据，已真实执行通过。
+
+**第二轮复验发现的测试侧缺陷（已修复，未触碰产品代码）**
+
+用户复验结果：23 项 SessionManager 测试通过，但 testR 失败（停在
+"SSH · Loopback · Verifying Host…" 后超时），testX 阻塞被中止，
+testY / testZ 未执行。根因是**测试辅助方法缺陷，不是产品回归**：
+
+- `resolveTrustAndAwaitActive` 首连选择 `.trustOnce`——KnownHost
+  不持久化；而 Reconnect / 第二条连接**正确地重新执行 Host Key
+  验证**（Phase 6 安全语义，绝不绕过），再次进入等待确认，测试侧
+  却没有再次确认，于是 testR / testZ 的 Reconnect 与 testX / testY
+  的第二条连接全部挂起。
+
+修复：辅助方法首连改用 `.trustAlways`（经
+`knownHostService.trust(...)` 持久化到测试容器）。重新验证路径不变、
+仍然完整执行，只是与已存储 Host Key 匹配后通过。产品代码零改动
+（`RootView` 的 Trust Once 按钮与 `SSHConnection` 验证逻辑保持原样）。
+
+修复后本地验证：build-for-testing 成功（0 warning）；全套回归
+**111 项 / 61 通过 / 0 失败 / 50 凭据门控 skip**。
+
+**全凭据复验（`Scripts/run-ssh-tests.sh` 实际运行，2026-08-30）**
+
+- `SessionManagerTests`：**27 项全部真实执行通过，0 失败 0 skip**——
+  上轮被阻断的 **testR（Reconnect 完整回环）/ testX（屏障扣留
+  reattach 确定性竞态）/ testY（取消分支代次防护）/ testZ（真实
+  Connection Lost 后 Reconnect）全部通过**，P1 竞态整改取得真实判定。
+- 全套：94 通过 / 16 失败 / 1 既定 skip。16 项失败**全部是密码认证
+  用例**（RemoteTerminalTests 10 项 + SSHConnectionTests 6 项），根因
+  一致：`credentialNotFound`——代理环境无交互终端，脚本的
+  `security add-generic-password -w` 密码提示读到 EOF，临时凭据未创建。
+  该组用例在上一轮用户交互运行中已全部通过，属环境限制而非产品缺陷；
+  密码认证路径的持续回归以用户交互运行结果为准。
+- 私钥认证全部用例（含 20× 循环、空闲 CPU、同 Host 双会话、并发
+  Close、批量 Disconnect、Trust 持久化 SessionManager 场景）通过。
+- 清理确认：临时 Keychain item、/tmp 测试密钥、authorized_keys 标记
+  块、on-disk 测试产物全部移除。
+
+#### 10. 验收结果（2026-08-30，复验通过）
+
+用户复验结论：**通过，未发现新的 P1 / P2**。
+
+- 关键生命周期测试 R / X / Y / Z：4/4 通过；
+  `SessionManagerTests`：27/27 通过，0 skip / 0 failure。
+- 全项目测试：111 项执行，61 pass / 50 credential-gated skip /
+  0 failure；Debug / Release 干净构建 0 warning / 0 error。
+- Release `.app` 实际启动并稳定运行（观测期 CPU 0.0%），随后正常停止。
+- 四个重点验收点全部满足：
+  1. libssh2 为 1.11.2_DEV（commit
+     `be937743a85c4064a6399cee39e606672a401069`），非存在已知问题的
+     原版 1.11.1；
+  2. `SSHConnection.swift` 严格按“获取 Host Key → 用户确认 / 匹配
+     可信记录 → Password 认证”执行，不提前发送密码（本轮无 Password
+     凭据，该组按门控跳过、未冒充通过；密码发送顺序经源代码路径
+     审查确认）；
+  3. Release `.app` 的 `otool -L` 仅系统库，不依赖 `/opt/homebrew`、
+     `/usr/local` 或动态 libssl/libcrypto/libssh2，签名完整性通过；
+  4. EAGAIN 路径为 readiness wait / 异步退避 / `Task.sleep`，无
+     busy-loop，30 秒空闲 CPU 测试通过。
+- 整改确认有效：断开 / 重连 / 旧 read-loop 退出竞态、旧 generation
+  覆盖新连接状态、同 Host 多会话标题重复、Trust Always 测试辅助
+  （重连仍验证 Host Key，但不再次阻塞在用户确认界面）。
+- 验收产生的临时 SSH key、authorized_keys 标记与运行进程均已清理；
+  工作区未提交改动保持原样，`git diff --check` 通过。
+- 私钥实连路径已完整执行；未实现任何 Phase 9 内容。
+
+本阶段明确未实现（Phase 8 禁止范围，全部遵守）：
+
+- SFTP、文件浏览、Upload/Download、Transfer Manager（Phase 9 范围）。
+- Port Forwarding、SSH Agent、ProxyJump、SSH Config、自动重连
+  （Reconnect 仅手动触发）。
+- Session / Tab 布局或运行状态的 SwiftData 持久化（本阶段纯内存）。
+
 ## 下一阶段
 
-Phase 7 最终复验完成：全凭据 29 项清单已出具，复验中发现的 2 个
-Resize 竞态缺陷已修复并稳定覆盖，0 失败。停止开发，等待用户最终验收。
+Phase 8 已通过用户验收（2026-08-30 复验）：多 Session / Tab 管理
+（SessionManager + 统一会话模型 + SSHService 工厂化 + ⌘T/⌘W/⌘1~9 +
+关闭确认 + 手动 Reconnect）及两轮验收整改（P1 拆除屏障 / 连接捕获 /
+运行时代次 + P2 标题单调计数器 + 测试侧 Trust Always 修复）。
+`SessionManagerTests` 27/27 真实通过，全套 111 项 0 失败，
+Debug / Release 干净构建 0 warning，Release `.app` 实测稳定。
 
-下一阶段是 Phase 8，只有用户明确要求后才能开始。
+停止开发。下一阶段是 Phase 9（SFTP / 文件传输），只有用户明确要求后
+才能开始。

@@ -12,13 +12,17 @@ struct AppToolbarContent: ToolbarContent {
 
         if appState.selectedSection != .hosts {
             ToolbarItem(placement: .primaryAction) {
-                Button(action: {}) {
+                Button(action: newLocalSession) {
                     Label("New Session", systemImage: "plus")
                 }
-                .disabled(true)
-                .help("New sessions are introduced in a later phase")
+                .help("New Local Terminal (⌘T)")
                 .accessibilityIdentifier("toolbar.newSession")
             }
         }
+    }
+
+    private func newLocalSession() {
+        appState.selectedSection = .terminal
+        appState.sessionManager.createLocalSession()
     }
 }

@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MacSSH Phase 5 / Phase 6 / Phase 7 SSH 连接真实测试脚本
+# MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 SSH 连接与会话真实测试脚本
 #
 # 前置要求：
 #   1. 系统设置 → 通用 → 共享 → 远程登录 已开启（本机 sshd 作为测试服务器）
@@ -78,7 +78,7 @@ cleanup_all() {
 }
 trap cleanup_all EXIT
 
-echo "==> MacSSH Phase 5 / Phase 6 / Phase 7 SSH connection tests"
+echo "==> MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 SSH connection & session tests"
 echo ""
 
 # 检查本机 sshd
@@ -159,6 +159,7 @@ security add-generic-password \
 echo ""
 echo "==> 运行 SSHConnectionTests（Phase 5 A-I + Phase 6 J-W + 持久化失败注入 + 20 次循环 + 空闲 CPU）"
 echo "    同时运行 RemoteTerminalTests（Phase 7 Shell Channel/PTY/Resize/EOF/大输出/空闲 CPU/20 轮循环 + top/nano/htop 全屏 + 打开立即关闭 / close-reopen-disconnect / 双 disconnect EAGAIN 并发）"
+echo "    以及 SessionManagerTests（Phase 8 多 Session 生命周期 / 同 Host 多会话独立 / close-while-connecting / double close + disconnect / reconnect 竞态）"
 echo "    以及 KnownHostServiceTests / HostEditorValidationTests / CredentialServiceTests / DependencyIdentityTests"
 xcodebuild test-without-building \
     -project MacSSH.xcodeproj \

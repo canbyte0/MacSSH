@@ -55,6 +55,9 @@
 		E10000000000000000000004 /* RemoteTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000004 /* RemoteTerminalService.swift */; };
 		E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* RemoteTerminalRepresentable.swift */; };
 		E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000006 /* RemoteTerminalTests.swift */; };
+		F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* ManagedTerminalSession.swift */; };
+		F10000000000000000000002 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* SessionManager.swift */; };
+		F10000000000000000000003 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* SessionManagerTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -127,6 +130,9 @@
 		E20000000000000000000004 /* RemoteTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalService.swift; sourceTree = "<group>"; };
 		E20000000000000000000005 /* RemoteTerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRepresentable.swift; sourceTree = "<group>"; };
 		E20000000000000000000006 /* RemoteTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalTests.swift; sourceTree = "<group>"; };
+		F20000000000000000000001 /* ManagedTerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagedTerminalSession.swift; sourceTree = "<group>"; };
+		F20000000000000000000002 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
+		F20000000000000000000003 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -209,6 +215,7 @@
 				A2000000000000000000001C /* KnownHost.swift */,
 				A20000000000000000000012 /* TerminalSession.swift */,
 				E20000000000000000000003 /* RemoteTerminalSession.swift */,
+				F20000000000000000000001 /* ManagedTerminalSession.swift */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -278,6 +285,7 @@
 			D2000000000000000000000B /* DependencyIdentityTests.swift */,
 			D2000000000000000000000D /* KnownHostServiceTests.swift */,
 			E20000000000000000000006 /* RemoteTerminalTests.swift */,
+			F20000000000000000000003 /* SessionManagerTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -359,6 +367,7 @@
 				A20000000000000000000013 /* LoginShellResolver.swift */,
 				A20000000000000000000014 /* LocalTerminalService.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
+				F20000000000000000000002 /* SessionManager.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -580,6 +589,8 @@
 				E10000000000000000000003 /* RemoteTerminalSession.swift in Sources */,
 				E10000000000000000000004 /* RemoteTerminalService.swift in Sources */,
 				E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */,
+				F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */,
+				F10000000000000000000002 /* SessionManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -593,6 +604,7 @@
 				D1000000000000000000000F /* KnownHostServiceTests.swift in Sources */,
 				D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */,
 				E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */,
+				F10000000000000000000003 /* SessionManagerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

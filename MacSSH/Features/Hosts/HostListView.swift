@@ -2,15 +2,12 @@ import SwiftData
 import SwiftUI
 
 /// Host Manager 直接观察 SwiftData，并在删除 Host 时同步清理 Keychain 凭据。
-/// Phase 5 起同时提供真实 SSH 连接入口；连接状态由 SSHService 持有。
+/// Phase 8 起 Connect / Open Terminal 直接创建 Remote Terminal Session
+///（per-session 连接，由 SessionManager 管理）。
 struct HostListView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AppState.self) private var appState
     private let credentialService = CredentialService.shared
-
-    private var sshService: SSHService {
-        appState.sshService
-    }
 
     /// @Query 让插入、编辑和删除在保存后立即反映到列表。
     @Query(sort: \Host.name) private var hosts: [Host]
@@ -76,37 +73,6 @@ struct HostListView: View {
         }
         .sheet(item: $groupEditorRequest) { request in
             HostGroupEditorView(group: request.group)
-        }
-        .sheet(item: hostTrustDialogBinding) { request in
-            // Phase 6：根据 KnownHost 验证结果决定显示未知主机对话框或 Host Key Changed 警告。
-            if case let .changed(storedFingerprint, storedKeyType) = request.info.hostKeyVerification {
-                HostKeyChangedDialogView(
-                    info: request.info,
-                    storedFingerprint: storedFingerprint,
-                    storedKeyType: storedKeyType,
-                    onReplace: {
-                        sshService.replaceTrustedKey(hostID: request.id)
-                    },
-                    onCancel: {
-                        sshService.cancelHostTrust(hostID: request.id)
-                    }
-                )
-                .interactiveDismissDisabled(true)
-            } else {
-                HostTrustDialogView(
-                    info: request.info,
-                    onTrustOnce: {
-                        sshService.trustOnce(hostID: request.id)
-                    },
-                    onTrustAlways: {
-                        sshService.trustAlways(hostID: request.id)
-                    },
-                    onCancel: {
-                        sshService.cancelHostTrust(hostID: request.id)
-                    }
-                )
-                .interactiveDismissDisabled(true)
-            }
         }
         .alert(
             "Delete Host?",
@@ -230,7 +196,7 @@ struct HostListView: View {
                     ForEach(filteredHosts) { host in
                         HostRowView(
                             host: host,
-                            connectionInfo: sshService.connectionInfo(for: host.id),
+                            summary: appState.sessionManager.hostSessionSummary(hostID: host.id),
                             toggleFavorite: {
                                 toggleFavorite(host)
                             },
@@ -239,9 +205,6 @@ struct HostListView: View {
                             },
                             disconnect: {
                                 disconnectHost(host)
-                            },
-                            openTerminal: {
-                                appState.openRemoteTerminal(for: host)
                             }
                         )
                         .tag(host.id)
@@ -259,15 +222,15 @@ struct HostListView: View {
                                 }
                         )
                         .contextMenu {
-                            if isHostConnected(host.id) {
+                            if hasSessions(host.id) {
                                 Button("Open Terminal") {
-                                    appState.openRemoteTerminal(for: host)
+                                    connect(host)
                                 }
 
                                 Button("Disconnect") {
                                     disconnectHost(host)
                                 }
-                            } else if !sshService.isConnectionActive(host.id) {
+                            } else {
                                 Button("Connect") {
                                     connect(host)
                                 }
@@ -383,45 +346,21 @@ struct HostListView: View {
         hostEditorRequest = HostEditorRequest(host: selectedHost)
     }
 
-    // MARK: - SSH 连接（Phase 5）
+    // MARK: - SSH 连接（Phase 8）
 
-    /// 发起连接；前置校验失败（Private Key、缺失凭据等）直接显示 failed 状态。
+    /// 创建新的 Remote Terminal Session（同 Host 可多开，任务书 36/37）；
+    /// Trust 对话框与连接失败状态由 Terminal Session / Root 层展示。
     private func connect(_ host: Host) {
-        sshService.connect(to: host)
+        appState.connectHost(host)
     }
 
-    /// 断开连接（幂等）；先收起该主机的 Remote Terminal（由连接生命周期
-    /// 驱动，Channel 关闭与 session 释放在 SSHConnection actor 内
-    /// 按序完成），再断开连接本身。
+    /// 关闭该 Host 的全部 Terminal Session（有活跃会话时先经确认）。
     private func disconnectHost(_ host: Host) {
-        appState.hostDidDisconnect(hostname: host.hostname, port: host.port)
-        sshService.disconnect(hostID: host.id)
+        appState.disconnectHost(host)
     }
 
-    private func isHostConnected(_ hostID: UUID) -> Bool {
-        sshService.connectionInfo(for: hostID)?.phase == .connected
-    }
-
-    /// 当前处于 awaitingHostTrust 的连接；sheet 展示其真实 Host Key。
-    /// 使用独立 struct 规避 actor 隔离类型的 Identifiable 限制。
-    private var hostTrustRequest: HostTrustRequest? {
-        guard let info = sshService.connections.values.first(where: {
-            $0.phase == .awaitingHostTrust
-        }) else {
-            return nil
-        }
-        return HostTrustRequest(id: info.hostID, info: info)
-    }
-
-    /// Trust 对话框关闭（Esc 等）等价于 Cancel，必须断开连接。
-    private var hostTrustDialogBinding: Binding<HostTrustRequest?> {
-        Binding(
-            get: { hostTrustRequest },
-            set: { newValue in
-                guard newValue == nil, let current = hostTrustRequest else { return }
-                sshService.cancelHostTrust(hostID: current.id)
-            }
-        )
+    private func hasSessions(_ hostID: UUID) -> Bool {
+        !appState.sessionManager.hostSessionSummary(hostID: hostID).isEmpty
     }
 
     /// Favorite 是普通 SwiftData 字段；切换后立即显式保存。
@@ -645,10 +584,4 @@ private struct HostGroupEditorRequest: Identifiable {
         self.group = group
         id = group?.id ?? UUID()
     }
-}
-
-/// 驱动 Host Trust 对话框 Sheet 的请求；以 HostID 作为稳定标识。
-private struct HostTrustRequest: Identifiable {
-    let id: UUID
-    let info: SSHConnectionInfo
 }

@@ -47,8 +47,8 @@ final class HostEditorValidationTests: XCTestCase {
 
     // MARK: - SSHService 前置校验（与编辑器同一标准）
 
-    /// Private Key Host 的私钥路径为 nil / 空白时，connect 必须立即
-    /// failed(.privateKeyPathMissing)，不创建 SSH 连接。
+    /// Private Key Host 的私钥路径为 nil / 空白时，prepareConnection 必须
+    /// 立即产生 rejected(.failed(.privateKeyPathMissing))，不创建 SSH 连接。
     func test_sshServicePrivateKeyHostWithWhitespaceOnlyPathFailsFast() throws {
         for invalidPath in [nil, "", "   "] {
             let container = try makeInMemoryContainer()
@@ -66,13 +66,17 @@ final class HostEditorValidationTests: XCTestCase {
             context.insert(host)
 
             let service = SSHService(modelContainer: container)
-            service.connect(to: host)
+            let preparation = service.prepareConnection(for: host)
 
-            let info = service.connectionInfo(for: host.id)
-            XCTAssertNotNil(info)
-            guard case let .failed(error) = info?.phase else {
+            guard case let .rejected(info) = preparation else {
                 XCTFail(
-                    "路径 \(invalidPath.debugDescription) 应立即失败，实际：\(String(describing: info?.phase))"
+                    "路径 \(invalidPath.debugDescription) 应立即 rejected，实际：\(String(describing: preparation))"
+                )
+                continue
+            }
+            guard case let .failed(error) = info.phase else {
+                XCTFail(
+                    "路径 \(invalidPath.debugDescription) 应立即失败，实际：\(info.phase)"
                 )
                 continue
             }

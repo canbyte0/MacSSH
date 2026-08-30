@@ -62,6 +62,18 @@ final class LocalTerminalService: NSObject {
         }
     }
 
+    /// 结束本地 Shell 子进程与 PTY（关闭 Tab 时调用；幂等）。
+    ///
+    /// 必须真正停止子进程（任务书 19），不得只把 View 从列表移除；
+    /// 子进程结束后 SwiftTerm 会回调 `processTerminated` 更新状态。
+    func terminate() {
+        guard session.processState == .starting || session.processState == .running else {
+            return
+        }
+        terminalView.terminate()
+        AppLogger.terminal.info("Local terminal process termination requested")
+    }
+
     /// 终端重新进入可见 Workspace 后恢复键盘焦点。
     func focusWhenAvailable() {
         Task { @MainActor [weak self] in

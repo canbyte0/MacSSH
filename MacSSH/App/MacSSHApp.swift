@@ -1,3 +1,4 @@
+import AppKit
 import SwiftData
 import SwiftUI
 
@@ -53,5 +54,50 @@ struct MacSSHApp: App {
             width: AppTheme.Window.defaultWidth,
             height: AppTheme.Window.defaultHeight
         )
+        .commands {
+            terminalCommands
+        }
+    }
+
+    /// Phase 8 快捷键（任务书 32~35）：⌘T 新建 Local、⌘W 关闭 Active、
+    /// ⌘1~⌘9 切换 Tab（只切换，不触发连接 / 重建 Shell）。
+    ///
+    /// SwiftUI 的 `CommandGroupPlacement` 没有 Close Window 分组；系统
+    /// "Close Window ⌘W" 与 "New Tab ⌘T" 都在 File 菜单的 `.newItem` 组。
+    /// 整体替换该组即可覆盖 ⌘W 并移除系统 ⌘T（避免与新建 Local 冲突）。
+    @CommandsBuilder
+    private var terminalCommands: some Commands {
+        CommandGroup(replacing: .newItem) {
+            // ⌘W：有 Session 时关闭 Active Terminal（走确认流程），
+            // 无 Session 时保持系统语义（关闭窗口）。
+            Button("Close") {
+                let manager = appState.sessionManager
+                if manager.sessions.isEmpty {
+                    NSApp.keyWindow?.performClose(nil)
+                } else if let active = manager.activeSession {
+                    manager.requestClose(id: active.id)
+                }
+            }
+            .keyboardShortcut("w", modifiers: .command)
+        }
+
+        CommandMenu("Terminal") {
+            Button("New Local Terminal") {
+                appState.selectedSection = .terminal
+                appState.sessionManager.createLocalSession()
+            }
+            .keyboardShortcut("t", modifiers: .command)
+
+            Divider()
+
+            // ⌘1~⌘9：按创建顺序激活对应 Tab。
+            ForEach(1..<10, id: \.self) { index in
+                Button("Show Tab \(index)") {
+                    appState.selectedSection = .terminal
+                    appState.sessionManager.activateTab(at: index - 1)
+                }
+                .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
+            }
+        }
     }
 }
