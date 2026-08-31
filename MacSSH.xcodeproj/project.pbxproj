@@ -58,6 +58,14 @@
 		F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* ManagedTerminalSession.swift */; };
 		F10000000000000000000002 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* SessionManager.swift */; };
 		F10000000000000000000003 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* SessionManagerTests.swift */; };
+		G10000000000000000000001 /* SFTPError.swift in Sources */ = {isa = PBXBuildFile; fileRef = G20000000000000000000001 /* SFTPError.swift */; };
+		G10000000000000000000002 /* RemotePath.swift in Sources */ = {isa = PBXBuildFile; fileRef = G20000000000000000000002 /* RemotePath.swift */; };
+		G10000000000000000000003 /* SFTPFileEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = G20000000000000000000003 /* SFTPFileEntry.swift */; };
+		G10000000000000000000004 /* SFTPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = G20000000000000000000004 /* SFTPService.swift */; };
+		G10000000000000000000005 /* SFTPSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = G20000000000000000000005 /* SFTPSession.swift */; };
+		H10000000000000000000001 /* SFTPBrowserView.swift in Sources */ = {isa = PBXBuildFile; fileRef = H20000000000000000000001 /* SFTPBrowserView.swift */; };
+		G30000000000000000000001 /* SFTPSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = G40000000000000000000001 /* SFTPSessionTests.swift */; };
+		G30000000000000000000002 /* SFTPServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = G40000000000000000000002 /* SFTPServiceTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -133,6 +141,14 @@
 		F20000000000000000000001 /* ManagedTerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagedTerminalSession.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		F20000000000000000000003 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
+		G20000000000000000000001 /* SFTPError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPError.swift; sourceTree = "<group>"; };
+		G20000000000000000000002 /* RemotePath.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemotePath.swift; sourceTree = "<group>"; };
+		G20000000000000000000003 /* SFTPFileEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPFileEntry.swift; sourceTree = "<group>"; };
+		G20000000000000000000004 /* SFTPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPService.swift; sourceTree = "<group>"; };
+		G20000000000000000000005 /* SFTPSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPSession.swift; sourceTree = "<group>"; };
+		H20000000000000000000001 /* SFTPBrowserView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPBrowserView.swift; sourceTree = "<group>"; };
+		G40000000000000000000001 /* SFTPSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPSessionTests.swift; sourceTree = "<group>"; };
+		G40000000000000000000002 /* SFTPServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPServiceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -286,6 +302,8 @@
 			D2000000000000000000000D /* KnownHostServiceTests.swift */,
 			E20000000000000000000006 /* RemoteTerminalTests.swift */,
 			F20000000000000000000003 /* SessionManagerTests.swift */,
+			G40000000000000000000001 /* SFTPSessionTests.swift */,
+			G40000000000000000000002 /* SFTPServiceTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -329,7 +347,14 @@
 			path = Terminal;
 			sourceTree = "<group>";
 		};
-		A4000000000000000000000E /* SFTP */ = {isa = PBXGroup; path = SFTP; sourceTree = "<group>"; };
+		A4000000000000000000000E /* SFTP */ = {
+			isa = PBXGroup;
+			children = (
+				H20000000000000000000001 /* SFTPBrowserView.swift */,
+			);
+			path = SFTP;
+			sourceTree = "<group>";
+		};
 		A4000000000000000000000F /* Transfers */ = {
 			isa = PBXGroup;
 			children = (
@@ -356,11 +381,22 @@
 				D2000000000000000000000C /* KnownHostService.swift */,
 				E20000000000000000000001 /* RemoteTerminalError.swift */,
 				E20000000000000000000002 /* SSHChannel.swift */,
+				G20000000000000000000005 /* SFTPSession.swift */,
 			);
 			path = SSH;
 			sourceTree = "<group>";
 		};
-		A40000000000000000000012 /* SFTP */ = {isa = PBXGroup; path = SFTP; sourceTree = "<group>"; };
+		A40000000000000000000012 /* SFTP */ = {
+			isa = PBXGroup;
+			children = (
+				G20000000000000000000001 /* SFTPError.swift */,
+				G20000000000000000000002 /* RemotePath.swift */,
+				G20000000000000000000003 /* SFTPFileEntry.swift */,
+				G20000000000000000000004 /* SFTPService.swift */,
+			);
+			path = SFTP;
+			sourceTree = "<group>";
+		};
 		A40000000000000000000013 /* Terminal */ = {
 			isa = PBXGroup;
 			children = (
@@ -591,6 +627,12 @@
 				E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */,
 				F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */,
 				F10000000000000000000002 /* SessionManager.swift in Sources */,
+				G10000000000000000000001 /* SFTPError.swift in Sources */,
+				G10000000000000000000002 /* RemotePath.swift in Sources */,
+				G10000000000000000000003 /* SFTPFileEntry.swift in Sources */,
+				G10000000000000000000004 /* SFTPService.swift in Sources */,
+				G10000000000000000000005 /* SFTPSession.swift in Sources */,
+				H10000000000000000000001 /* SFTPBrowserView.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -605,6 +647,8 @@
 				D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */,
 				E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */,
 				F10000000000000000000003 /* SessionManagerTests.swift in Sources */,
+				G30000000000000000000001 /* SFTPSessionTests.swift in Sources */,
+				G30000000000000000000002 /* SFTPServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -832,6 +832,66 @@ final class SessionManagerTests: XCTestCase {
         )
     }
 
+    // MARK: - Phase 9 第二轮整改
+
+    /// P2 整改回归：连接过程中提前切换到 Files 面板时因尚未认证，
+    /// `ensureSFTPService()` 直接返回；认证成功后连接流程必须补创建
+    /// SFTP 运行时，Files 面板自动到达 loaded——绝不永远停在加载态
+    /// （需要用户手动切回 Terminal 再切 Files）。
+    ///
+    /// 本用例排在聚焦套件末尾，此前数十次连续建连可能触发本机 sshd
+    /// 瞬时限流（握手被断 / 新建 Channel 被关）：这是环境噪音而非产品
+    /// 缺陷，会话级有限重试 3 次、退避 1 秒；成功建连后的全部产品
+    /// 断言不受任何弱化。
+    func testAB_FilesPaneSelectedDuringConnectGetsSFTPServiceAfterAuth() async throws {
+        try await requireLocalSSHAndTestKey()
+        let host = try makePrivateKeyHost(name: "Loopback")
+
+        var lastStatus = ""
+        for _ in 1...3 {
+            let session = manager.createRemoteSession(host: host)
+
+            // 连接任务尚未在 MainActor 上运行：会话未认证，运行时不得创建。
+            session.selectPane(.files)
+            XCTAssertEqual(session.activePane, .files)
+            XCTAssertNil(session.sftpService, "认证前不得创建 SFTP 运行时")
+
+            // 等待终态：active（成功）或失败展示（环境噪音 → 重试）。
+            // 途中到达 Trust 对话框时以 Trust Always 持久化放行。
+            let settled = try await waitForCondition(timeout: 25) {
+                if session.connectionInfo?.phase == .awaitingHostTrust {
+                    manager.resolveHostTrust(sessionID: session.id, decision: .trustAlways)
+                }
+                switch session.displayState {
+                case .active, .failed, .disconnected, .exited:
+                    return true
+                default:
+                    return false
+                }
+            }
+
+            if settled, session.displayState == .active {
+                let service = try XCTUnwrap(
+                    session.sftpService,
+                    "认证成功后必须为 Files 面板补创建 SFTP 运行时"
+                )
+                let loaded = try await waitForCondition(timeout: 20) {
+                    service.phase == .loaded
+                }
+                XCTAssertTrue(loaded, "Files 面板必须自动完成加载（当前 \(service.phase)）")
+                XCTAssertTrue(service.currentPath.hasPrefix("/"))
+                XCTAssertFalse(service.entries.isEmpty)
+                return
+            }
+
+            // 限流噪音：清理失败会话，退避后重试。
+            lastStatus = session.statusText
+            await manager.closeSession(id: session.id)
+            try await Task.sleep(nanoseconds: 1_000_000_000)
+        }
+        XCTFail("连续 3 次建连失败（本机 sshd 限流噪音）：\(lastStatus)")
+    }
+
     // MARK: - 辅助
 
     /// 确定性竞态门闩：旧读取循环到达终止点后停在此处，

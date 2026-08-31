@@ -1,6 +1,6 @@
 #!/bin/bash
 #
-# MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 SSH 连接与会话真实测试脚本
+# MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 / Phase 9 SSH 连接、会话与 SFTP 真实测试脚本
 #
 # 前置要求：
 #   1. 系统设置 → 通用 → 共享 → 远程登录 已开启（本机 sshd 作为测试服务器）
@@ -20,6 +20,11 @@
 #     标记块并删除测试密钥；Passphrase 运行时随机生成，写入 600 权限临时文件由
 #     testU 读取后立即删除（经真实 CredentialService→KeychainService 保存），
 #     不写入 Git，不进入任何日志（testM 使用随机错误 Passphrase）。
+#   - Phase 9：创建唯一命名的 SFTP 只读测试夹具目录
+#     （/tmp/macssh-phase9-<uuid>：子目录 / 空目录 / 中文 / emoji / 空格 /
+#     隐藏文件 / 符号链接 / 200 字符长文件名 / 权限拒绝目录 / 1000 条目性能目录），
+#     夹具根路径写入固定交接文件 /tmp/macssh_phase9_fixture_path（仅含路径，
+#     不含任何 Secret），测试读取；脚本退出时整体删除。
 
 set -euo pipefail
 
@@ -50,6 +55,10 @@ AUTHORIZED_KEYS="$HOME/.ssh/authorized_keys"
 AK_BEGIN="# macssh-phase6-test-begin"
 AK_END="# macssh-phase6-test-end"
 
+# Phase 9 SFTP 夹具：唯一目录 + 固定交接文件（仅含路径，不含 Secret）。
+PHASE9_FIXTURE_PATH_FILE="/tmp/macssh_phase9_fixture_path"
+PHASE9_FIXTURE_ROOT="/tmp/macssh-phase9-$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
 cleanup_test_credential() {
     security delete-generic-password \
         -a "$TEST_CREDENTIAL_ID" \
@@ -72,13 +81,23 @@ cleanup_phase6_keys() {
           2>/dev/null || true
 }
 
+cleanup_phase9_fixture() {
+    if [[ -d "$PHASE9_FIXTURE_ROOT" ]]; then
+        # restricted 目录为 000 权限，先恢复属主可写再整体删除。
+        chmod -R u+rwx "$PHASE9_FIXTURE_ROOT" 2>/dev/null || true
+        rm -rf "$PHASE9_FIXTURE_ROOT"
+    fi
+    rm -f "$PHASE9_FIXTURE_PATH_FILE" 2>/dev/null || true
+}
+
 cleanup_all() {
     cleanup_test_credential
     cleanup_phase6_keys
+    cleanup_phase9_fixture
 }
 trap cleanup_all EXIT
 
-echo "==> MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 SSH connection & session tests"
+echo "==> MacSSH Phase 5 / Phase 6 / Phase 7 / Phase 8 / Phase 9 SSH connection, session & SFTP tests"
 echo ""
 
 # 检查本机 sshd
@@ -93,6 +112,16 @@ echo ""
 # 清理可能由异常中断遗留的同名测试 item / 测试密钥。
 cleanup_test_credential
 cleanup_phase6_keys
+
+# 清理上次异常中断遗留的 Phase 9 夹具（按遗留交接文件指向的目录）。
+if [[ -f "$PHASE9_FIXTURE_PATH_FILE" ]]; then
+    STALE_FIXTURE="$(cat "$PHASE9_FIXTURE_PATH_FILE" 2>/dev/null || true)"
+    if [[ -n "$STALE_FIXTURE" && "$STALE_FIXTURE" == /tmp/macssh-phase9-* && -d "$STALE_FIXTURE" ]]; then
+        chmod -R u+rwx "$STALE_FIXTURE" 2>/dev/null || true
+        rm -rf "$STALE_FIXTURE"
+    fi
+    rm -f "$PHASE9_FIXTURE_PATH_FILE"
+fi
 
 echo "==> 生成 Phase 6 测试专用私钥（ed25519 无/有 Passphrase、未授权 ed25519、RSA、ECDSA）"
 mkdir -p "$HOME/.ssh"
@@ -130,6 +159,31 @@ chmod 600 "$AUTHORIZED_KEYS"
 echo "Phase 6 测试公钥已临时加入 authorized_keys（退出时移除标记块；未授权测试密钥不加入）✓"
 echo ""
 
+echo "==> 创建 Phase 9 SFTP 测试夹具：$PHASE9_FIXTURE_ROOT"
+mkdir -p "$PHASE9_FIXTURE_ROOT/dir-a" \
+         "$PHASE9_FIXTURE_ROOT/dir-b" \
+         "$PHASE9_FIXTURE_ROOT/empty" \
+         "$PHASE9_FIXTURE_ROOT/restricted" \
+         "$PHASE9_FIXTURE_ROOT/big"
+# file.txt 内容 22 字节（无结尾换行）；测试断言 SFTP 回报的大小完全一致。
+printf 'phase9-fixture-content' > "$PHASE9_FIXTURE_ROOT/file.txt"
+printf 'zhongwen' > "$PHASE9_FIXTURE_ROOT/中文.txt"
+printf 'emoji' > "$PHASE9_FIXTURE_ROOT/emoji-😀.txt"
+printf 'space' > "$PHASE9_FIXTURE_ROOT/hello world.txt"
+printf 'hidden' > "$PHASE9_FIXTURE_ROOT/.hidden"
+printf 'nested' > "$PHASE9_FIXTURE_ROOT/dir-a/nested.txt"
+ln -s file.txt "$PHASE9_FIXTURE_ROOT/symlink"
+# 200 字符长文件名（NAME_MAX 255 内），验证缓冲增长与完整回显、绝不截断。
+PHASE9_LONG_NAME="$(printf 'n%.0s' $(seq 1 200)).txt"
+printf 'long' > "$PHASE9_FIXTURE_ROOT/$PHASE9_LONG_NAME"
+# 权限拒绝目录：列举必须得到 permissionDenied 业务错误，且不断开连接。
+chmod 000 "$PHASE9_FIXTURE_ROOT/restricted"
+# 1000 条目性能目录。
+seq -f "$PHASE9_FIXTURE_ROOT/big/f-%04g.txt" 1 1000 | xargs touch
+printf '%s' "$PHASE9_FIXTURE_ROOT" > "$PHASE9_FIXTURE_PATH_FILE"
+echo "Phase 9 SFTP 夹具已创建（退出时整体删除；交接文件 ${PHASE9_FIXTURE_PATH_FILE}）✓"
+echo ""
+
 echo "==> 构建测试产物"
 xcodebuild build-for-testing \
     -project MacSSH.xcodeproj \
@@ -160,6 +214,7 @@ echo ""
 echo "==> 运行 SSHConnectionTests（Phase 5 A-I + Phase 6 J-W + 持久化失败注入 + 20 次循环 + 空闲 CPU）"
 echo "    同时运行 RemoteTerminalTests（Phase 7 Shell Channel/PTY/Resize/EOF/大输出/空闲 CPU/20 轮循环 + top/nano/htop 全屏 + 打开立即关闭 / close-reopen-disconnect / 双 disconnect EAGAIN 并发）"
 echo "    以及 SessionManagerTests（Phase 8 多 Session 生命周期 / 同 Host 多会话独立 / close-while-connecting / double close + disconnect / reconnect 竞态）"
+echo "    以及 SFTPSessionTests / SFTPServiceTests（Phase 9 子系统初始化 / 列举 / 导航 / 中文与特殊文件名 / 权限拒绝 / 长文件名 / 1000 条目性能 / 列举中断开 / 拆除释放 / 面板切换不重建 / 多会话隔离）"
 echo "    以及 KnownHostServiceTests / HostEditorValidationTests / CredentialServiceTests / DependencyIdentityTests"
 xcodebuild test-without-building \
     -project MacSSH.xcodeproj \

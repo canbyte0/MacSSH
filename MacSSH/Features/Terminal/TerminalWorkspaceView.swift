@@ -19,6 +19,12 @@ struct TerminalWorkspaceView: View {
 
             Divider()
 
+            if let session = manager.activeSession {
+                paneSelector(for: session)
+
+                Divider()
+            }
+
             workspaceContent
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -26,13 +32,47 @@ struct TerminalWorkspaceView: View {
         .accessibilityIdentifier("workspace.terminal")
     }
 
+    /// Phase 9：per-session 的 Terminal / Files 分段控制。
+    ///
+    /// 切换只改变展示：Terminal 缓冲与 SFTP 运行时都保持存活。
+    /// Local Session 的 Files 段禁用（文件浏览仅对 SSH 会话可用）。
+    private func paneSelector(for session: ManagedTerminalSession) -> some View {
+        Picker(
+            "Pane",
+            selection: Binding(
+                get: { session.activePane },
+                set: { session.selectPane($0) }
+            )
+        ) {
+            Text("Terminal")
+                .tag(WorkspacePane.terminal)
+
+            Text("Files")
+                .tag(WorkspacePane.files)
+                .disabled(session.kind == .local)
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .padding(.horizontal, AppTheme.Spacing.regular)
+        .padding(.vertical, AppTheme.Spacing.compact / 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityIdentifier("workspace.paneSelector")
+    }
+
     @ViewBuilder
     private var workspaceContent: some View {
         if let session = manager.activeSession {
-            ZStack {
-                terminalView(for: session)
+            if session.kind == .remoteSSH, session.activePane == .files {
+                SFTPBrowserView(session: session)
+                    .id(session.id)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                ZStack {
+                    terminalView(for: session)
 
-                sessionOverlay(for: session)
+                    sessionOverlay(for: session)
+                }
             }
         } else {
             emptyWorkspace

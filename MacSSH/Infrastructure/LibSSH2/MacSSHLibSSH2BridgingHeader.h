@@ -11,4 +11,9 @@
 
 #include <libssh2.h>
 
+// Phase 9：本仓库 vendored 的 libssh2.h 不包含 SFTP 头（上游在
+// libssh2.h 尾部 #include "libssh2_sftp.h"），显式引入以暴露
+// libssh2_sftp_* API 与 LIBSSH2_SFTP_ATTRIBUTES。
+#include <libssh2_sftp.h>
+
 #endif /* MacSSH_LIBSSH2_BRIDGING_HEADER */

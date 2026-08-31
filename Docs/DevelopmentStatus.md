@@ -1829,14 +1829,442 @@ testY / testZ 未执行。根因是**测试辅助方法缺陷，不是产品回�
   （Reconnect 仅手动触发）。
 - Session / Tab 布局或运行状态的 SwiftData 持久化（本阶段纯内存）。
 
+### Phase 9：SFTP Browser / Remote File Browsing
+
+状态：**第二轮复验发现 1 个 P1（快速导航重叠操作同一 SFTP 状态机）与 2 个 P2 → 整改完成，等待再次复验**
+
+完成日期：2026-08-30 ／ 首轮验收阻塞整改：2026-08-30 ／
+第二轮复验整改：2026-08-31
+
+#### 1. 总体架构
+
+在 Phase 7（Remote SSH Terminal）与 Phase 8（多 Session 管理）之上，建立
+严格的**只读** SFTP 浏览通道。Terminal 与 SFTP Browser 共用**同一条已认证
+`LIBSSH2_SESSION`**——SFTP 子系统挂在现有连接上，绝不二次登录、绝不新建
+会话：
+
+```text
+SFTPBrowserView（SwiftUI：只观察，绝不触碰 libssh2）
+  └── SFTPService（@MainActor @Observable 业务层：路径 / 列表 / 状态 / 竞态）
+        └── SFTPSession（extension SSHConnection，actor 串行边界，唯一操作入口）
+              └── libssh2 SFTP（仅 READ / LIST / STAT / REALPATH / 导航）
+```
+
+核心不变量：
+
+- `SSHConnection` actor 是 Session 的唯一所有者；全部 SFTP 调用在 actor
+  串行边界内执行，UI 与业务层绝不直接调用 libssh2。
+- **只读**：产品代码中零写操作——无 `libssh2_sftp_write / unlink / mkdir /
+  rmdir / rename / setstat` 调用（grep 验证，见第 7 节）；无
+  Upload / Download / Delete / Rename / Move / Create / Chmod / Edit /
+  拖放传输 / 本地文件浏览。
+- EAGAIN 一律经 `libssh2_session_block_directions` + poll readiness 等待
+  （沿用 Phase 5 的 `waitForLibssh2Readiness`），无 busy-loop；每次循环带
+  截止时间与断开 / 取消校验，Terminal 读取循环不被饿死。
+- 子系统生命周期与连接绑定：Terminal ↔ Files 面板切换**不重建**子系统；
+  Reconnect 一律重建（绝不复用旧 `LIBSSH2_SFTP *`）；断开即释放。
+- 业务错误（权限拒绝 / 路径不存在 / 连接丢失）不崩溃、不自动断开健康连接、
+  不影响既有 Terminal。
+
+#### 2. SFTPSession 底层（`MacSSH/Services/SSH/SFTPSession.swift`）
+
+`extension SSHConnection`（545 行）——全部真实 `libssh2_sftp_*` 调用只发生
+在这里：
+
+- **子系统初始化** `openSFTPSubsystemIfNeeded()`：幂等；在途初始化登记为
+  `sftpInitTask`，并发调用等待同一结果；`libssh2_sftp_init` EAGAIN 循环经
+  readiness 等待；成功 / 协议失败 / 连接丢失三态分明；初始化失败**不触碰
+  健康连接**（Terminal 照常可用）。`sftpSubsystemInitCount` 供测试观察
+  “面板切换不重复初始化”。
+- **句柄登记与关闭所有权**（P1 整改后）：所有 `LIBSSH2_SFTP_HANDLE *`
+  （OPENDIR）登记在 `openSFTPDirectoryHandles`；登记本身不是并发屏障，
+  而是**关闭所有权的认领令牌**——句柄只在“从登记中真正摘除它的那一方”
+  手里被关闭（摘除段无跨 await，认领互斥）。整个列举（含收尾 closedir）
+  计入 `inFlightSFTPListingCount`，拆除侧**必须先排空在途列举**才能关闭
+  残留句柄 / `libssh2_sftp_shutdown`，杜绝 double-close 与 use-after-free；
+  `disconnect()` 每条路径全部关闭，绝无泄漏；
+  `openSFTPDirectoryHandleCount` 供测试断言归零。
+- **列举** `sftpListDirectory(_:)`：`libssh2_sftp_open_ex(...,
+  LIBSSH2_SFTP_OPENDIR)` 打开目录；`libssh2_sftp_readdir_ex` 循环读取，
+  名称缓冲 4096 字节按**返回长度前缀**解码（不依赖 `strlen`、不截断
+  200+ 字符长文件名）；属性完全由 `LIBSSH2_SFTP_ATTRIBUTES.flags` 驱动
+  （`LIBSSH2_SFTP_ATTR_SIZE / ACMODTIME / PERMISSIONS`），绝不解析
+  `longentry` 文本；`.` / `..` 过滤。
+- **路径解析** `sftpRealpath(_:)`：函数式宏 `libssh2_sftp_realpath` 在
+  Swift 不可用，改调 `libssh2_sftp_symlink_ex(..., LIBSSH2_SFTP_REALPATH)`；
+  初始目录 = `realpath(".")`（登录目录），绝不硬编码 `/` 或 `~`。
+- **错误映射**：`libssh2_sftp_last_error` → `SFTPError(sftpStatusCode:)`
+  （permissionDenied / noSuchPath / connectionLost / operationCancelled /
+  subsystemInitFailed 等）；SFTP 层错误面纯净，不泄漏 `SSHError` 细节
+  （断开请求统一映射 `.connectionLost`，经 internal
+  `throwIfDisconnectRequested()` 判定）。
+- **操作前校验** `validateSFTPOperation(session:sftp:)`：任务取消检查 +
+  断开标志 + Session / SFTP 句柄**身份校验**（与当前连接不一致即
+  `.connectionLost`，杜绝 use-after-free / 跨连接复用）；列举循环每批
+  读取后重新校验。
+- **操作串行门（第二轮整改）**：`LIBSSH2_SFTP` 的 `open_state` /
+  `readdir_state` / 在途 request ID 是子系统级共享状态——两个操作若借
+  actor 在 EAGAIN 等待处的重入间隙并行执行，后一请求可能接走前一请求的
+  响应，句柄与协议状态串线。`acquireSFTPOperationGate()` /
+  `releaseSFTPOperationGate()` 构成 FIFO 串行门：`realpath` / 目录列举 /
+  拆除收尾（关闭残留句柄 + `shutdown`）全部持门执行，任一时刻至多一个
+  持门者；释放时直接把所有权移交给队首（绝不先置空闲再争抢）。列举的
+  在途登记先于进门——排队中的列举同样被拆除排空屏障覆盖。
+- **拆除**（并入 `disconnect()` 的 `closeSFTPResourcesForTeardown()`）：
+  等在途初始化落定 → **排空在途列举（含其收尾 closedir）** → 关闭无主
+  残留句柄 → `libssh2_sftp_shutdown` → 才轮到 Shell Channel → Session →
+  socket（任务书拆除顺序）；幂等，重复调用安全；子系统初始化失败 /
+  断开都不影响既有 Terminal。
+
+#### 3. 模型与纯语义（`MacSSH/Services/SFTP/`）
+
+- `SFTPError`：`permissionDenied / noSuchPath / connectionLost /
+  operationCancelled / subsystemInitFailed / listingFailed /
+  unknown(statusCode)`；`userMessage` 提供不含敏感信息的用户文案。
+- `SFTPFileEntry`：`name / kind(directory | file | symlink | unknown) /
+  size / modifiedAt / permissions / permissionsDisplay`；kind 由
+  `permissions` 的 `S_IFMT` 判定（符号链接由 `S_IFLNK` 识别），
+  `sizeDisplay`（KB/MB/GB 本地化）与 `modifiedDisplay` 展示格式。
+- `RemotePath`（纯函数，绝不使用本地 `FileManager` 语义）：
+  根为 `"/"`；`parent("/") == "/"`；`join` 永不产生 `//`
+  （`join("/", "etc") == "/etc"`）；规范化只折叠斜杠、不解释远端符号链接；
+  `join` 对 `.` / `..` 防御性处理，绝不向上跳出。
+
+#### 4. SFTPService 业务层（`MacSSH/Services/SFTP/SFTPService.swift`）
+
+`@MainActor @Observable`，UI 只观察本对象：
+
+- 状态机 `Phase`：`idle / loading / loaded / failed(SFTPError)`。
+- **导航原子性**：`currentPath` 与 `entries` 只在列举成功后一起提交；
+  失败保持原路径 + 原列表 + 业务错误（禁止“路径已变、列表清空”的
+  不一致状态）。
+- **竞态防护（第二轮整改后）**：每个请求递增 `generation` 并取消上一个
+  在途任务；新任务先 **`await` 旧任务完全退出（含其收尾 closedir）**
+  才开始自己的 SFTP 操作——取消只是置标志，旧任务可能仍因 EAGAIN 挂在
+  `SSHConnection` 内，只有等待其终值才能保证同一时刻没有两个任务进入
+  同一个 `LIBSSH2_SFTP` 状态机（连接层另有串行门兜底）；每次 `await`
+  恢复后重新校验代次与停止标志，过期结果绝不写入状态。
+- 导航入口：`navigate(into:)`（仅目录）、`goParent()`（根目录双重防御）、
+  `refresh()`（⌘R / 刷新按钮 / 失败态 Retry 均走这里——失败态重试重新
+  加载**保留的当前目录**，权限拒绝等确定性错误不重撞失败目标）。
+- `startIfNeeded()`：幂等启动（`realpath(".")` 或恢复 `lastKnownPath`）；
+  Terminal ↔ Files 切换不重建、不重复初始化。
+- 生命周期：`stopBarrier()`（取消在途请求并等待完全退出，可等待屏障，
+  与 `RemoteTerminalService` 同模式）；`reattach(connection:)` 在
+  Reconnect 后绑定全新连接、复位 `.idle`、记忆路径供可选恢复。
+
+#### 5. Session 生命周期集成
+
+- `ManagedTerminalSession`：新增 `WorkspacePane`（terminal / files）与
+  `activePane`（只经 `selectPane(_:)` 修改）；`sftpService` 首次打开
+  Files 面板时惰性创建（仅已认证 Remote Session），面板切换只改展示、
+  底层资源保持存活；Files 面板活跃时状态栏展示
+  `SFTP ● Host · /current/path`。
+- `SessionManager.teardown`：Remote 拆除顺序变为 **SFTP 屏障 →
+  RemoteTerminal stopBarrier → disconnect**（disconnect 内部：目录句柄 →
+  SFTP → Channel → Session → socket），旧任务尘埃落定前绝不释放连接。
+- `SessionManager.reconnectSession`：先经 SFTP 屏障 + Terminal 屏障拆除
+  旧运行时并断开旧连接，完整新连接流程后 `sftp.reattach(connection:)`
+  绑定新连接（绝不复用旧子系统）；Files 面板在场时立即重启并恢复
+  最近成功路径（路径已不存在时自动回落 `realpath(".")`）。
+- **连接中提前切 Files 的补创建（第二轮整改，P2）**：连接过程中切换到
+  Files 时因尚未认证，`ensureSFTPService()` 只置 `activePane = .files`
+  直接返回；`runConnectFlow` 认证成功后若 `sftpService` 仍为 nil 且
+  `activePane == .files`，补调用 `ensureSFTPService()` 创建并启动 SFTP
+  运行时——Files 面板自动完成加载，绝不永远停在加载态（无需手动切回
+  Terminal 再切 Files）。
+
+#### 6. UI（`MacSSH/Features/SFTP/SFTPBrowserView.swift`）
+
+按用户确认的预览图实现：
+
+- 工作区分段控件（Terminal / Files）：Local Session 的 Files 项禁用；
+  切换不重建任何底层资源。
+- 路径栏：Parent 按钮（根目录禁用）+ 等宽路径文本（可选中复制）+
+  Refresh（加载中禁用）。
+- 列表：Name / Size / Modified / Permissions 四列 `Table`；目录
+  `folder.fill`、符号链接 `arrow.turn.up.right`、未知类型
+  `doc.questionmark`；双击进入目录；右键菜单（Refresh / Copy Path）；
+  隐藏文件默认展示。
+- 状态：加载中（ProgressView）/ 空目录（`ContentUnavailableView`
+  “此文件夹为空”）/ 错误态（业务错误文案；`connectionLost` 显示
+  Reconnect 按钮走 `SessionManager.reconnectSession`，其余显示 Retry 走
+  `refresh()`）/ 面板不可用（Local：功能说明；Remote 未连接：Reconnect）。
+- 底部状态：条目数 + 当前路径。
+- 全部交互元素带 `accessibilityIdentifier`（`sftp.*`）；UI 绝不直接调用
+  libssh2。
+
+#### 7. 只读约束验证
+
+产品代码 `libssh2_sftp_*` 实际调用集合（`grep` 实测）：
+`init / shutdown / open_ex(OPENDIR) / readdir_ex / close_handle /
+symlink_ex(REALPATH) / last_error`——全部为读取 / 列举 / 状态 / 导航类；
+`write / unlink / mkdir / rmdir / rename / setstat / fsetstat` **零调用**
+（出现的同名宏字样均为“宏不可用”说明注释）。本阶段未实现任何写操作、
+传输或本地浏览能力。
+
+#### 8. 测试
+
+真实测试全部经**真实本机 sshd（127.0.0.1:22）+ 真实 libssh2**，
+Private Key 认证（测试专用 ed25519 密钥 + authorized_keys 标记块，
+退出清理）；夹具 `/tmp/macssh-phase9-<uuid>`：`dir-a`（含 nested.txt）/
+`dir-b` / `empty` / `restricted`（chmod 000）/ `big`（1000 条目）/
+`file.txt`（22 字节）/ `中文.txt` / `emoji-😀.txt` / `hello world.txt` /
+`.hidden` / `symlink → file.txt` / 200 字符长文件名，路径经固定交接文件
+`/tmp/macssh_phase9_fixture_path` 传递：
+
+- `Tests/SSH/SFTPSessionTests.swift`（16 项，A–P；N / O 为首轮 P1 整改
+  新增，P 为第二轮整改新增）：
+  A 子系统初始化幂等且断开后释放；B `realpath(".")` 为绝对 HOME
+  （绝不硬编码 `/` / `~`）；C 夹具根列举完整性与元数据（名称 / 大小 /
+  权限 / mtime 与本地文件系统逐一对照）；D 子目录列举（`RemotePath.join`）；
+  E `noSuchPath` 业务错误、连接存活；F 权限拒绝业务错误、连接存活；
+  G 200 字符长文件名不截断；H 1000 条目目录完整列举（<15s，句柄归零）；
+  I 列举进行中断开：不崩溃、不泄漏（句柄 / 子系统全释放）；
+  J 拆除释放全部 SFTP 资源；K **Terminal 与 SFTP 同会话共存**
+  （开 Shell → SFTP 列举 → Shell echo marker 仍可回显，`initCount == 1`）；
+  L Reconnect 在全新连接重建子系统（绝不复用旧 `LIBSSH2_SFTP *`）；
+  M 断开后 SFTP 操作优雅失败（`.connectionLost`，不崩溃、不挂起）；
+  N **readdir EAGAIN 窗口竞态**（测试接缝挂起列举 → 并发 `disconnect()`：
+  拆除必须停在排空屏障，不摘在途句柄、不抢先 shutdown；释放后列举以
+  `.connectionLost` 退出、唯一一次关闭；连续 10 次迭代断言
+  关闭数 == 打开数、无残留、无崩溃挂起）；
+  O **收尾 closedir EAGAIN 窗口竞态**（认领后、`close_handle` 前挂起 →
+  并发 `disconnect()`：closedir 在途期间绝不 `libssh2_sftp_shutdown`；
+  释放后列举完整成功、拆除收尾；连续 10 次迭代同断言）；
+  P **并发列举经操作串行门严格串行化（第二轮整改）**：第一个列举因
+  EAGAIN 等价挂起持有串行门，第二个并发列举必须排在门外（在途计数 2、
+  打开计数保持 1、登记中无第二句柄）；释放后第一个完整收尾，第二个得到
+  **自己目标目录**的内容（后一请求绝不接走前一请求的响应）；连续 10 次。
+- `Tests/SSH/SFTPServiceTests.swift`（13 项，A–M；M 为第二轮整改新增）：
+  A 启动加载初始目录；B 进入子目录与 Parent 的原子提交；
+  C Unicode / 隐藏 / 符号链接条目可见且目录优先排序；
+  D 导航失败保持原路径与原列表、连接不断开，Retry 恢复可用列表；
+  E 快速导航最后请求获胜（generation 防护）；F 根目录 Parent 空操作；
+  G Reattach 绑定新连接并恢复最近成功路径；H stopBarrier 安全且终态；
+  I 多会话隔离（同 Host 双连接互不干扰）；J 空目录 `.loaded` 空列表；
+  K 大目录（1000 条目）属性随列举一次到达（无 N+1 stat，<20s）；
+  L Terminal ↔ Files 面板切换 5 轮：子系统 `initCount == 1`、
+  服务实例复用、浏览状态不变；
+  M **快速导航确定性竞态（第二轮整改核心）**：第一条目录请求进入
+  EAGAIN 等价挂起（接缝）后发起第二条导航——挂起窗口内打开计数停在
+  基准+1（第二条绝不发起任何 `libssh2` 调用）、路径与加载态不变；
+  释放后第一条以取消语义完整收尾（含 closedir），第二条随后执行，
+  **最终路径与条目同时来自最后一个目标目录**；打开/关闭计数相等、
+  无残留句柄、在途计数归零；连续 5 次（每次全新连接）。
+- `Tests/SSH/SessionManagerTests.testAB`（第二轮整改 P2 回归，已纳入聚焦
+  脚本）：连接过程中提前切 Files（认证前 `sftpService == nil`）→ 认证
+  成功后运行时被补创建，Files 面板自动到达 `.loaded` 且路径 / 条目就绪。
+- `Tests/SSH/RemotePathTests`（4 项）：`normalized / parent / join /
+  isRoot` 纯语义（含 `..` 防御、双斜杠禁令、Unicode 名称）。
+
+聚焦复验（`Scripts/run-phase9-focus.sh`，私钥路径，已纳入 P1 竞态测试
+N / O / P、第二轮确定性竞态测试 M 与 P2 回归 testAB）连续三轮确认：
+**34 项全部通过，0 失败 / 0 skip**（SFTPSession 16 + SFTPService 13 +
+RemotePath 4 + SessionManager testAB）；确定性竞态迭代累计：M 15 次、
+N / O / P 各 30 次，全部通过。
+
+#### 9. 构建与验证结果（2026-08-30）
+
+- `Scripts/build-app.sh`（全新 Derived Data）：Debug + Release arm64
+  clean build 均 **BUILD SUCCEEDED**，项目代码 **0 warning**
+  （build-for-testing 亦 0 warning）。
+- Release `.app`：Mach-O arm64；`codesign --verify --strict` 通过；
+  `otool -L` 仅系统库，无 `/opt/homebrew`、`/usr/local` 或动态
+  libssh2/libssl/libcrypto（静态链接基线不变）。
+- 全套回归（`Scripts/run-ssh-tests.sh`，真实本机 sshd，P1 整改后复跑）：
+  **141 项执行 / 1 既定 skip**。
+  - Phase 9 三个测试类 **31/31 全部真实通过，0 skip / 0 failure**：
+    `SFTPSessionTests` 15（含 P1 竞态测试 N / O）、`SFTPServiceTests` 12、
+    `RemotePathTests` 4。
+  - P1 竞态测试 N / O 在**四轮独立运行**（聚焦两轮 + 全套回归 + 复验）
+    中各连续 10 次迭代、累计各 40 次确定性竞态交错，全部通过。
+  - `SessionManagerTests`（Phase 8）27/27、`KnownHostServiceTests` 13、
+    `DependencyIdentityTests` 6、`HostEditorValidationTests` 5、
+    `CredentialServiceTests` 4 通过 + 1 项既定 production 状态 skip；
+    Phase 7 testQ（并发 Disconnect EAGAIN 归并）真实通过。
+  - 16 项失败**全部是密码认证用例**（`RemoteTerminalTests` 10 项 +
+    `SSHConnectionTests` 6 项），与 Phase 8 / Phase 9 首轮的失败集合完全
+    一致，根因一致：代理环境无交互终端，脚本的
+    `security add-generic-password -w` 密码提示读到 EOF，临时凭据未创建。
+    属环境限制而非产品缺陷；密码认证路径的持续回归以用户交互运行结果
+    为准。
+  - 首轮结果中另有 2 项（`SFTPSessionTests.testM`、
+    `SessionManagerTests.testY`）在回归运行的高频连接窗口内以
+    `handshakeFailed(libssh2Code: -8)` / 连接建立超时失败——失败发生在
+    连接建立阶段（本次整改未触碰的代码路径），**复验单独重跑均通过**，
+    判定为本机 sshd 连接压力下的瞬时环境抖动。
+- 安全基线不变：libssh2 `1.11.2_DEV @ be937743a85c4064a6399cee39e606672a401069`、
+  OpenSSL `3.5.8`，`DependencyIdentityTests` 随回归执行。
+
+#### 10. 当前已知问题 / 待验收项
+
+- 凭据门控测试（密码认证用例）需在正常终端交互式输入本机密码后复验
+  （代理环境无交互终端，与 Phase 8 一致属环境限制；私钥路径已全量通过）。
+- SFTP Browser 的运行时 UI 交互（面板切换、双击导航、错误态按钮）需在
+  真实桌面下人工确认（预览图已获用户确认并按图实现）。
+
+#### 11. 验收阻塞修复（P1：目录句柄拆除所有权竞态，2026-08-30）
+
+首轮验收不通过，阻塞项为 1 个 P1。用户给出的关键交错：
+
+1. 目录列举因 EAGAIN 挂起；
+2. `disconnect()` 从登记数组取出该句柄并调用 closedir；
+3. closedir 再次因 EAGAIN 挂起；
+4. 原列举任务恢复，发现句柄已不在登记数组，却仍无条件调用
+   `closeDirectoryHandle()`；
+5. 两条任务操作同一个 `LIBSSH2_SFTP_HANDLE *`——一方释放后另一方继续
+   访问，形成 use-after-free / double-close。
+6. 即使列举先从数组移除句柄，拆除仍可能在 closedir 尚未完成时执行
+   `libssh2_sftp_shutdown`——数组“先删除再关闭”不构成所有权屏障。
+
+根因：`SSHConnection` actor 在 EAGAIN readiness 等待期间可重入，列举任务
+与拆除任务跨 await 交错；旧实现里登记数组只承担簿记，两路都可能关闭
+同一指针，且拆除不等待在途列举（含其收尾 closedir）结束。
+
+整改要求（用户指定，逐条满足）：
+
+- 目录句柄只能有一个明确的 teardown owner；
+- `disconnect()` 必须等待**所有在途列举及在途 closedir 完全结束**，
+  才能执行 `libssh2_sftp_shutdown()`；
+- 可控测试：强制 readdir / closedir 进入 EAGAIN 等价挂起，期间并发
+  `disconnect()`，验证无 double-close、崩溃、悬挂、残留句柄；
+- 该竞态测试至少连续运行 10 次。
+
+整改措施（`MacSSH/Services/SSH/SFTPSession.swift` +
+`SSHConnection.swift` 存储属性；产品路径零 UI / 业务层改动）：
+
+1. **排空屏障（单一 teardown owner 的核心）**：整个列举（含收尾
+   closedir）计入 `inFlightSFTPListingCount`；
+   `closeSFTPResourcesForTeardown()` 在等在途初始化落定之后、关闭任何
+   句柄之前，先经 `waitForInFlightSFTPListingsToDrain()` 等待计数归零。
+   断开标志置位后新列举在入口即被拒绝，计数只减不增；在途列举的每个
+   等待都有截止时间预算（列举 60s / closedir 3s），排空必然在有界时间
+   内完成，拆除绝不悬挂。排空之后登记中残留的句柄已无主（在途列举都
+   已自行收尾），拆除逐个关闭不再与任何任务竞争；`shutdown` 时绝无
+   closedir 在途。
+2. **认领式关闭所有权**：`sftpListDirectory` 收尾改为
+   `claimDirectoryHandleForClose(_:)`——仅当本方在无跨 await 的 actor
+   串行段内从登记中真正摘除了句柄才关闭；未认领到绝不触碰该指针。
+   配合排空屏障，拆除在途期间登记永不被拆除侧摘除，所有权不会易手，
+   结构上排除 double-close。
+3. **确定性竞态测试接缝**（生产恒为 nil，沿用 Phase 8
+   `testReadLoopExitHook` 先例）：`testSFTPAfterHandleOpenHook`
+   （句柄登记后、首次 readdir 前——readdir EAGAIN 挂起窗口的确定性
+   等价）与 `testSFTPBeforeHandleCloseHook`（认领后、`close_handle`
+   前——closedir EAGAIN 挂起窗口的确定性等价）。
+4. **测试仪表**：`sftpDirectoryHandleOpenCount`（OPENDIR 成功）与
+   `sftpDirectoryHandleCloseCount`（`close_handle` 成功；EAGAIN 重试
+   不重复计数），竞态测试断言两者相等——任何 double-close 都会使
+   关闭数超出打开数。
+
+新增测试（`Tests/SSH/SFTPSessionTests.swift`，RaceGate 门闩模式与
+Phase 8 testX/Y 一致）：
+
+- **testN（readdir 窗口）**：列举挂起在接缝 → 并发 `disconnect()` →
+  断言拆除被排空屏障扣住（子系统未 shutdown、在途句柄未被摘除）→
+  释放 → 列举以 `.connectionLost` 退出并完成唯一一次关闭 → 断开收尾，
+  句柄归零、关闭数 == 打开数 == 1。
+- **testO（closedir 窗口）**：列举完成、认领后挂起在接缝 → 并发
+  `disconnect()` → 断言 closedir 在途期间子系统未被 shutdown（在途计数
+  为 1、登记已摘除）→ 释放 → 列举完整返回、拆除排空后收尾，同一断言集。
+- 两个用例**各自循环 10 次连续迭代**，且经两轮独立运行（累计 40 次
+  确定性竞态交错）全部通过。
+
+验证结果：
+
+- `Scripts/run-phase9-focus.sh`（私钥路径，保留为常驻脚本）：
+  **31/31 通过**（SFTPSession 15 + SFTPService 12 + RemotePath 4），
+  两轮独立运行，0 失败 / 0 skip / 无崩溃无悬挂；build-for-testing
+  0 warning。
+- 全套回归（`Scripts/run-ssh-tests.sh`）结果见第 9 节整改后复跑数字。
+
+#### 12. 第二轮验收整改（P1：快速导航重叠操作同一 SFTP 状态机 + 2 个 P2，2026-08-31）
+
+第二轮复验不通过：1 个 P1 + 2 个 P2。
+
+**P1：快速导航重叠操作同一个 SFTP 状态机。**旧实现新导航只执行
+`operationTask?.cancel()` 随后立即启动新任务，不等待旧任务真正退出：
+旧任务若正因 EAGAIN 等待 socket readiness，新任务会进入同一个
+`SSHConnection`，两次 opendir/readdir 因 actor 重入而交错。vendored
+libssh2 的 `open_state` / `readdir_state` 与在途 request ID 是
+`LIBSSH2_SFTP` 子系统级共享状态——后一请求可能接走前一请求的响应，
+页面显示路径 B 但列表来自路径 A，网络较慢或连续刷新时出现随机目录错误。
+整改要求（用户指定，逐条满足）：
+
+- 新导航必须先取消并等待旧加载任务**完整退出（含收尾 closedir）**，
+  再启动新 SFTP 操作；并在 `SSHConnection` 内保留覆盖完整 SFTP 操作
+  生命周期的串行门兜底；
+- 确定性测试：第一条目录请求进入 EAGAIN 等价挂起后发起第二条导航，
+  断言第二条在第一条完全收尾之前不调用 libssh2；
+- 最终必须同时验证路径与条目都来自最后一个目标目录。
+
+整改措施（双层防御）：
+
+1. **业务层（`SFTPService.scheduleLoad`）**：新登记的加载任务在执行任何
+   SFTP 操作前先 `await` 被取代旧任务的终值——旧任务可能仍因 EAGAIN 挂在
+   连接层，只有等待其完全退出（含收尾 closedir）才能保证同一时刻没有两个
+   任务进入同一个 `LIBSSH2_SFTP` 状态机；恢复后再校验代次与停止标志。
+2. **连接层串行门（`SFTPSession.swift` 第二轮整改）**：
+   `acquireSFTPOperationGate()` / `releaseSFTPOperationGate()` FIFO 串行门，
+   覆盖 `realpath` / 列举（opendir → readdir → closedir）/ 拆除收尾的完整操作
+   生命周期；旧操作因 EAGAIN 挂起（actor 让出）期间，新操作绝不进入同一状态机；
+   释放时直接把所有权移交给队首（绝不先置空闲再争抢）。
+3. **确定性测试 M（`SFTPServiceTests`，连续 5 次 × 全新连接）**：接缝把第一条
+   目录请求停在 readdir 窗口（EAGAIN 等价，持有串行门）→ 发起第二条导航 →
+   挂起窗口内打开计数停在基准+1（第二条绝不发起任何 `libssh2` 调用）、
+   路径与加载态不变 → 释放后第一条以取消语义完整收尾（含 closedir），
+   第二条随后执行，**最终路径与条目同时断言来自最后一个目标目录**
+   （`dir-a` / `nested.txt`）；打开/关闭计数相等、无残留句柄、在途计数归零。
+4. **连接层确定性测试 P（`SFTPSessionTests`，连续 10 次）**：第一个列举挂起持有
+   串行门，第二个并发列举排在门外（在途计数 2、打开计数保持 1）；释放后各自得到
+   自己目标目录的内容——后一请求绝不接走前一请求的响应。
+
+**P2-1：连接中提前切 Files 卡在加载态。**连接过程中切到 Files 时因尚未认证，
+`ensureSFTPService()` 只置 `activePane = .files` 直接返回；认证成功后连接流程只处理已存在的 `sftpService`，Files 永远停在加载态（必须手动切回 Terminal 再切 Files）。
+整改：`SessionManager.runConnectFlow` 认证成功后，若 `sftpService == nil` 且 `activePane == .files`，补调用 `session.ensureSFTPService()` 创建并启动 SFTP 运行时；回归测试 `SessionManagerTests.testAB`（认证前 `sftpService == nil` → 认证成功后补创建，Files 自动到达 `.loaded`）并纳入聚焦脚本。
+
+**P2-2：`run-phase9-focus.sh` 退出码与变量引用。**旧脚本使用 `$TEST_LOG）`：
+非 UTF-8 locale 下中文右括号被解析进变量名，出现 `TEST_LOG…: unbound variable`；
+EXIT 清理 trap 又把最终退出码掩盖成 0，测试失败也被报告为成功。整改：全部改用具名括号 `${TEST_LOG}`；EXIT trap 以 `local rc=$?` 捕获原始退出码、清理后 `exit "$rc"`——实测：测试失败 → 脚本退出码 1，构建失败 → 1，全部通过 → 0，失败绝不再被掩盖成 0。
+
+**建连限流噪音加固（测试基础设施，不弱化任何产品断言）**：验证期间观察到本机
+macOS sshd 在数十次连续建连压力下瞬时丢弃新连接或关闭新建 Channel（失败恒发生
+在**建连阶段**，与整改代码路径无关，单独重跑均通过）。加固：两个 SFTP 测试类的建连辅助有限重试 3 次（退避 0.5 秒）；三个 10 次迭代竞态测试迭代间增加 200 毫秒间隔；testAB 会话级有限重试 3 次（退避 1 秒）。加固后聚焦套件连续三轮稳定全绿。
+
+验证结果（2026-08-31）：
+
+- `Scripts/run-phase9-focus.sh`（已纳入 P1 竞态 N / O / P、确定性竞态 M 与
+  P2 回归 testAB）：**34 项全部通过，0 失败 / 0 skip**，连续三轮（含全量构建）；
+  确定性竞态迭代累计：M 15 次、N / O / P 各 30 次，全部通过。
+- `Scripts/build-app.sh`：Debug + Release arm64 clean build 均 BUILD SUCCEEDED，
+  0 warning；codesign 验证通过；静态链接基线不变。
+- 退出码行为实测：测试失败轮脚本以 1 退出、通过轮以 0 退出（不再被 trap 掩盖）。
+
+本阶段明确未实现（Phase 9 禁止范围，全部遵守）：
+
+- Upload / Download / Rename / Delete / Mkdir / Create / Chmod / Edit、
+  拖放传输、Transfer Manager（Phase 10 / 11 范围）。
+- 本地文件浏览器、双面板、任何写操作入口。
+- `libssh2_sftp_write / unlink / mkdir / rmdir / rename / setstat` 调用。
+
 ## 下一阶段
 
-Phase 8 已通过用户验收（2026-08-30 复验）：多 Session / Tab 管理
-（SessionManager + 统一会话模型 + SSHService 工厂化 + ⌘T/⌘W/⌘1~9 +
-关闭确认 + 手动 Reconnect）及两轮验收整改（P1 拆除屏障 / 连接捕获 /
-运行时代次 + P2 标题单调计数器 + 测试侧 Trust Always 修复）。
-`SessionManagerTests` 27/27 真实通过，全套 111 项 0 失败，
-Debug / Release 干净构建 0 warning，Release `.app` 实测稳定。
+Phase 9（SFTP Browser / Remote File Browsing）第二轮复验发现 1 个 P1
+（快速导航重叠操作同一 `LIBSSH2_SFTP` 状态机：只取消不等待旧任务，
+两次 opendir/readdir 可交错，后一请求可能接走前一请求的响应）与 2 个 P2，
+整改已完成并等待再次复验：
 
-停止开发。下一阶段是 Phase 9（SFTP / 文件传输），只有用户明确要求后
+- P1：新导航先取消并 `await` 旧加载任务完整退出（含收尾 closedir）再启动新操作，
+  连接层另有覆盖完整操作生命周期的 FIFO 串行门；确定性测试 M（第一条请求
+  EAGAIN 等价挂起期间第二条不发起任何 `libssh2` 调用，最终路径与条目同时来自最后目标，连续 5 次）与连接层测试 P（并发列举严格串行，连续 10 次）。
+- P2-1：连接中提前切 Files 时，认证成功后连接流程补创建 SFTP 运行时
+  （回归测试 testAB）；P2-2：聚焦脚本改用 `${TEST_LOG}` 且 EXIT trap 保留
+  原始退出码（实测失败 → 1、成功 → 0）。
+- 聚焦套件（34 项，含 N / O / P / M / testAB）连续三轮全部通过；
+  Debug / Release 干净构建 0 warning。
+
+复验范围：只读 SFTP 浏览 + 拆除所有权屏障 + 快速导航串行化 + Files 面板补创建。
+停止开发。复验通过后，下一阶段是 Phase 10（SFTP 文件操作：
+Upload / Download / Rename / Delete / Mkdir），只有用户明确要求后
 才能开始。

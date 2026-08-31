@@ -181,6 +181,73 @@ actor SSHConnection {
     /// 捕获并释放同一个 `LIBSSH2_SESSION *`。
     private var disconnectTask: Task<Void, Never>?
 
+    /// Phase 9：SFTP 子系统句柄（`LIBSSH2_SFTP *`）。
+    ///
+    /// 与 session / shellChannel 相同的并发边界：只允许本 actor
+    /// （含 `SFTPSession.swift` 扩展）访问。在已认证 Session 上按需初始化，
+    /// Terminal ↔ Files 切换不重建；Reconnect 随旧连接释放，绝不复用。
+    /// 断开路径由 `closeSFTPResourcesForTeardown()` 统一释放，不泄漏。
+    var sftpSubsystem: OpaquePointer?
+
+    /// Phase 9：在途目录列举打开的句柄（`LIBSSH2_SFTP_HANDLE *`）登记。
+    ///
+    /// 登记本身不是并发屏障，而是**关闭所有权的认领令牌**：句柄只在
+    /// “从登记中真正摘除它的那一方”手里被关闭（摘除发生在无跨 await 的
+    /// actor 串行段，认领互斥）。拆除侧在排空在途列举之前绝不摘除任何
+    /// 句柄，因此所有权不会在两路之间易手。
+    var openSFTPDirectoryHandles: [OpaquePointer] = []
+
+    /// Phase 9：进行中的 SFTP 子系统初始化任务。
+    ///
+    /// 初始化跨 await（actor 可重入）：并发调用都会通过
+    /// `sftpSubsystem == nil` 守卫、各自初始化，后完成者覆盖前者，
+    /// 被覆盖的句柄无人释放（泄漏）。该任务让并发初始化去重。
+    /// 登记由任务体自身在结束时清空（`performTrackedSFTPSubsystemInit`）。
+    var sftpInitTask: Task<Void, Error>?
+
+    /// Phase 9：在途目录列举计数（含其收尾的 closedir）。
+    ///
+    /// 拆除必须先等本计数归零（在途列举连同其 closedir 完全结束），
+    /// 才能关闭剩余句柄 / `libssh2_sftp_shutdown`——否则在 EAGAIN 挂起的
+    /// closedir 会在子系统释放后继续触碰已释放内存（use-after-free）。
+    var inFlightSFTPListingCount = 0
+
+    /// Phase 9：拆除等待在途列举排空使用的续体（同一时刻至多一个
+    /// 拆除任务，`disconnectTask` 保证单飞，续体不会重复登记）。
+    var sftpListingDrainContinuation: CheckedContinuation<Void, Never>?
+
+    /// Phase 9（第二轮整改）：SFTP 操作串行门占用标志。
+    ///
+    /// vendored libssh2 的 `LIBSSH2_SFTP` 携带**子系统级共享状态**
+    /// （`open_state` / `readdir_state` / 在途 request ID）。两个操作若借
+    /// actor 在 EAGAIN 等待处的重入间隙并行执行，会互踩这些状态——
+    /// 后一请求可能接走前一请求的响应，句柄与协议状态串线。
+    /// 串行门保证任一时刻至多一个持门者执行 SFTP 操作（含收尾
+    /// closedir 与拆除 shutdown），等待者按 FIFO 排队，释放时直接把
+    /// 所有权移交给队首（绝不先置空闲再争抢）。
+    var sftpOperationGateActive = false
+
+    /// Phase 9（第二轮整改）：SFTP 操作串行门 FIFO 等待队列。
+    var sftpOperationGateWaiters: [CheckedContinuation<Void, Never>] = []
+
+    /// Phase 9 测试仪表：`libssh2_sftp_init` 实际成功次数。
+    /// 用于断言 Terminal ↔ Files 切换、刷新绝不重复初始化子系统。
+    var sftpSubsystemInitCount = 0
+
+    /// Phase 9 测试仪表：目录句柄打开 / 关闭（实际 `close_handle` 调用）次数。
+    /// 竞态测试断言两者相等——任何 double-close 都会使关闭数超出打开数。
+    var sftpDirectoryHandleOpenCount = 0
+    var sftpDirectoryHandleCloseCount = 0
+
+    /// Phase 9 测试接缝（生产恒 nil）：列举在句柄登记后、首次 readdir 前
+    /// 被阻塞——readdir 返回 EAGAIN 挂起窗口的确定性等价，供并发
+    /// disconnect 竞态测试复现受控交错。
+    var testSFTPAfterHandleOpenHook: (@Sendable () async -> Void)?
+
+    /// Phase 9 测试接缝（生产恒 nil）：认领关闭所有权后、实际调用
+    /// `close_handle` 前被阻塞——closedir 返回 EAGAIN 挂起窗口的确定性等价。
+    var testSFTPBeforeHandleCloseHook: (@Sendable () async -> Void)?
+
     /// 只暴露可跨 actor 读取的所有权状态，不把非 Sendable 的 C 指针带出 actor。
     var hasLiveSession: Bool {
         session != nil
@@ -428,10 +495,17 @@ actor SSHConnection {
     }
 
     /// 共享断开任务体；登记由任务自身清空，保证任务完成后槽位必为空。
+    ///
+    /// 释放顺序（Phase 9 任务书）：目录句柄 → SFTP 子系统 → Shell Channel
+    /// → SSH Session → socket；全部完成后才返回。
     private func performTrackedDisconnect() async {
         defer { disconnectTask = nil }
 
         await transition(to: .disconnecting)
+
+        // 关闭全部 SFTP 资源（等在途初始化、关闭登记中的目录句柄、
+        // 关闭子系统；幂等，无 SFTP 时为空操作）。
+        await closeSFTPResourcesForTeardown()
 
         // 关闭全部 Shell Channel（等待在途打开 / 关闭并循环检查）。
         await closeAllShellChannelsForTeardown()

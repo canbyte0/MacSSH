@@ -255,8 +255,9 @@ final class SessionManager {
 
     /// 真实资源清理（一次 teardown owner）：
     /// - Local：终止 Shell 子进程与 PTY（任务书 19）；
-    /// - Remote：stopBarrier()（屏障：取消并等待旧任务完全退出 + 关闭
-    ///   Channel）→ disconnect()（任务书 20，复用 Phase 7 安全实现）。
+    /// - Remote：SFTP 屏障（取消并等待在途列举）→ stopBarrier()（屏障：
+    ///   取消并等待旧任务完全退出 + 关闭 Channel）→ disconnect()
+    ///   （任务书 20；内部顺序：目录句柄 → SFTP → Channel → Session → socket）。
     private func teardown(_ session: ManagedTerminalSession) async {
         session.markClosed()
 
@@ -265,6 +266,9 @@ final class SessionManager {
             session.localService?.terminate()
 
         case .remoteSSH:
+            if let sftp = session.sftpService {
+                await sftp.stopBarrier()
+            }
             if let remote = session.remoteService {
                 await remote.stopBarrier()
             }
@@ -302,8 +306,11 @@ final class SessionManager {
             }
             defer { session?.reconnectTask = nil }
 
-            // 1. 旧 runtime 完整 teardown（屏障：等待旧打开 / 读取任务
-            //    完全退出，不与新连接争用；P1）。
+            // 1. 旧 runtime 完整 teardown（屏障：等待旧打开 / 读取 / 列举
+            //    任务完全退出，不与新连接争用；P1）。
+            if let sftp = session?.sftpService {
+                await sftp.stopBarrier()
+            }
             if let remote = session?.remoteService {
                 await remote.stopBarrier()
             }
@@ -395,6 +402,21 @@ final class SessionManager {
                     )
                     session.attachRemoteService(service)
                     service.startIfNeeded()
+                }
+
+                // Phase 9：SFTP 子系统随旧连接释放，Reconnect 必须重建——
+                // reattach 绑定新连接并复位（绝不复用旧 `LIBSSH2_SFTP *`）；
+                // Files 面板在场时立即重新启动（可选恢复原路径）。
+                if let sftp = session.sftpService {
+                    await sftp.reattach(connection: connection)
+                    if session.activePane == .files {
+                        sftp.startIfNeeded()
+                    }
+                } else if session.activePane == .files {
+                    // P2 整改：连接过程中切到 Files 时因尚未认证，
+                    // `ensureSFTPService()` 直接返回、运行时未创建；
+                    // 认证成功后必须补创建，否则 Files 面板永远停在加载态。
+                    session.ensureSFTPService()
                 }
             }
         }

@@ -7,6 +7,15 @@ enum TerminalSessionKind: Equatable, Sendable {
     case remoteSSH
 }
 
+/// Session 工作区当前展示的内容面板（Phase 9：Terminal / Files 分段）。
+///
+/// 切换面板只改变展示：Terminal 缓冲与 SFTP 运行时都保持存活，
+/// 不重建任何底层资源。
+enum WorkspacePane: Equatable {
+    case terminal
+    case files
+}
+
 /// Session 在 UI 层的统一展示状态（任务书 44：Local 与 SSH 不强行共用
 /// 底层状态机，由本枚举提供映射）。
 enum TerminalSessionDisplayState: Equatable {
@@ -67,6 +76,15 @@ final class ManagedTerminalSession: Identifiable {
 
     /// Shell 运行时；连接成功后创建，Reconnect 时复用（保留 Terminal 历史）。
     private(set) var remoteService: RemoteTerminalService?
+
+    /// Phase 9：SFTP 浏览运行时；首次打开 Files 面板时惰性创建，
+    /// Terminal ↔ Files 切换复用（子系统不重建），Reconnect 时 reattach
+    /// 到全新连接（绝不复用旧 `LIBSSH2_SFTP *`）。
+    private(set) var sftpService: SFTPService?
+
+    /// Phase 9：工作区当前展示的面板；切换只改变展示，底层资源保持存活。
+    /// 只允许经 `selectPane(_:)` 修改（切换到 Files 时惰性启动 SFTP 运行时）。
+    private(set) var activePane: WorkspacePane = .terminal
 
     // MARK: - 生命周期任务（SessionManager 登记与清理）
 
@@ -129,6 +147,38 @@ final class ManagedTerminalSession: Identifiable {
     /// 连接认证成功后挂接 Shell 运行时（首次连接）。
     func attachRemoteService(_ service: RemoteTerminalService) {
         remoteService = service
+    }
+
+    /// 挂接 SFTP 运行时（SessionManager / 测试装配）。
+    func attachSFTPService(_ service: SFTPService) {
+        sftpService = service
+    }
+
+    /// UI 切换到 Files 面板时调用（MainActor 串行，幂等）：
+    /// 仅已认证的 Remote Session 可惰性创建并启动 SFTP 运行时；
+    /// Local Session 与未连接状态由 UI 展示禁用 / 断开提示，不创建。
+    func ensureSFTPService() {
+        guard kind == .remoteSSH, sftpService == nil, !isClosed else {
+            return
+        }
+        guard let connection, connectionInfo?.phase == .connected else {
+            return
+        }
+        let service = SFTPService(connection: connection)
+        sftpService = service
+        service.startIfNeeded()
+    }
+
+    /// 工作区分段控制切换面板（任务书：切换只改展示，不重建底层资源）。
+    /// 切换到 Files 时惰性创建并启动 SFTP 运行时；已存在则复用（子系统不重建）。
+    func selectPane(_ pane: WorkspacePane) {
+        guard pane != activePane else {
+            return
+        }
+        activePane = pane
+        if pane == .files {
+            ensureSFTPService()
+        }
     }
 
     /// 关闭已请求；幂等。
@@ -259,6 +309,15 @@ final class ManagedTerminalSession: Identifiable {
 
         case .remoteSSH:
             let host = hostDisplayName ?? hostname ?? "SSH"
+
+            // Files 面板活跃时状态栏展示 SFTP 上下文（任务书状态栏要求）。
+            if activePane == .files, displayState == .active {
+                if let sftp = sftpService {
+                    return "SFTP ● \(host) · \(sftp.currentPath)"
+                }
+                return "SFTP ● \(host)"
+            }
+
             switch displayState {
             case .starting, .connecting:
                 return "SSH · \(host) · Connecting…"
