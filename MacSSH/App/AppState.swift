@@ -17,10 +17,21 @@ final class AppState {
     /// 对象持有：切换 Sidebar / 页面不会销毁任何 Session。
     let sessionManager: SessionManager
 
+    /// 传输运行时（Phase 10）：由本 App 层稳定对象持有——切换页面 /
+    /// 切换会话 / 关闭 Transfers 面板都不取消传输；关闭传输所属会话时
+    /// 经 `cancelAndAwaitTransfers` 屏障先取消并等待清理。
+    let transferManager: TransferManager
+
     init(modelContainer: ModelContainer) {
         let sshService = SSHService(modelContainer: modelContainer)
         self.sshService = sshService
-        sessionManager = SessionManager(sshService: sshService)
+        let sessionManager = SessionManager(sshService: sshService)
+        let transferManager = TransferManager()
+        // 双向弱引用装配（两者均由本对象强持有，绝不形成引用环）。
+        transferManager.sessionManager = sessionManager
+        sessionManager.transferManager = transferManager
+        self.sessionManager = sessionManager
+        self.transferManager = transferManager
 
         // 日志不包含密码、私钥、终端内容或其他敏感信息。
         AppLogger.app.info("Application state initialized")
@@ -44,7 +55,10 @@ final class AppState {
     /// 主窗口底部左侧展示当前阶段或 Active Session 状态（任务书 66）。
     var statusText: String {
         guard selectedSection == .terminal else {
-            return "Phase 8 · Session Tabs"
+            if selectedSection == .transfers, let active = transferManager.activeTask {
+                return "传输中 · \(active.localName)"
+            }
+            return "Phase 10 · SFTP Transfers"
         }
 
         guard let session = sessionManager.activeSession else {

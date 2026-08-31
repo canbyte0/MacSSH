@@ -582,6 +582,10 @@ extension SSHConnection {
         // 绝不关闭任何句柄、绝不执行 shutdown。
         await waitForInFlightSFTPListingsToDrain()
 
+        // Phase 10 排空屏障：在途文件传输分块（连同其收尾关闭）全部结束。
+        // 正常路径由 TransferManager 先行取消并等待；这里是拆除侧最后防线。
+        await waitForInFlightSFTPFileOperationsToDrain()
+
         // 串行门：持门关闭残留句柄与 shutdown，绝不与任何仍在
         // `LIBSSH2_SFTP` 共享状态机内的操作（如 realpath）交错。
         await acquireSFTPOperationGate()
@@ -592,6 +596,15 @@ extension SSHConnection {
                 return
             }
             await closeDirectoryHandle(session: session, sftp: sftp, handle: handle)
+        }
+
+        // Phase 10：排空后登记中仍存在的是无主残留文件句柄（传输侧已在
+        // 收尾时认领摘除的不会出现在这里），由本路径逐个关闭。
+        while let handle = openSFTPFileHandles.popLast() {
+            guard let session, let sftp = sftpSubsystem else {
+                return
+            }
+            await closeFileHandle(session: session, sftp: sftp, handle: handle)
         }
 
         guard let session, let sftp = sftpSubsystem else {
@@ -641,7 +654,10 @@ extension SSHConnection {
     /// 任务取消检查也在这里统一发生：SFTPService 的在途请求被新请求
     /// 取代（或拆除屏障取消）时，操作在下一个校验点即退出；
     /// 拆除路径自身的任务从不被取消，本检查对其恒为无操作。
-    private func validateSFTPOperation(session: OpaquePointer, sftp: OpaquePointer?) throws {
+    ///
+    /// `internal` 供同模块的 `SFTPFileOperations.swift` 扩展（Phase 10
+    /// 文件传输）复用；actor 隔离不变。
+    func validateSFTPOperation(session: OpaquePointer, sftp: OpaquePointer?) throws {
         try Task.checkCancellation()
         try throwSFTPErrorIfDisconnectRequested()
         guard session == self.session else {
@@ -679,7 +695,8 @@ extension SSHConnection {
     }
 
     /// readiness 等待的统一映射：超时 / 取消 → 业务错误（不泄漏 SSHError 细节）。
-    private func sftpWaitForReadiness(session: OpaquePointer, deadline: Date) async throws {
+    /// `internal` 供同模块的 `SFTPFileOperations.swift` 扩展复用。
+    func sftpWaitForReadiness(session: OpaquePointer, deadline: Date) async throws {
         do {
             try await waitForLibssh2Readiness(session: session, deadline: deadline)
         } catch is CancellationError {
@@ -692,7 +709,8 @@ extension SSHConnection {
     /// 失败码映射：`LIBSSH2_ERROR_SFTP_PROTOCOL` 时读取
     /// `libssh2_sftp_last_error()`（紧随失败调用，中间无其他 sftp 调用），
     /// 其余按传输层错误 → 连接丢失。
-    private func sftpFailureError(session: OpaquePointer, sftp: OpaquePointer) -> SFTPError {
+    /// `internal` 供同模块的 `SFTPFileOperations.swift` 扩展复用。
+    func sftpFailureError(session: OpaquePointer, sftp: OpaquePointer) -> SFTPError {
         let lastError = libssh2_session_last_errno(session)
         if lastError == LIBSSH2_ERROR_SFTP_PROTOCOL {
             let statusCode = UInt32(libssh2_sftp_last_error(sftp))

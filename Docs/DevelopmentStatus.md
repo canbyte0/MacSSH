@@ -2248,23 +2248,281 @@ macOS sshd 在数十次连续建连压力下瞬时丢弃新连接或关闭新建
 - 本地文件浏览器、双面板、任何写操作入口。
 - `libssh2_sftp_write / unlink / mkdir / rmdir / rename / setstat` 调用。
 
+### Phase 10：SFTP 文件操作（upload / download / rename / delete / mkdir）
+
+状态：**首轮验收两个 P1 整改完成，等待复验**
+
+完成日期：2026-08-31（首轮）／ 2026-08-31（P1 整改）
+
+口径（计划书）：Phase 10 = SFTP 文件操作 **upload / download / rename /
+delete / mkdir**，五个操作本轮全部提供用户入口并真实测试。传输运行时
+（状态机 / Progress / Speed / Cancel）属计划书 Phase 11 Transfer Manager
+范围，作为传输固有支撑**提前落地的子集**保留——**Transfer Queue（多文件
+队列）未实现**，1 GB / 10 GB 流式测试属 Phase 11 验收项，本阶段不做。
+首轮实现把 Phase 10 写成"Upload / Download + Transfer Manager"、且
+rename / delete 仅传输内部使用、mkdir 缺失、断线残留被测试掩盖，均已整改（§13）。
+
+#### 1. 总体架构
+
+在 Phase 7（Remote SSH Terminal）、Phase 8（多 Session 管理）与 Phase 9
+（只读 SFTP Browser）之上，建立**单文件流式**上传 / 下载与 Transfer
+Manager。Terminal、SFTP Browser 与传输共用**同一条已认证
+`LIBSSH2_SESSION`**：
+
+```text
+SFTPBrowserView / TransferListView（SwiftUI：只观察，绝不触碰 libssh2）
+  └── TransferManager（@MainActor @Observable，AppState 持有：入口 / 单活跃 / 节流 / 拆除屏障）
+        └── SFTPTransferService（执行层：流式分块 / 临时文件 / 发布 / 清理）
+              └── SFTPFileOperations（extension SSHConnection，actor 串行边界）
+                    └── libssh2 SFTP（OPEN FILE / READ / WRITE / CLOSE / RENAME / UNLINK / STAT）
+```
+
+核心不变量：
+
+- **禁止整文件进内存**：1 MiB 分块（`SFTPTransferService.chunkSize =
+  1_048_576`）；100 MB 往返实测 RSS 增幅远低于文件体积。
+- **Completed 语义**：字节数到达绝不等于完成——Completed 只能在数据完成 +
+  句柄正确关闭 + 发布 / 替换成功之后出现。
+- **取消是协作式且幂等**：`TransferCancellation` 标志是唯一信号源；执行任务
+  从不被 `Task.cancel()`（保证收尾——句柄关闭 + 临时文件清理——仍能通过连接层
+  校验），每个分块边界轮询；`cancelling` 是收尾过渡态。
+- **全局单活跃传输**：新请求在有活跃任务时拒绝并提示"已有文件正在传输，
+  请等待当前任务完成或取消。"；会话不可用时提示"当前会话不可用。"。
+- **默认不覆盖远端已有文件**：上传前远端 stat 预检，命中时失败文案"远程文件已存在。Phase 10 当前不会自动覆盖该文件。"。
+- **不独占连接**：传输经 Phase 9 FIFO 串行门（`acquireSFTPOperationGate`）
+  进入，但按分块持门 + 协作调度——门在分块之间释放，Terminal 读取循环与
+  Browser 列举不被饿死（共存测试实测）。
+- **连接丢失 → Failed 不续传**：失败文案"SSH 连接已断开，传输失败。"；
+  上传在途断线时远端临时文件**必然残留**（清理物理上不可能），失败文案追加
+  残留文件名如实告知，绝不假装已清理（P1-2 整改）；无断点续传、无自动重连（任务书明确禁止）。
+- **禁止范围（全部遵守）**：递归 / 目录传输 / 并发传输 / 多文件队列 / 拖放传输 /
+  断点续传；rename / delete / mkdir 是本轮提供的用户级文件操作（计划书 Phase 10 范围）。
+- 传输记录纯内存、不进 SwiftData、绝不携带 Secret；日志只记生命周期事件。
+
+#### 2. 数据与运行时模型（`MacSSH/Models/TransferTask.swift`，305 行）
+
+- 状态机 `preparing → transferring →（cancelling）→ completed / failed /
+  cancelled`；终态写入后不再变化（`isTerminal` 保护）。
+- 进度单调（`reportProgress` 只增不减）；速度为整段平均，分母非正置 0，
+  绝不出现 NaN / Infinity / 负值；未知大小时进度为 indeterminate，绝不伪造 100%。
+- `TransferError` 是执行层 → 用户可见中文文案的唯一映射点：
+  connectionLost(remoteResidue:) / remoteFileExists / permissionDenied /
+  remoteFileMissing / generic；libssh2 / FX 原始码只进安全日志，不进用户可见信息。
+  connectionLost 携带残留文件名关联值：上传在途断线时文案明示"远端可能残留临时文件 <名称>，可稍后手动清理。"。
+- 展示文案（准备中 / 传输中 / 正在取消 / 已完成 / 失败 / 已取消）与字节格式化由任务对象自带，UI 只读。
+
+#### 3. 连接层文件操作（`MacSSH/Services/SSH/SFTPFileOperations.swift`，637 行）
+
+`extension SSHConnection`——全部真实文件级 `libssh2_sftp_*` 调用只发生在这里：
+
+- 文件打开（读写两模式）/ 读 / 写 / 关闭 / `rename` / `unlink` / `stat` /
+  `mkdir`（P1-1 整改新增 `sftpCreateDirectory`：`libssh2_sftp_mkdir_ex`，权限 0o755），
+  全部经 Phase 9 FIFO 串行门与 EAGAIN readiness 等待（沿用既有
+  `waitForLibssh2Readiness`），每次循环带截止时间与断开 / 取消校验；
+  rename / unlink / mkdir 为传输内部与用户级操作共用的唯一底层实现。
+- **`SFTPFileHandle` 包装**：`OpaquePointer` 非 Sendable，引入
+  `struct SFTPFileHandle: Equatable, @unchecked Sendable` 跨 actor 传递；
+  写缓冲为 `[UInt8]`（Sendable）+ partial write 重试（`removeFirst(written)`）。
+- **认领式关闭所有权**（沿用 Phase 9 句柄模式）：文件句柄登记在
+  `openSFTPFileHandles`；`claimFileHandleForClose` 仅当本方在无跨 await 的
+  actor 串行段内真正摘除句柄才关闭——结构上排除 double-close。
+- **拆除排空屏障**：每个文件级操作（连同收尾关闭）计入
+  `inFlightSFTPFileOperationCount`；`disconnect()` 先等在途操作归零再关闭残留句柄与子系统。
+- **测试仪表**：`sftpFileHandleOpenCount` / `sftpFileHandleCloseCount`
+  （配对断言相等——任何 double-close 都会使关闭数超出打开数）、
+  `openSFTPFileHandleCount`（断言归零）、`inFlightSFTPFileOperationCount`。
+- **Partial write 仪表与确定性接缝**：`sftpFileWriteCallCount`（写调用计数）与
+  `setTestSFTPFileWriteMaxBytesPerCall(_:)`（钳制每次写入提交字节数——服务器真实只写入该量，
+  账面与真实一致，绝不伪报已写字节）；生产恒为不钳制。
+- **确定性测试接缝**（生产恒为 nil）：
+  `setTestSFTPFileTransferChunkHook(armed:_:)`（每分块完成后）与
+  `setTestSFTPAfterFileHandleOpenHook`（句柄打开后）。
+
+#### 4. 传输执行层（`MacSSH/Services/Transfer/SFTPTransferService.swift`，395 行）
+
+- **上传**：本地流式读 1 MiB → 写远端临时文件 `.macssh-upload-<UUID>.partial`
+  （目标同目录）→ 关闭句柄 → `rename` 发布到目标名；连接存活的失败 / 取消路径先 `unlink`
+  清理临时文件再抛出，无残留；**连接断开时清理物理上不可能，残留如实存在，
+  失败文案追加残留临时文件名**（P1-2 整改，绝不假装已清理）。远端预检：目标已存在 →
+  `remoteFileExists`；目标目录不可写 → `permissionDenied`（"权限不足，无法完成传输。"）。
+- **下载**：远端流式读 1 MiB → 写本地临时文件 → 关闭句柄 →
+  `FileManager.replaceItemAt` 原子发布（目标不存在时等同原子放置）。
+- **本阶段发现并修复的产品缺陷**：`FileManager.replaceItemAt(_:withItemAt:)`
+  返回的是**新文件所在位置**的 URL 而非旧文件备份；初版误将其当作旧文件删除，
+  导致下载完成后文件失踪（聚焦测试 testA / testC 暴露，独立脚本复现确认）。
+  修复：绝不删除返回值，发布后追加 `fileExists` 校验。
+- 上传 / 下载的失败、取消、连接丢失路径全部完成收尾（句柄关闭 + 清理），
+  随后才写入终态；`completed` 前所有条件（数据完成 + 句柄关闭 + 发布成功）齐备。
+- 清理失败不改变传输终值，仅记安全日志（`AppLogger.app.error`）。
+
+#### 5. TransferManager（`MacSSH/Services/Transfer/TransferManager.swift`，328 行）
+
+- `AppState` 持有的 `@MainActor @Observable` 稳定对象：切换页面 / 切换会话 /
+  关闭 Transfers 面板都不影响传输；UI 只观察。
+- `requestUpload` / `requestDownload` 同步入口：单活跃检查 → 会话可用性检查 →
+  创建 `TransferTask` 并启动执行任务；拒绝以返回值的 `rejection` 文案交给 UI 展示。
+- 进度上报节流（`lastProgressCommit`），终态后不再接受进度写入。
+- `clearFinished` 只清理终态任务，活跃任务不动。
+- **拆除屏障 `cancelAndAwaitTransfers(forSession:)`**：取消该会话全部活跃传输并
+  `await` 每个执行任务的终值——保证句柄关闭与临时文件清理完成，绝不与随后的连接拆除交错。
+
+#### 6. UI 与会话集成（预览图已获用户确认后实现）
+
+- Files 页：**Upload**（`NSOpenPanel`，选择层即排除目录）与 **Download**
+  （`NSSavePanel`，仅选中的普通文件可下载；目录 / 符号链接 / 特殊文件禁用），
+  面板期间不阻塞 SSH actor；拒绝与失败经页面提示展示，不打断浏览。
+- Transfers 页：`TransferListView` 展示方向 / 会话 / 文件名 / 进度条 /
+  字节与速度文案 / 状态；传输中可 Cancel（幂等）；`clearFinished` 清理终态条目。
+- 关闭确认：有活跃传输的会话关闭需确认（`requiresCloseConfirmation`），
+  RootView 确认文案明示"将取消进行中的文件传输"。
+- `SessionManager.teardown` 顺序（Remote）：**传输屏障**（取消并等待活跃传输完成清理）→ SFTP 列举屏障 → `stopBarrier()`（Channel）→ `disconnect()`——传输先于一切 SFTP 拆除。
+- 改动面：`AppState`（装配）、`RootView`（确认文案）、`SFTPBrowserView`
+  （面板与提示）、`TransferListView`、`SessionManager`（teardown 顺序）、
+  `SFTPSession` / `SSHConnection`（仪表与接缝存储）；既有 Phase 7/8/9 行为不变。
+
+#### 7. 用户级文件操作：业务层（P1-1 整改，`SFTPService`，399 行）
+
+- 三个入口（@MainActor，与列举共用同一 FIFO 串行门 / EAGAIN / 拆除排空）：
+  `renameEntry(_:to:)`（同级重命名，`flags=0` posix-rename 协议级防覆盖）、
+  `deleteEntry(_:)`（仅普通文件；目录 / 符号链接 / 特殊文件被业务层拦截，
+  避免递归删除）、`createDirectory(named:)`（0o755）。
+- 名称校验 `sanitizedEntryName`：去首尾空白；拒绝空名 / 含 `/` / `.` / `..`，
+  本地拦截文案"名称无效：不能为空、包含 / 或为 . / ..。"。
+- 操作为原子服务器调用，不可取消；运行器 `runFileOperation` 以任务跟踪，
+  `stopBarrier()` 追加 await 其终值——拆除不与其交错；成功后 `refresh()` 刷新列表。
+- 失败文案（`fileOperationNotice` 交给 UI 弹窗）："权限不足，无法完成操作。" /
+  "目标不存在，请刷新后重试。" / "SSH 连接已断开。" /
+  "操作失败：目标名称可能已存在，或服务器拒绝。" / "仅支持删除普通文件。" /
+  "目标已不在当前目录，请刷新后重试。"。
+
+#### 8. 用户级文件操作：UI（预览图已获用户确认后实现，`SFTPBrowserView`，557 行）
+
+- 路径栏新增"新建文件夹"按钮（`folder.badge.plus`）。
+- 条目行右键菜单："重命名…"与"删除"（非普通文件删除禁用，`role: .destructive`）。
+- 四个原生 alert：新建文件夹（TextField 输入 + 创建 / 取消）、重命名（预填现名 +
+  重命名 / 取消）、删除确认（"删除后无法撤销。"）、操作失败（观察 `fileOperationNotice`）。
+- UI 只观察 / 只发起，绝不触碰 libssh2；与既有 Upload / Download / 导航 / 刷新共存。
+- 验收口径（计划书）：上传后在 Terminal `ls` 可见文件；下载后 Finder 可打开；
+  rename / delete / mkdir 均在真实本机 sshd 上由自动化测试验证（§9）。
+
+#### 9. 真实测试（本机 sshd + 真实 libssh2，聚焦 26 项全过）
+
+`Tests/SSH/SFTPTransferTests.swift`（14 项，1144 行）：
+
+- testA：尺寸矩阵（0 / 1 / 1 024 / 65 536 / 131 089 字节）上传 + 下载字节精确往返。
+- testB：中文 / emoji / 空格 / 引号文件名往返。
+- testC：100 MB `/dev/urandom` 往返 + CryptoKit SHA256 三方一致（本地源 / 本地下载 / 远端经 SFTP 读回）+ RSS 增幅上界断言（< 40 MiB，证明内存不随文件大小增长）。
+- testD：远端同名已存在 → 不覆盖 + 规定文案。
+- testE：下载源缺失 / 非普通文件拒绝。
+- testF：上传到只读目录（555）→ 权限拒绝 + 规定文案，连接保持健康。
+- testG / testH：各 10 次取消（上传 / 下载）——幂等、临时文件无残留、句柄仪表配对。
+- testI：连接丢失（分块接缝门闩挂起期间断开）→ Failed + 规定文案、不续传；
+  拆除前先释放门闩避免排空屏障与门闩互等。**诚实断言（P1-2 整改）**：
+  断线后远端 `.partial` **确实残留**（先断言残留存在 + 失败文案含残留文件名，
+  再清理），绝不手工删除后再断言"无残留"。
+- testJ：20 次上传 + 下载生命周期，仪表全程配对。
+- testK：上传与 Terminal 共存——Shell echo 副作用文件 + ping 输出 + Ctrl+C 均正常。
+- testL：上传与 Browser 导航共存（传输分块持门不独占）。
+- testM：单活跃拒绝 + 跨会话隔离。
+- testN（新增，高风险点确定性证据）：接缝把每次写入提交字节压到 100 KB，
+  强制 `offset += written` 重试循环每分块真实执行 11 次以上；断言远端内容
+  逐字节一致 + 写调用数远大于分块数 + 无临时文件残留 + 句柄仪表配对。
+
+`Tests/SSH/SFTPFileOpsTests.swift`（8 项，483 行，P1-1 整改新增）：
+
+- testA：重命名提交成功 + 列表刷新。
+- testB：重名目标已存在 → 失败不覆盖 + 规定文案。
+- testC：删除普通文件（远端真实消失）。
+- testD：目录删除被业务层拦截（"仅支持删除普通文件。"）。
+- testE：mkdir 成功 + 权限 0755。
+- testF：重复同名 mkdir 失败 + 规定文案。
+- testG：只读目录（555）内 mkdir 权限拒绝 + 连接保持健康。
+- testH：非法名称（空 / 含 `/` / `.` / `..`）本地拦截，不发起服务器调用。
+
+`Tests/SSH/TransferManagerTests.swift`（4 项，379 行）：
+
+- testA：进度单调 / 速度安全（无 NaN / 负值）/ 终态保护。
+- testB：入口拒绝文案（会话不可用 / 单活跃）。
+- testC：`clearFinished` 只清终态。
+- testD：**真实链路**（建连 → Files 加载 → 3 MB 上传停在分块接缝 →
+  `requestClose` 出现 `pendingCloseConfirmation` → `confirmClose` →
+  任务 `.cancelled` + 会话移除 + 句柄仪表配对 + 临时文件无残留）。
+
+聚焦脚本 `Scripts/run-phase10-focus.sh`（私钥路径，不触碰 Keychain 密码；
+夹具 `upload / readonly(555) / restricted(000)` + 交接文件；EXIT trap 保留原始退出码；
+本轮已纳入 SFTPFileOpsTests）。
+结果：**26/26 通过，0 失败 / 0 skip**，整改轮连续两轮全绿。
+
+testI 的远端残留处理（P1-2 整改）：断线后 `.partial` 物理上无法清理（不重连是任务书要求），
+测试**先诚实断言残留存在与失败文案含残留文件名，再清理**；各用例使用独立文件名，不再互相污染。
+
+#### 10. 构建与验证结果（2026-08-31，P1 整改后）
+
+- `Scripts/build-app.sh`（全新 Derived Data）：Debug + Release arm64 clean
+  build 均 **BUILD SUCCEEDED**，项目代码 **0 warning**；`codesign --verify
+  --strict` 两个产物均满足 Designated Requirement。
+- Release `.app`：Mach-O arm64；`otool -L` 仅系统库，无 `/opt/homebrew`、
+  `/usr/local` 或动态 libssh2 / libssl / libcrypto（静态链接基线不变）；
+  体积 **13 MB**（与 Phase 9 基线持平，无膨胀）。
+- 聚焦套件：**26/26 通过**（SFTPTransferTests 14 含 testN + SFTPFileOpsTests 8 +
+  TransferManagerTests 4），整改轮连续两轮；含 100 MB + SHA256、10×2 取消、
+  20×生命周期、Terminal / Browser 共存、关闭会话取消传输真实链路、
+  强制 partial write、断线诚实残留断言。
+- 全套回归（真实本机 sshd，171 项执行）：**153 通过 / 1 失败 / 17 既定 skip**。
+  唯一失败为 `SSHConnectionTests.test_IdleCPUAfterPrivateKeyConnected`（30 秒空闲
+  CPU 预算 1.0 秒，实测 1.394 秒）：单独复验**通过**，归因回归当时系统负载抖动——
+  该用例仅建私钥连接后空闲，本轮整改未触碰其代码路径；其余全部真实通过，
+  **Phase 10 的 26 项在全量套件中真实执行并通过**，含双 testQ。
+  17 项 skip 的构成：16 项密码认证用例（需交互输入本机账户密码创建临时 Keychain 凭据——
+  代理环境无交互终端，与 Phase 8 / 9 一致属环境限制）、1 项生产凭据校验（既定）。
+- `git diff --check` 通过；安全基线不变（libssh2 `1.11.2_DEV @
+  be93774…`、OpenSSL `3.5.8`，`DependencyIdentityTests` 随回归执行）。
+
+#### 11. 本阶段明确未实现（遵守计划书阶段划分）
+
+- Transfer Queue（多文件队列 / 并发传输）——计划书 Phase 11 范围；本轮仅提前落地其单任务运行时子集。
+- 1 GB / 10 GB 流式测试——计划书 Phase 11 验收项；本轮最大 100 MB。
+- 递归传输、目录传输、拖放传输、断点续传。
+- Chmod / Edit / 目录删除（删除仅限普通文件，避免递归）。
+- 传输完成通知、传输历史持久化（SwiftData）。
+
+#### 12. 当前已知问题 / 待验收复验项
+
+- 凭据门控测试（16 项密码认证用例）需在正常终端交互式输入本机密码后复验（环境限制，与 Phase 8 / 9 一致；私钥路径已全量通过）。
+- 文件操作相关 UI 的运行时交互（新建文件夹 / 重命名 / 删除对话框、传输面板、关闭确认）需在真实桌面下人工确认（预览图已获用户确认并按图实现）。
+- 连接丢失场景远端 `.macssh-upload-*.partial` 临时文件物理上无法自动清理（不续传不重连是任务书要求）；失败文案已如实告知残留文件名，由用户手动处理。
+- 全套回归中空闲 CPU 用例因系统负载抖动单次超限，单独复验通过；如需在更高负载环境下复验可重跑该用例。
+
+#### 13. 首轮验收整改记录（两个 P1 + 高风险点，2026-08-31）
+
+首轮验收结论：不通过。整改逐项对应：
+
+- **P1-1 正式范围未完成**：计划书要求 Phase 10 = upload / download / rename /
+  delete / mkdir。整改：mkdir 底层新增（`sftpCreateDirectory`）；rename / delete
+  从仅传输内部使用升级为**用户级入口**（行右键菜单 + 名称校验 + 错误文案）；
+  UI 新增"新建文件夹"按钮与三个对话框（预览图确认后实现）；
+  新增 `SFTPFileOpsTests` 8 项真实测试。传输运行时（Phase 11 提前落地子集）
+  经用户确认保留，文档口径改回计划书（本节标题 / 状态 / §11）；
+  Transfer Queue 不做，避免继续越界。
+- **P1-2 断线残留被掩盖**：`TransferError.connectionLost` 增加残留文件名关联值；
+  上传在途断线的失败文案明示残留；testI 改为**先断言残留存在 + 文案含文件名，
+  再清理**，删除了原先"手工删除后断言无残留"的掩盖行为；不做自动重连清理（任务书禁止）。
+- **高风险点 partial write 证据不足**：新增写钳制接缝 + 写调用计数仪表；
+  testN 强制每次写入只提交 100 KB，断言重试循环真实执行（> 11 次/分块）且逐字节完整。
+- 验收 5 高风险点其余四项（100 MB 流式、Cancel 无残留、不饿死 Terminal、
+  Session 释放顺序）首轮已实证，整改轮复跑继续保持。
+- 验证证据：聚焦 26/26 连续两轮；全量回归 153 通过 / 17 既定 skip，
+  唯一失败（空闲 CPU）单独复验通过并如实归因；Debug / Release clean build
+  0 warning；codesign、otool、体积、`git diff --check` 全部达标。
+
 ## 下一阶段
 
-Phase 9（SFTP Browser / Remote File Browsing）第二轮复验发现 1 个 P1
-（快速导航重叠操作同一 `LIBSSH2_SFTP` 状态机：只取消不等待旧任务，
-两次 opendir/readdir 可交错，后一请求可能接走前一请求的响应）与 2 个 P2，
-整改已完成并等待再次复验：
-
-- P1：新导航先取消并 `await` 旧加载任务完整退出（含收尾 closedir）再启动新操作，
-  连接层另有覆盖完整操作生命周期的 FIFO 串行门；确定性测试 M（第一条请求
-  EAGAIN 等价挂起期间第二条不发起任何 `libssh2` 调用，最终路径与条目同时来自最后目标，连续 5 次）与连接层测试 P（并发列举严格串行，连续 10 次）。
-- P2-1：连接中提前切 Files 时，认证成功后连接流程补创建 SFTP 运行时
-  （回归测试 testAB）；P2-2：聚焦脚本改用 `${TEST_LOG}` 且 EXIT trap 保留
-  原始退出码（实测失败 → 1、成功 → 0）。
-- 聚焦套件（34 项，含 N / O / P / M / testAB）连续三轮全部通过；
-  Debug / Release 干净构建 0 warning。
-
-复验范围：只读 SFTP 浏览 + 拆除所有权屏障 + 快速导航串行化 + Files 面板补创建。
-停止开发。复验通过后，下一阶段是 Phase 10（SFTP 文件操作：
-Upload / Download / Rename / Delete / Mkdir），只有用户明确要求后
-才能开始。
+Phase 10（SFTP 文件操作：upload / download / rename / delete / mkdir）首轮验收
+两个 P1 已整改完成并等待复验：五操作用户入口齐备（预览图确认后实现）、
+断线残留如实告知 + 诚实测试、强制 partial write 确定性证据。聚焦套件 26/26 连续两轮全绿；
+全套回归 153 通过（17 项既定 skip，1 项空闲 CPU 环境抖动失败已单独复验通过）；
+Debug / Release clean build 0 warning、codesign 通过、静态链接基线不变、体积 13 MB。
+传输运行时（状态机 / Progress / Speed / Cancel）作为 Phase 11 提前落地子集保留，
+Transfer Queue 与 1 GB / 10 GB 流式测试未做。停止开发。验收通过后，下一阶段为计划书
+Phase 11（Transfer Manager：Queue / Progress / Speed / Cancel / Failed / Completed，
+1 MB–10 GB 流式测试），只有用户明确要求后才能开始。

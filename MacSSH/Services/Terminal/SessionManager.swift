@@ -36,6 +36,11 @@ final class SessionManager {
 
     private let sshService: SSHService
 
+    /// 传输运行时（Phase 10，AppState 装配；弱引用避免与
+    /// `TransferManager.sessionManager` 形成引用环）。关闭 / Reconnect
+    /// 会话前必须经其屏障取消并等待传输清理完成。
+    weak var transferManager: TransferManager?
+
     init(sshService: SSHService) {
         self.sshService = sshService
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
@@ -255,9 +260,10 @@ final class SessionManager {
 
     /// 真实资源清理（一次 teardown owner）：
     /// - Local：终止 Shell 子进程与 PTY（任务书 19）；
-    /// - Remote：SFTP 屏障（取消并等待在途列举）→ stopBarrier()（屏障：
+    /// - Remote：**传输屏障**（取消并等待活跃传输完成清理，任务书 105）
+    ///   → SFTP 屏障（取消并等待在途列举）→ stopBarrier()（屏障：
     ///   取消并等待旧任务完全退出 + 关闭 Channel）→ disconnect()
-    ///   （任务书 20；内部顺序：目录句柄 → SFTP → Channel → Session → socket）。
+    ///   （内部顺序：文件句柄 → 目录句柄 → SFTP → Channel → Session → socket）。
     private func teardown(_ session: ManagedTerminalSession) async {
         session.markClosed()
 
@@ -266,6 +272,11 @@ final class SessionManager {
             session.localService?.terminate()
 
         case .remoteSSH:
+            // Phase 10：传输先于一切 SFTP 拆除——取消并等待执行任务终值，
+            // 保证句柄关闭与临时文件清理完成，绝不与随后的 shutdown 交错。
+            if let transfers = transferManager {
+                await transfers.cancelAndAwaitTransfers(forSession: session.id)
+            }
             if let sftp = session.sftpService {
                 await sftp.stopBarrier()
             }
@@ -306,8 +317,13 @@ final class SessionManager {
             }
             defer { session?.reconnectTask = nil }
 
-            // 1. 旧 runtime 完整 teardown（屏障：等待旧打开 / 读取 / 列举
+            // 1. 旧 runtime 完整 teardown（屏障：等待旧打开 / 读取 / 列举 / 传输
             //    任务完全退出，不与新连接争用；P1）。
+            //    Phase 10：Reconnect 不自动恢复传输——先取消并等待清理，
+            //    旧传输绝不触碰新连接（generation 安全）。
+            if let transfers = self.transferManager, let sessionID = session?.id {
+                await transfers.cancelAndAwaitTransfers(forSession: sessionID)
+            }
             if let sftp = session?.sftpService {
                 await sftp.stopBarrier()
             }

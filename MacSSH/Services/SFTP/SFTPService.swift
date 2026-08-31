@@ -56,6 +56,16 @@ final class SFTPService {
     /// 在途加载任务（同一时刻最多一个；新请求取消并替换）。
     private var operationTask: Task<Void, Never>?
 
+    /// 在途文件操作任务（同一时刻最多一个；原子服务器操作不可取消，
+    /// 拆除屏障 await 其终值后才继续）。
+    private var fileOperationTask: Task<Void, Never>?
+
+    /// 文件操作进行中（UI 据此禁用入口，防重叠提交）。
+    private(set) var isFileOperationRunning = false
+
+    /// 最近一次文件操作的错误提示（UI 弹窗观察；置空即收起）。
+    var fileOperationNotice: String?
+
     /// Reconnect 路径恢复：最近成功提交的路径（可选恢复，
     /// 不存在时自动回落 `realpath(".")`）。
     private var lastKnownPath: String?
@@ -135,6 +145,55 @@ final class SFTPService {
         scheduleLoad(target: path, fallbackToInitialDirectory: false)
     }
 
+    // MARK: - 文件操作（计划书 Phase 10：rename / delete / mkdir）
+
+    /// 重命名当前目录内的条目：目标路径 = 当前目录 + 新名（同级重命名）；
+    /// `flags = 0` 的 posix-rename 语义保证目标名已存在时失败，绝不覆盖。
+    func renameEntry(_ entry: SFTPFileEntry, to newName: String) {
+        guard let name = sanitizedEntryName(newName) else {
+            fileOperationNotice = "名称无效：不能为空、包含 / 或为 . / ..。"
+            return
+        }
+        guard entries.contains(where: { $0.id == entry.id }) else {
+            fileOperationNotice = "目标已不在当前目录，请刷新后重试。"
+            return
+        }
+        let source = RemotePath.join(currentPath, child: entry.name)
+        let destination = RemotePath.join(currentPath, child: name)
+        runFileOperation { [connection] in
+            try await connection.sftpRenameFile(from: source, to: destination)
+        }
+    }
+
+    /// 删除当前目录内的普通文件（协议层 `unlink`；目录删除不在
+    /// Phase 10 范围——避免递归风险，业务层拦截）。
+    func deleteEntry(_ entry: SFTPFileEntry) {
+        guard entry.kind == .regularFile else {
+            fileOperationNotice = "仅支持删除普通文件。"
+            return
+        }
+        guard entries.contains(where: { $0.id == entry.id }) else {
+            fileOperationNotice = "目标已不在当前目录，请刷新后重试。"
+            return
+        }
+        let path = RemotePath.join(currentPath, child: entry.name)
+        runFileOperation { [connection] in
+            try await connection.sftpUnlinkFile(path)
+        }
+    }
+
+    /// 在当前目录新建子目录（权限 0755；同名已存在由服务器拒绝）。
+    func createDirectory(named rawName: String) {
+        guard let name = sanitizedEntryName(rawName) else {
+            fileOperationNotice = "名称无效：不能为空、包含 / 或为 . / ..。"
+            return
+        }
+        let path = RemotePath.join(currentPath, child: name)
+        runFileOperation { [connection] in
+            try await connection.sftpCreateDirectory(at: path)
+        }
+    }
+
     // MARK: - 生命周期（关闭 / Reconnect）
 
     /// 可等待的拆除屏障：取消在途请求并等待其完全退出后才返回。
@@ -143,12 +202,16 @@ final class SFTPService {
     func stopBarrier() async {
         guard !hasStopped else {
             await operationTask?.value
+            await fileOperationTask?.value
             return
         }
         hasStopped = true
         generation &+= 1
         operationTask?.cancel()
         await operationTask?.value
+        // 文件操作是原子服务器操作（不可取消）：等其终值后才继续，
+        // 保证拆除不与在途 rename / unlink / mkdir 交错。
+        await fileOperationTask?.value
     }
 
     /// Reconnect：绑定全新已认证连接并复位运行时。
@@ -165,6 +228,65 @@ final class SFTPService {
     }
 
     // MARK: - 私有
+
+    /// 名称校验（业务层防线；服务器另有自己的路径规则）：
+    /// 去首尾空白后非空、不含 `/` 与 NUL、不是 `.` / `..`。
+    private func sanitizedEntryName(_ raw: String) -> String? {
+        let name = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name != ".", name != "..",
+              !name.contains("/"), !name.contains("\0")
+        else {
+            return nil
+        }
+        return name
+    }
+
+    /// 登记一次文件操作：防重叠（进行中拒绝）；成功后刷新当前目录，
+    /// 失败写用户可见提示（连接 / 业务错误不断开、不崩溃）。
+    /// 拆除期间的操作结果一律丢弃（`hasStopped` 校验）。
+    private func runFileOperation(_ operation: @escaping @Sendable () async throws -> Void) {
+        guard phase == .loaded, !isFileOperationRunning, !hasStopped else {
+            return
+        }
+        isFileOperationRunning = true
+        fileOperationTask = Task { @MainActor [weak self] in
+            do {
+                try await operation()
+                if let self, !self.hasStopped {
+                    self.refresh()
+                }
+            } catch {
+                if let self, !self.hasStopped,
+                   !(error is CancellationError),
+                   (error as? SFTPError) != .operationCancelled
+                {
+                    self.fileOperationNotice = Self.fileOperationMessage(for: error)
+                }
+            }
+            // 无论成败 / 是否已拆除，忙碌标志都在任务末尾复位——
+            // 复位本身属于任务终值，被拆除屏障完整等待。
+            self?.isFileOperationRunning = false
+        }
+    }
+
+    /// 文件操作错误的用户可见中文文案（不回显原始协议码）。
+    private static func fileOperationMessage(for error: Error) -> String {
+        let sftp = (error as? SFTPError) ?? .connectionLost
+        switch sftp {
+        case .permissionDenied:
+            return "权限不足，无法完成操作。"
+        case .noSuchPath:
+            return "目标不存在，请刷新后重试。"
+        case .connectionLost:
+            return "SSH 连接已断开。"
+        case .operationCancelled:
+            return "操作已取消。"
+        case .protocolFailure:
+            return "操作失败：目标名称可能已存在，或服务器拒绝。"
+        case .subsystemInitFailed:
+            return "SFTP 会话不可用。"
+        }
+    }
 
     /// 登记一次新的加载请求：递增代次、取消并替换上一个在途任务。
     ///

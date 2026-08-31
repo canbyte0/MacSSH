@@ -50,10 +50,18 @@ struct RootView: View {
                 manager.confirmClose()
             }
         } message: {
-            Text(
-                "This will disconnect from "
-                    + (manager.pendingCloseConfirmation?.hostDisplayName ?? "the host") + "."
-            )
+            if let session = manager.pendingCloseConfirmation,
+               appState.transferManager.hasActiveTransfer(forSession: session.id) {
+                // Phase 10：会话有活跃传输时明确告知取消后果。
+                Text(
+                    "该会话有文件正在传输，关闭会话将取消传输。"
+                )
+            } else {
+                Text(
+                    "This will disconnect from "
+                        + (manager.pendingCloseConfirmation?.hostDisplayName ?? "the host") + "."
+                )
+            }
         }
         .alert(
             "Disconnect Host?",
@@ -74,7 +82,7 @@ struct RootView: View {
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("MacSSH Phase 8")
+        .accessibilityLabel("MacSSH Phase 10")
     }
 
     /// 根据 Sidebar 选择装配当前阶段允许的 Workspace。

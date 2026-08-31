@@ -216,6 +216,26 @@ actor SSHConnection {
     /// 拆除任务，`disconnectTask` 保证单飞，续体不会重复登记）。
     var sftpListingDrainContinuation: CheckedContinuation<Void, Never>?
 
+    /// Phase 10：在途文件传输打开的句柄（`LIBSSH2_SFTP_HANDLE *`）登记。
+    ///
+    /// 与目录句柄相同的并发边界：登记是**关闭所有权的认领令牌**，
+    /// 句柄只在真正摘除它的一方手里关闭；拆除侧在排空在途传输之前
+    /// 绝不摘除任何句柄。
+    var openSFTPFileHandles: [OpaquePointer] = []
+
+    /// Phase 10：在途文件级 SFTP 操作计数（传输分块 open/read/write/
+    /// close/rename/unlink/stat，连同其收尾关闭）。
+    ///
+    /// 拆除必须先等本计数归零才能关闭残留句柄 / `libssh2_sftp_shutdown`——
+    /// 否则 EAGAIN 挂起的分块操作会在子系统释放后触碰已释放内存。
+    /// 正常路径由 `TransferManager.cancelAndAwaitTransfers` 先行排空，
+    /// 本计数是拆除侧的最后防线。
+    var inFlightSFTPFileOperationCount = 0
+
+    /// Phase 10：拆除等待在途文件操作排空使用的续体（与列举排空相同，
+    /// `disconnectTask` 单飞保证续体不会重复登记）。
+    var sftpFileOperationDrainContinuation: CheckedContinuation<Void, Never>?
+
     /// Phase 9（第二轮整改）：SFTP 操作串行门占用标志。
     ///
     /// vendored libssh2 的 `LIBSSH2_SFTP` 携带**子系统级共享状态**
@@ -239,6 +259,16 @@ actor SSHConnection {
     var sftpDirectoryHandleOpenCount = 0
     var sftpDirectoryHandleCloseCount = 0
 
+    /// Phase 10 测试仪表：文件句柄打开 / 关闭次数。
+    /// 传输测试断言两者相等（无 double-close、无残留、无泄漏）。
+    var sftpFileHandleOpenCount = 0
+    var sftpFileHandleCloseCount = 0
+
+    /// Phase 10 测试仪表：`libssh2_sftp_write` 成功调用次数。
+    /// 强制 partial write 测试断言调用数大于分块数，
+    /// 证明重试循环（`offset += written`）真实生效。
+    var sftpFileWriteCallCount = 0
+
     /// Phase 9 测试接缝（生产恒 nil）：列举在句柄登记后、首次 readdir 前
     /// 被阻塞——readdir 返回 EAGAIN 挂起窗口的确定性等价，供并发
     /// disconnect 竞态测试复现受控交错。
@@ -247,6 +277,26 @@ actor SSHConnection {
     /// Phase 9 测试接缝（生产恒 nil）：认领关闭所有权后、实际调用
     /// `close_handle` 前被阻塞——closedir 返回 EAGAIN 挂起窗口的确定性等价。
     var testSFTPBeforeHandleCloseHook: (@Sendable () async -> Void)?
+
+    /// Phase 10 测试接缝（生产恒为 nil，armed 标志位控制，默认关闭——
+    /// 避免每次传输分块都付出一次异步调用的性能代价）：
+    /// 每个**传输分块**完成后调用——分块协作调度与确定性取消测试窗口。
+    var testSFTPFileTransferChunkHook: (@Sendable () async -> Void)?
+    var testSFTPFileTransferChunkHookArmed = false
+
+    /// Phase 10 测试接缝（生产恒为 nil）：传输文件句柄打开并登记后、
+    /// 首个分块前——拆除竞态测试的受控窗口（镜像目录句柄接缝）。
+    var testSFTPAfterFileHandleOpenHook: (@Sendable () async -> Void)?
+
+    /// Phase 10 测试接缝（生产恒为 nil）：文件句柄被认领关闭后、
+    /// 实际 `close_handle` 前的确定性窗口（镜像目录句柄接缝）。
+    var testSFTPBeforeFileHandleCloseHook: (@Sendable () async -> Void)?
+
+    /// Phase 10 测试接缝（生产恒为 nil）：单次写入字节上限——设置后
+    /// `sftpWriteFileChunk` 每次调用最多向服务器提交该字节数，
+    /// 确定性强制连续 partial write（服务器真实只收到并写入该字节数，
+    /// 账面与真实完全一致，绝不伪报已写字节）。
+    var testSFTPFileWriteMaxBytesPerCall: Int?
 
     /// 只暴露可跨 actor 读取的所有权状态，不把非 Sendable 的 C 指针带出 actor。
     var hasLiveSession: Bool {

@@ -1,10 +1,16 @@
 import AppKit
 import SwiftUI
 
-/// Phase 9 SFTP Browser（只读）：路径栏 + 懒加载列表 + 状态覆盖。
+/// Phase 9 SFTP Browser：路径栏 + 懒加载列表 + 状态覆盖。
+/// Phase 10（计划书口径）：
+/// - 路径栏 Upload / Download / **新建文件夹**（单文件流式传输由
+///   `TransferManager` 接管；面板选择结束后才启动异步传输，
+///   绝不阻塞 SSH actor）；
+/// - 条目右键菜单 **重命名… / 删除**（删除仅普通文件，确认后才执行）；
+/// - 全部写操作经 `SFTPService` 串行执行，成功后自动刷新列表。
 ///
 /// UI 只观察 `SFTPService` 与 `ManagedTerminalSession`，绝不触碰 libssh2；
-/// 导航 / 刷新 / 重试全部委托业务层（原子提交与竞态防护在业务层）。
+/// 导航 / 刷新 / 重试 / 文件操作全部委托业务层（原子提交与竞态防护在业务层）。
 struct SFTPBrowserView: View {
     @Environment(AppState.self) private var appState
 
@@ -12,8 +18,26 @@ struct SFTPBrowserView: View {
 
     @State private var selection: SFTPFileEntry.ID?
 
+    /// 传输入口拒绝 / 预检失败的临时提示（如远端已存在不覆盖）。
+    @State private var transferNotice: String?
+
+    /// 新建文件夹对话框：输入缓冲 + 呈现状态。
+    @State private var mkdirDialogActive = false
+    @State private var mkdirName = ""
+
+    /// 重命名对话框：目标条目 + 输入缓冲（预填当前名）。
+    @State private var renameTarget: SFTPFileEntry?
+    @State private var renameName = ""
+
+    /// 删除确认对话框：目标条目（仅普通文件）。
+    @State private var deleteTarget: SFTPFileEntry?
+
     private var manager: SessionManager {
         appState.sessionManager
+    }
+
+    private var transferManager: TransferManager {
+        appState.transferManager
     }
 
     private var service: SFTPService? {
@@ -35,6 +59,64 @@ struct SFTPBrowserView: View {
                 footer(service)
             }
             .accessibilityIdentifier("sftp.browser")
+            .alert(
+                "无法开始传输",
+                isPresented: transferNoticeBinding
+            ) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(transferNotice ?? "")
+            }
+            // 文件操作失败提示（业务层写入，置空即收起）。
+            .alert(
+                "操作失败",
+                isPresented: fileOperationNoticeBinding(service)
+            ) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(service.fileOperationNotice ?? "")
+            }
+            // 新建文件夹：输入名称 → 业务层在当前目录创建（0755）。
+            .alert("新建文件夹", isPresented: $mkdirDialogActive) {
+                TextField("文件夹名称", text: $mkdirName)
+                Button("创建") {
+                    service.createDirectory(named: mkdirName)
+                    mkdirName = ""
+                }
+                Button("取消", role: .cancel) {
+                    mkdirName = ""
+                }
+            }
+            // 重命名：预填当前名；同级重命名，目标名已存在由服务器拒绝。
+            .alert("重命名", isPresented: renameDialogBinding) {
+                TextField("新名称", text: $renameName)
+                Button("重命名") {
+                    if let entry = renameTarget {
+                        service.renameEntry(entry, to: renameName)
+                    }
+                    renameTarget = nil
+                }
+                Button("取消", role: .cancel) {
+                    renameTarget = nil
+                }
+            }
+            // 删除确认：仅普通文件；删除后无法撤销。
+            .alert(
+                "确定删除 “\(deleteTarget?.name ?? "")”？",
+                isPresented: deleteDialogBinding
+            ) {
+                Button("删除", role: .destructive) {
+                    if let entry = deleteTarget {
+                        service.deleteEntry(entry)
+                    }
+                    deleteTarget = nil
+                }
+                Button("取消", role: .cancel) {
+                    deleteTarget = nil
+                }
+            } message: {
+                Text("删除后无法撤销。")
+            }
         } else {
             unavailablePane
         }
@@ -43,6 +125,7 @@ struct SFTPBrowserView: View {
     // MARK: - 路径栏
 
     /// Parent（根目录禁用）+ 当前路径（只读、可选中复制）+ Refresh。
+    /// Phase 10：Upload / Download（列表加载完成才可用）。
     private func pathBar(_ service: SFTPService) -> some View {
         HStack(spacing: AppTheme.Spacing.compact) {
             Button {
@@ -60,6 +143,31 @@ struct SFTPBrowserView: View {
                 .textSelection(.enabled)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityIdentifier("sftp.currentPath")
+
+            Button {
+                presentUploadPanel(service)
+            } label: {
+                Label("上传", systemImage: "arrow.up.doc")
+            }
+            .disabled(service.phase != .loaded)
+            .accessibilityIdentifier("sftp.upload")
+
+            Button {
+                presentDownloadPanel(service)
+            } label: {
+                Label("下载", systemImage: "arrow.down.doc")
+            }
+            .disabled(service.phase != .loaded || selectedDownloadableEntry(service) == nil)
+            .accessibilityIdentifier("sftp.download")
+
+            Button {
+                mkdirName = ""
+                mkdirDialogActive = true
+            } label: {
+                Label("新建文件夹", systemImage: "folder.badge.plus")
+            }
+            .disabled(service.phase != .loaded || service.isFileOperationRunning)
+            .accessibilityIdentifier("sftp.mkdir")
 
             Button {
                 service.refresh()
@@ -114,7 +222,8 @@ struct SFTPBrowserView: View {
     }
 
     /// 懒加载表格：目录优先已由业务层排序，UI 不再重排；
-    /// 单击选中、双击进入目录；右键仅 Refresh / Copy Path（只读）。
+    /// 单击选中、双击进入目录；行右键提供重命名 / 删除（Phase 10），
+    /// 表格级右键保留 Refresh / Copy Path。
     private func entriesTable(_ service: SFTPService) -> some View {
         Table(service.entries, selection: $selection) {
             TableColumn("Name") { entry in
@@ -123,6 +232,19 @@ struct SFTPBrowserView: View {
                 } icon: {
                     Image(systemName: iconName(for: entry))
                         .foregroundStyle(iconColor(for: entry))
+                }
+                .contextMenu {
+                    Button("重命名…") {
+                        beginRename(entry)
+                    }
+                    .disabled(service.isFileOperationRunning)
+                    .accessibilityIdentifier("sftp.rename")
+
+                    Button("删除", role: .destructive) {
+                        beginDelete(entry)
+                    }
+                    .disabled(entry.kind != .regularFile || service.isFileOperationRunning)
+                    .accessibilityIdentifier("sftp.delete")
                 }
             }
             .width(min: 180)
@@ -283,6 +405,128 @@ struct SFTPBrowserView: View {
     private func copyCurrentPath(_ service: SFTPService) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(service.currentPath, forType: .string)
+    }
+
+    // MARK: - 传输入口（Phase 10）
+
+    /// 提示弹框绑定：消息置空时收起。
+    private var transferNoticeBinding: Binding<Bool> {
+        Binding(
+            get: { transferNotice != nil },
+            set: { newValue in
+                if !newValue {
+                    transferNotice = nil
+                }
+            }
+        )
+    }
+
+    /// 文件操作错误提示绑定：业务层消息置空时收起。
+    private func fileOperationNoticeBinding(_ service: SFTPService) -> Binding<Bool> {
+        Binding(
+            get: { service.fileOperationNotice != nil },
+            set: { newValue in
+                if !newValue {
+                    service.fileOperationNotice = nil
+                }
+            }
+        )
+    }
+
+    /// 重命名对话框呈现绑定：目标条目置空即收起。
+    private var renameDialogBinding: Binding<Bool> {
+        Binding(
+            get: { renameTarget != nil },
+            set: { newValue in
+                if !newValue {
+                    renameTarget = nil
+                }
+            }
+        )
+    }
+
+    /// 删除确认对话框呈现绑定：目标条目置空即收起。
+    private var deleteDialogBinding: Binding<Bool> {
+        Binding(
+            get: { deleteTarget != nil },
+            set: { newValue in
+                if !newValue {
+                    deleteTarget = nil
+                }
+            }
+        )
+    }
+
+    /// 打开重命名对话框：预填当前名（全选由系统默认行为完成）。
+    private func beginRename(_ entry: SFTPFileEntry) {
+        renameName = entry.name
+        renameTarget = entry
+    }
+
+    /// 打开删除确认对话框。
+    private func beginDelete(_ entry: SFTPFileEntry) {
+        deleteTarget = entry
+    }
+
+    /// 选中且可下载的条目（仅普通文件；目录 / 符号链接 / 特殊文件禁用）。
+    private func selectedDownloadableEntry(_ service: SFTPService) -> SFTPFileEntry? {
+        guard
+            let selection,
+            let entry = service.entries.first(where: { $0.id == selection }),
+            entry.kind == .regularFile
+        else {
+            return nil
+        }
+        return entry
+    }
+
+    /// 上传：NSOpenPanel 选普通文件（目录在选择层即被排除），
+    /// 选择结束后才启动异步传输，面板期间不阻塞 SSH actor。
+    private func presentUploadPanel(_ service: SFTPService) {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "上传"
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        let result = transferManager.requestUpload(session: session, localURL: url)
+        if let rejection = result.rejection {
+            transferNotice = rejection
+        }
+    }
+
+    /// 下载：NSSavePanel 选目标位置（默认名 = 远端文件名），
+    /// 同名覆盖由用户在面板内确认；确认后启动异步传输。
+    private func presentDownloadPanel(_ service: SFTPService) {
+        guard let entry = selectedDownloadableEntry(service) else {
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.canCreateDirectories = true
+        panel.nameFieldStringValue = entry.name
+        panel.prompt = "下载"
+        panel.directoryURL = FileManager.default.urls(
+            for: .downloadsDirectory,
+            in: .userDomainMask
+        ).first
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        let result = transferManager.requestDownload(
+            session: session,
+            entry: entry,
+            destinationURL: url
+        )
+        if let rejection = result.rejection {
+            transferNotice = rejection
+        }
     }
 
     // MARK: - 图标
