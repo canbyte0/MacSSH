@@ -46,7 +46,7 @@ struct SettingsView: View {
 
             Section("settings.section.terminal") {
                 LabeledContent("settings.font") {
-                    Text("settings.system_monospaced")
+                    Text(verbatim: "JetBrains Mono")
                 }
                 LabeledContent("settings.font_size") {
                     Text("settings.font_size_value")

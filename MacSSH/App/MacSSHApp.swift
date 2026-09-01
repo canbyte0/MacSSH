@@ -16,6 +16,12 @@ struct MacSSHApp: App {
     private let modelContainer: ModelContainer
 
     init() {
+        // MacSSH 1.1 Phase 2 字体方案：在 App 启动早期注册 App Bundle 内的
+        // JetBrains Mono（位于 Contents/Resources/）。注册是幂等的。
+        // 失败不 Crash（保留 monospaced fallback），但视为 packaging defect，
+        // 测试必须 FAIL。
+        TerminalFontProvider.registerBundledFontsIfNeeded()
+
         // Phase 5.1：启动时记录一次非敏感的依赖安全基线身份（libssh2 pinned commit 与
         // OpenSSL 版本）。该引用同时把 build-generated 身份常量编译进 App 二进制，
         // 使 strings/otool 可直接验证 App 链接的依赖与 MANIFEST pin 一致。

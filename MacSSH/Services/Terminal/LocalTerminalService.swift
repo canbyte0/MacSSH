@@ -25,7 +25,7 @@ final class LocalTerminalService: NSObject {
         )
         terminalView = LocalProcessTerminalView(
             frame: .zero,
-            font: .monospacedSystemFont(ofSize: 13, weight: .regular),
+            font: TerminalFontProvider.regularFont(),
             options: options
         )
 

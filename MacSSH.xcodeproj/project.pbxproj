@@ -11,6 +11,10 @@
 		A10000000000000000000002 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppState.swift */; };
 		T10000000000000000000001 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* AppLanguage.swift */; };
 		T10000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* Localizable.xcstrings */; };
+		J51000000000000000000001 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = J52000000000000000000001 /* JetBrainsMono-Regular.ttf */; };
+		J51000000000000000000002 /* JetBrainsMono-Bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = J52000000000000000000002 /* JetBrainsMono-Bold.ttf */; };
+		J51000000000000000000003 /* JetBrainsMono-Italic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = J52000000000000000000003 /* JetBrainsMono-Italic.ttf */; };
+		J51000000000000000000004 /* JetBrainsMono-BoldItalic.ttf in Resources */ = {isa = PBXBuildFile; fileRef = J52000000000000000000004 /* JetBrainsMono-BoldItalic.ttf */; };
 		A10000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* RootView.swift */; };
 		A10000000000000000000004 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AppTheme.swift */; };
 		A10000000000000000000005 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AppLogger.swift */; };
@@ -27,6 +31,7 @@
 		A10000000000000000000011 /* TerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000012 /* TerminalSession.swift */; };
 		A10000000000000000000012 /* LoginShellResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000013 /* LoginShellResolver.swift */; };
 		A10000000000000000000013 /* LocalTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000014 /* LocalTerminalService.swift */; };
+		J61000000000000000000001 /* TerminalFontProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = J62000000000000000000001 /* TerminalFontProvider.swift */; };
 		A10000000000000000000014 /* TerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* TerminalRepresentable.swift */; };
 		A10000000000000000000015 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000001 /* SwiftTerm */; };
 		A10000000000000000000016 /* AuthenticationType.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000016 /* AuthenticationType.swift */; };
@@ -81,6 +86,7 @@
 		S10000000000000000000001 /* TransferResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = S20000000000000000000001 /* TransferResourceTests.swift */; };
 		T30000000000000000000001 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T40000000000000000000001 /* AppLanguageTests.swift */; };
 		T30000000000000000000002 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T40000000000000000000002 /* LocalizationTests.swift */; };
+		J71000000000000000000001 /* TerminalFontProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = J72000000000000000000001 /* TerminalFontProviderTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -104,6 +110,10 @@
 		A20000000000000000000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		T20000000000000000000001 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 		T20000000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
+		J52000000000000000000001 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = font.ttf; name = "JetBrainsMono-Regular.ttf"; path = "ThirdParty/JetBrainsMono/JetBrainsMono-Regular.ttf"; sourceTree = SOURCE_ROOT; };
+		J52000000000000000000002 /* JetBrainsMono-Bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = font.ttf; name = "JetBrainsMono-Bold.ttf"; path = "ThirdParty/JetBrainsMono/JetBrainsMono-Bold.ttf"; sourceTree = SOURCE_ROOT; };
+		J52000000000000000000003 /* JetBrainsMono-Italic.ttf */ = {isa = PBXFileReference; lastKnownFileType = font.ttf; name = "JetBrainsMono-Italic.ttf"; path = "ThirdParty/JetBrainsMono/JetBrainsMono-Italic.ttf"; sourceTree = SOURCE_ROOT; };
+		J52000000000000000000004 /* JetBrainsMono-BoldItalic.ttf */ = {isa = PBXFileReference; lastKnownFileType = font.ttf; name = "JetBrainsMono-BoldItalic.ttf"; path = "ThirdParty/JetBrainsMono/JetBrainsMono-BoldItalic.ttf"; sourceTree = SOURCE_ROOT; };
 		A20000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -121,6 +131,7 @@
 		A20000000000000000000012 /* TerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSession.swift; sourceTree = "<group>"; };
 		A20000000000000000000013 /* LoginShellResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LoginShellResolver.swift; sourceTree = "<group>"; };
 		A20000000000000000000014 /* LocalTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTerminalService.swift; sourceTree = "<group>"; };
+		J62000000000000000000001 /* TerminalFontProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontProvider.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* TerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRepresentable.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* AuthenticationType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationType.swift; sourceTree = "<group>"; };
 		A20000000000000000000017 /* Host.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Host.swift; sourceTree = "<group>"; };
@@ -179,6 +190,7 @@
 		S20000000000000000000001 /* TransferResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferResourceTests.swift; sourceTree = "<group>"; };
 		T40000000000000000000001 /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
 		T40000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
+		J72000000000000000000001 /* TerminalFontProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontProviderTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -352,6 +364,7 @@
 			S20000000000000000000001 /* TransferResourceTests.swift */,
 			T40000000000000000000001 /* AppLanguageTests.swift */,
 			T40000000000000000000002 /* LocalizationTests.swift */,
+			J72000000000000000000001 /* TerminalFontProviderTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -451,6 +464,7 @@
 			children = (
 				A20000000000000000000013 /* LoginShellResolver.swift */,
 				A20000000000000000000014 /* LocalTerminalService.swift */,
+				J62000000000000000000001 /* TerminalFontProvider.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
 			);
@@ -626,6 +640,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				T10000000000000000000002 /* Localizable.xcstrings in Resources */,
+				J51000000000000000000001 /* JetBrainsMono-Regular.ttf in Resources */,
+				J51000000000000000000002 /* JetBrainsMono-Bold.ttf in Resources */,
+				J51000000000000000000003 /* JetBrainsMono-Italic.ttf in Resources */,
+				J51000000000000000000004 /* JetBrainsMono-BoldItalic.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -662,6 +680,7 @@
 				A10000000000000000000011 /* TerminalSession.swift in Sources */,
 				A10000000000000000000012 /* LoginShellResolver.swift in Sources */,
 				A10000000000000000000013 /* LocalTerminalService.swift in Sources */,
+				J61000000000000000000001 /* TerminalFontProvider.swift in Sources */,
 				A10000000000000000000014 /* TerminalRepresentable.swift in Sources */,
 				A10000000000000000000016 /* AuthenticationType.swift in Sources */,
 				A10000000000000000000017 /* Host.swift in Sources */,
@@ -722,6 +741,7 @@
 				S10000000000000000000001 /* TransferResourceTests.swift in Sources */,
 				T30000000000000000000001 /* AppLanguageTests.swift in Sources */,
 				T30000000000000000000002 /* LocalizationTests.swift in Sources */,
+				J71000000000000000000001 /* TerminalFontProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

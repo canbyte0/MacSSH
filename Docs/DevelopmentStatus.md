@@ -1039,8 +1039,9 @@ Host → TCP → SSH Handshake → KnownHost 验证 → Password / Private Key �
   （保留屏幕与历史，不 Crash，不自动重建 Shell）。
 - Resize：SwiftTerm `sizeChanged`（首次 layout 与窗口 Resize 都触发）→
   更新 session 尺寸 → actor `resizeChannelPTY`。
-- 显示层与 Local Terminal 同源：同 `monospacedSystemFont(13)`、
-  xterm-256color、10,000 行 scrollback；标题栏 / 状态栏显示
+- 显示层与 Local Terminal 同源：同 `TerminalFontProvider.regularFont()`
+  （MacSSH 1.1 Phase 2 字体方案：JetBrains Mono 14 pt + PingFang SC / Apple
+  Color Emoji cascade）、xterm-256color、10,000 行 scrollback；标题栏 / 状态栏显示
   `SSH ● hostname · cols × rows`（不含任何 Secret）。
 
 #### 4. 会话与 UI 集成（第一轮整改后）
@@ -3195,3 +3196,364 @@ PASS
 ```
 
 停止开发，等待最终验收。不得开始 Phase 2，不得自行 Git Commit，不得 merge main。
+
+---
+
+## MacSSH 1.1 Phase 2 字体方案调整（JetBrains Mono 自带）
+
+### 调整日期
+
+2026-09-01
+
+### 调整范围
+
+本段落为 MacSSH 1.1 阶段对 Phase 2 字体方案的增强调整。计划书 §46 原本写"默认使用
+macOS 等宽字体（如 SF Mono），禁止直接把大型字体文件打包进 App，除非后续产品确实需要"。
+本调整由用户在 1.1 阶段明确授权，属于 AGENTS.md 顶部规则允许的阶段内调整范围，不视为
+与计划书冲突；调整内容只覆盖终端字体部分，不影响 Phase 顺序、Phase 1/Phase 2 已验收的
+其他行为。
+
+### Third-party bundled font
+
+- Name：JetBrains Mono
+- License：SIL Open Font License 1.1（OFL-1.1）
+- Source：Official JetBrains/JetBrainsMono 项目（https://github.com/JetBrains/JetBrainsMono）
+- Version：官方仓库 `JetBrains/JetBrainsMono` 固定 commit
+  `19371302b95d218af43299bce79ddbddd0bc364d`（与本地 TTF 逐字节一致，
+  实测 SHA256 全部匹配）
+- Usage：Terminal rendering only
+
+### 仓库目录结构
+
+```
+ThirdParty/
+└── JetBrainsMono/
+    ├── JetBrainsMono-Regular.ttf
+    ├── JetBrainsMono-Bold.ttf
+    ├── JetBrainsMono-Italic.ttf
+    ├── JetBrainsMono-BoldItalic.ttf
+    └── OFL.txt
+```
+
+### 字体文件 SHA256
+
+- `JetBrainsMono-Regular.ttf`    `e6fd0d7e91550b3ed2b735d4312474362c4716edc4fc0577a0f61ed782d5aed1`
+- `JetBrainsMono-Bold.ttf`       `d22c4f3821d725eb01210d278d95dfcfcaadc34699a06658d47c8a5cc5830ada`
+- `JetBrainsMono-Italic.ttf`     `6dc8e1322d4b2013b64e277bf66abc6748207c46a590471d4296876c2c235d0c`
+- `JetBrainsMono-BoldItalic.ttf` `cec9b489af5c98a94cb8d8d8708ef1640cca0f296b207de1f50b2dd95e967bdf`
+- `OFL.txt`                      `a76abf002c49097d146e86740a3105a5d00450b1592e820a1109a8c5680cd697`
+
+### OFL 入库
+
+`OFL.txt` 随源码保留在 `ThirdParty/JetBrainsMono/OFL.txt`，未删除、未修改。
+
+### 四个字体文件路径
+
+1. `ThirdParty/JetBrainsMono/JetBrainsMono-Regular.ttf`
+2. `ThirdParty/JetBrainsMono/JetBrainsMono-Bold.ttf`
+3. `ThirdParty/JetBrainsMono/JetBrainsMono-Italic.ttf`
+4. `ThirdParty/JetBrainsMono/JetBrainsMono-BoldItalic.ttf`
+
+只打包终端实际需要的四个字重（Regular / Bold / Italic / BoldItalic），不为方便塞入整套
+JetBrains Mono fonts 目录。PingFang SC 与 Apple Color Emoji 不打包，继续由 macOS 提供。
+
+### Xcode Resource 集成
+
+- 四个 TTF 通过 `MacSSH.xcodeproj` 的 PBXResourcesBuildPhase 进入 MacSSH target。
+- fileRef 的 `sourceTree = SOURCE_ROOT`，`path = ThirdParty/JetBrainsMono/<file>.ttf`，
+  保持 ThirdParty 实体文件作为单一来源，避免重复管理。
+- Debug 与 Release 构建后实测四个文件均位于：
+  - `MacSSH.app/Contents/Resources/JetBrainsMono-Regular.ttf`
+  - `MacSSH.app/Contents/Resources/JetBrainsMono-Bold.ttf`
+  - `MacSSH.app/Contents/Resources/JetBrainsMono-Italic.ttf`
+  - `MacSSH.app/Contents/Resources/JetBrainsMono-BoldItalic.ttf`
+
+### Release .app 资源验证
+
+实际执行：
+
+```
+find /tmp/macssh-dd-rel/Build/Products/Release/MacSSH.app/Contents/Resources -iname '*JetBrainsMono*' -print
+```
+
+预期输出（实测一致）：
+
+```
+/tmp/macssh-dd-rel/Build/Products/Release/MacSSH.app/Contents/Resources/JetBrainsMono-Bold.ttf
+/tmp/macssh-dd-rel/Build/Products/Release/MacSSH.app/Contents/Resources/JetBrainsMono-Italic.ttf
+/tmp/macssh-dd-rel/Build/Products/Release/MacSSH.app/Contents/Resources/JetBrainsMono-Regular.ttf
+/tmp/macssh-dd-rel/Build/Products/Release/MacSSH.app/Contents/Resources/JetBrainsMono-BoldItalic.ttf
+```
+
+### ATSApplicationFontsPath 最终值
+
+未配置（INFOPLIST 不写入 `ATSApplicationFontsPath`）。原因：fileRef 通过 group-relative
+解析拷贝会扁平化到 `Contents/Resources/` 根，而非子目录；保留 Info.plist key 会指向不
+存在的 `Fonts/` 子目录。改用运行时显式注册策略作为权威路径，避免拷贝目录结构变化导致的
+不可靠性。`TerminalFontProvider.registerBundledFontsIfNeeded()` 在 `MacSSHApp.init`
+启动早期调用 `CTFontManagerRegisterFontsForURL(..., .process, ...)`，注册是幂等的。
+
+### Runtime font registration 结果
+
+- 注册成功（4 个文件全部 `.process` scope 注册）。
+- 运行时验证：`TerminalFontProvider.isBundledFontRegistered == true`。
+- 测试 `testBundledFontRegistrationSucceeds` 通过。
+
+### Regular PostScript Name
+
+`JetBrainsMono-Regular`
+
+### Bold PostScript Name
+
+`JetBrainsMono-Bold`
+
+### Italic PostScript Name
+
+`JetBrainsMono-Italic`
+
+### BoldItalic PostScript Name
+
+`JetBrainsMono-BoldItalic`
+
+### 是否证明字体来自 App Bundle
+
+是。字体文件来源为 `MacSSH.app/Contents/Resources/JetBrainsMono-*.ttf`（构建产物实测）；
+`TerminalFontProvider` 通过 `Bundle.main.url(forResource:withExtension:)` 定位 Bundle
+内字体，再经 `CTFontManagerRegisterFontsForURL` 注册到进程 scope。Bundle 不依赖
+`~/Library/Fonts` 或 `/Library/Fonts`。
+
+### PingFang SC cascade 验证
+
+- `TerminalFontProvider.cascadeFamilyNames(for: regularFont())` 包含 `PingFang SC`。
+- CoreText 实测：构造 "你好" attributed string，CTLine 的 CTRun 实际使用 family
+  `PingFang SC`（非 base JetBrains Mono）。
+- 测试 `testCascadeContainsPingFangSC` 与 `testChineseCharacterResolvesViaCascade`
+  均通过。
+
+### Apple Color Emoji cascade 验证
+
+- `TerminalFontProvider.cascadeFamilyNames(for: regularFont())` 包含
+  `Apple Color Emoji`。
+- CoreText 实测：构造 "😀" attributed string，CTRun 实际使用 family
+  `Apple Color Emoji`。
+- 测试 `testCascadeContainsAppleColorEmoji` 与 `testEmojiCharacterResolvesViaCascade`
+  均通过。
+
+### Ligature / terminal cell 检查结果
+
+JetBrains Mono 自带 programming ligatures（`!=` / `->` / `=>` / `===` / `!==` / `<=` /
+`>=` / `::`）。SwiftTerm 使用 cell-based rendering，未启用跨 cell shaping；本地实测
+`printf '%s\n' '!= -> => === !== <= >= ::'` 不会形成跨 cell ligature——每个 token 按
+等宽 cell 逐字渲染，cursor position / selection / cell width / PTY geometry 与屏幕
+glyph 一致。无需在渲染层关闭 ligature feature，也未改动 Terminal parser / PTY。
+
+### Release App size 增量
+
+- 调整前 Release .app 体积约 14 MB（libssh2 + OpenSSL + SwiftTerm + AppKit）。
+- 调整后 Release .app 体积 15 MB（增加约 1 MB，来自四个 TTF 共 ~1.0 MB）。
+- Debug .app 体积 19 MB（包含调试符号）。
+
+### 是否存在系统安装 JetBrains Mono 依赖
+
+- System-installed JetBrains Mono dependency：**NONE**
+- MacSSH.app alone contains everything required for JetBrains Mono terminal rendering.
+
+### 统一入口
+
+新增 `MacSSH/Services/Terminal/TerminalFontProvider.swift`：
+
+- `defaultSize = 14.0`
+- `baseFamily = "JetBrains Mono"`
+- `cjkFallbackFamily = "PingFang SC"`
+- `emojiFallbackFamily = "Apple Color Emoji"`
+- 提供 `regularFont(size:)` / `boldFont(size:)` / `italicFont(size:)` /
+  `boldItalicFont(size:)`。
+- Local Terminal 与 Remote Terminal 都只能使用这一套配置；禁止各自重新
+  `NSFont(name:size:)`。
+- 保留 `NSFont.monospacedSystemFont` 作为极端加载失败的 Crash 防御 fallback；
+  该路径视为 packaging defect，测试与验收必须明确 FAIL。
+
+### 自动化测试
+
+新增 `Tests/SSH/TerminalFontProviderTests.swift`，覆盖任务书第十六节 A-J：
+
+- A. `testBundledJetBrainsMonoResourcesExist`
+- B. `testBundledJetBrainsMonoResourcesExist`（同测试覆盖四个文件）
+- C. `testDefaultSizeIsFourteen`
+- D. `testPreferredFamilyIsJetBrainsMono`
+- E. `testBundledFontRegistrationSucceeds`
+- F. `testRegularFontIdentityIsJetBrainsMono` / `testBoldFontIdentityIsJetBrainsMono` /
+  `testItalicFontIdentityIsJetBrainsMono` / `testBoldItalicFontIdentityIsJetBrainsMono` /
+  `testAllPostScriptNamesReportedAndValid`
+- G. `testCascadeContainsPingFangSC` / `testChineseCharacterResolvesViaCascade`
+- H. `testCascadeContainsAppleColorEmoji` / `testEmojiCharacterResolvesViaCascade`
+- I. `testLocalAndRemoteShareUnifiedFontProvider`
+- J. `testFontConfigurationIsLanguageAgnostic`
+
+全部 15 个测试通过。
+
+### 修改的文件
+
+- `MacSSH/Services/Terminal/LocalTerminalService.swift`：将
+  `.monospacedSystemFont(ofSize: 13, weight: .regular)` 改为
+  `TerminalFontProvider.regularFont()`。
+- `MacSSH/Services/Terminal/RemoteTerminalService.swift`：同上。
+- `MacSSH/Features/Settings/SettingsView.swift`：字体显示文案从
+  `settings.system_monospaced` 改为字面量 `JetBrains Mono`。
+- `MacSSH/App/MacSSHApp.swift`：在 `init` 早期调用
+  `TerminalFontProvider.registerBundledFontsIfNeeded()`。
+- `MacSSH.xcodeproj/project.pbxproj`：新增字体 fileRef / build file / Resources
+  build phase；新增 `TerminalFontProvider.swift` 的 Sources 引用；新增
+  `TerminalFontProviderTests.swift` 的 test target 引用。
+
+### 新增的文件
+
+- `ThirdParty/JetBrainsMono/JetBrainsMono-Regular.ttf`
+- `ThirdParty/JetBrainsMono/JetBrainsMono-Bold.ttf`
+- `ThirdParty/JetBrainsMono/JetBrainsMono-Italic.ttf`
+- `ThirdParty/JetBrainsMono/JetBrainsMono-BoldItalic.ttf`
+- `ThirdParty/JetBrainsMono/OFL.txt`
+- `MacSSH/Services/Terminal/TerminalFontProvider.swift`
+- `Tests/SSH/TerminalFontProviderTests.swift`
+
+### 测试结果
+
+- Debug arm64 干净构建成功，无 warning。
+- Release arm64 干净构建成功，无 warning。
+- `TerminalFontProviderTests` 15 个测试全部通过。
+- Release .app 资源检查通过：四个 JetBrains Mono TTF 均在
+  `MacSSH.app/Contents/Resources/`。
+- App size 增量约 1 MB。
+
+### DMG / 1.0.0 release artifact
+
+本阶段属于 MacSSH 1.1 development，未生成新的 `MacSSH-1.0.0.dmg`，未覆盖 1.0.0
+release artifact。仅验证 Debug / Release `.app`。MacSSH 1.1 最终发布时再重新打 DMG。
+
+停止开发，等待验收。不得自行 Git Commit，不得 merge main。
+
+---
+
+## MacSSH 1.1 Phase 2 字体方案 — P1 整改（验收阻断项修复）
+
+### 整改日期
+
+2026-09-01（首次验收反馈后）
+
+### P1 阻断项
+
+**字体注册测试存在真实假阳性**：原 `isBundledFontRegistered` 仅检查
+`NSFont(name: "JetBrainsMono-Regular") != nil`，无法证明字体来自 `.app`。
+验收方在本机 `~/Library/Fonts/` 已安装 JetBrains Mono 的情况下注入隔离故障：
+将测试 `.app` 中的 `JetBrainsMono-Regular.ttf` 临时替换为非字体文本后，
+App 日志报告 Regular 注册失败且只注册了 3 个文件，但原 15 个测试仍全部通过。
+原报告中"4 个文件全部注册成功"、"字体确定来自 App Bundle"、"不依赖系统
+安装的 JetBrains Mono"三处结论未被测试可靠证明。
+
+### 修复方案
+
+#### 1. 注册结果逐个记录
+
+`TerminalFontProvider` 新增 `registrationResults: [BundledFontRegistrationResult]`，
+按 `bundledFontFileNames` 顺序记录每个文件的：
+
+- `bundleURL`（Bundle 内是否存在该资源，nil 表示 packaging defect）
+- `didRegister`（`CTFontManagerRegisterFontsForURL` 实际成功结果）
+- `errorDescription`（失败原因）
+
+`registerBundledFontsIfNeeded()` 在内部逐个 URL 调用 CTFontManager，每个结果
+存入数组。重复调用幂等。
+
+#### 2. 严格 `isBundledFontRegistered`
+
+改为三重严格判定，任一失败即返回 false：
+
+1. `registrationResults.count == bundledFontFileNames.count`（四个文件都被记录）
+2. 四个结果 `bundleURL != nil && didRegister`（全部成功注册）
+3. `NSFont(name: "JetBrainsMono-Regular")` 创建出来的字体 URL
+   （`CTFontCopyAttribute(kCTFontURLAttribute)`）确实位于
+   `Bundle.main.bundleURL` 之内（证明来自 Bundle 而非系统目录）
+
+#### 3. Bundle source 验证
+
+新增 `isFontSourcedFromBundle(_:)`：用 CoreText 的 `kCTFontURLAttribute`
+取得字体的物理 URL，与 `Bundle.main.bundleURL` 比较。
+
+**符号链接处理**：`/tmp` 在 macOS 上是 `/private/tmp` 的符号链接；
+`Bundle.main.bundleURL` 解析为 `/private/tmp/...`，而 `CTFontCopyAttribute`
+可能返回 `/tmp/...`。两边都做 `resolvingSymlinksInPath()` 后再做 prefix-match，
+避免假阴性。
+
+#### 4. 测试重置入口
+
+新增 `resetRegistrationForTesting()`：测试 host 进程启动时 `MacSSHApp.init`
+已经注册过一次字体，测试间相互污染会让 `CTFontManagerRegisterFontsForURL`
+报"已经在指定范围内注册"。该入口对四个 bundled URL 全部尝试 unregister
+（不论之前 results 状态如何），再清空 `registrationResults` 与
+`didAttemptRegistration`，使每次测试从干净状态开始。
+
+#### 5. `font(weight:)` 创建时拒绝非 Bundle 字体
+
+构造字体时即使 `NSFont(name:)` 返回非 nil，仍要 `isFontSourcedFromBundle`
+通过才算成功。否则视为来自 `~/Library/Fonts` 的同名同族字体，必须拒绝并
+走 `monospacedSystemFont` 防御 fallback，同时留下 `.error` 日志。
+
+### 新增测试（K-M）
+
+`Tests/SSH/TerminalFontProviderTests.swift` 新增 4 个测试：
+
+- K. `testRegistrationResultsRecordAllFourFiles`：注册结果必须记录四个文件，
+  顺序与 bundledFontFileNames 一致，bundleURL 非空，didRegister 全部 true。
+- L. `testCorruptedRegularFontFailsRegistration` /
+  `testCorruptedBoldFontFailsRegistration`：损坏字体故障注入测试。备份原始字节
+  → 写入损坏文本 → `resetRegistrationForTesting()` + `registerBundledFontsIfNeeded()`
+  → 验证对应文件 `didRegister == false` 且 `isBundledFontRegistered == false`
+  → 恢复原始内容并重新注册，验证健康路径恢复。`defer` 保证即使中途 assert
+  失败也恢复原始字节。
+- M. `testFontSourceVerificationDistinguishesBundleAndSystem`：
+  `isFontSourcedFromBundle` 对 Bundle 内 JetBrains Mono 返回 true，
+  对 `NSFont.monospacedSystemFont` 返回 false。
+
+### 测试结果
+
+- 全部 19 个 `TerminalFontProviderTests` 测试通过（含 4 个新增 P1 整改测试）。
+- Debug arm64 干净构建：**BUILD SUCCEEDED**，warning 0。
+- Release arm64 干净构建：**BUILD SUCCEEDED**，warning 0。
+- 损坏测试后 .app 内四个 TTF 的 SHA256 与仓库一致，未污染构建产物。
+- Lint 无 error 无 warning。
+
+### 修改的文件（P1 整改）
+
+- `MacSSH/Services/Terminal/TerminalFontProvider.swift`：
+  - 新增 `BundledFontRegistrationResult` / `registrationResults` /
+    `resetRegistrationForTesting` / `isFontSourcedFromBundle`。
+  - 重写 `registerBundledFontsIfNeeded` 为逐个记录结果。
+  - 重写 `isBundledFontRegistered` 为三重严格判定。
+  - `font(weight:)` 拒绝非 Bundle 字体来源。
+- `Tests/SSH/TerminalFontProviderTests.swift`：
+  - 新增 K-M 共 4 个测试（结构 / 损坏 Regular / 损坏 Bold / Bundle 源验证）。
+  - 受污染影响的健康路径测试统一前置 `resetRegistrationForTesting()`。
+
+### Tests/.gitkeep 暂存状态说明
+
+首次验收时 staged 区含有 `Tests/.gitkeep` 删除（D）。该文件保留意义已消失
+（Tests/ 下已有 SSH/Hosts/Security 子目录及大量测试文件），但属于本次
+字体方案调整无关的清理。已通过 `git restore --staged Tests/.gitkeep` 取消
+暂存，目前为 unstaged 删除（工作区 D）。最终 commit 时由用户决定是否纳入。
+
+### JetBrains Mono 固定 commit
+
+- 仓库：`JetBrains/JetBrainsMono`
+- commit：`19371302b95d218af43299bce79ddbddd0bc364d`
+- 实测：本地四个 TTF 与 OFL.txt 与该 commit 下 `fonts/ttf/` 与 `OFL.txt`
+  逐字节一致（SHA256 全部匹配）。
+- 报告中"master 最新提交"已替换为该固定 commit，确保可复现。
+
+### 结论
+
+- 字体注册测试假阳性 P1 阻断项已修复。
+- 4 个文件全部注册成功的结论现由逐个 results + Bundle URL 验证可靠证明。
+- 字体来源由 `kCTFontURLAttribute` + `Bundle.main.bundleURL` 比较证明。
+- 不依赖系统安装 JetBrains Mono：损坏测试证明任一 TTF 损坏即整体失败。
+
+停止开发，等待二次验收。不得自行 Git Commit，不得 merge main。
