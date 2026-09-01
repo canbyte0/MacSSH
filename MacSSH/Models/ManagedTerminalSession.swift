@@ -112,6 +112,18 @@ final class ManagedTerminalSession: Identifiable {
     /// 只允许经 `selectPane(_:)` 修改（切换到 Files 时惰性启动 SFTP 运行时）。
     private(set) var activePane: WorkspacePane = .terminal
 
+    /// MacSSH 1.1：由 AppState 装配的语言 provider；失败文案按当前 App Locale
+    /// 即时解析，不在连接层缓存启动时文案（任务书七十三）。语言切换只更新
+    /// UI，绝不重建 Session / Shell / 连接（任务书十八）。
+    @ObservationIgnored
+    var localeProvider: (@MainActor () -> Locale)?
+
+    /// 当前 App Locale（装配前 fallback zh-Hans，绝不 Crash）。
+    @MainActor
+    private var currentLocale: Locale {
+        localeProvider?() ?? AppLanguage.defaultLanguage.locale
+    }
+
     // MARK: - 生命周期任务（SessionManager 登记与清理）
 
     /// 连接主流程任务（TCP → KnownHost 验证 → 认证）。
@@ -244,7 +256,7 @@ final class ManagedTerminalSession: Identifiable {
             if let info = connectionInfo {
                 switch info.phase {
                 case .failed:
-                    return .failed(info.failureMessage)
+                    return .failed(localizedFailureMessage(for: info))
                 case .connecting, .handshaking:
                     return .connecting
                 case .awaitingHostTrust:
@@ -269,7 +281,7 @@ final class ManagedTerminalSession: Identifiable {
                 case .connectionLost:
                     return .disconnected
                 case .failed:
-                    return .failed(connectionInfo?.failureMessage)
+                    return .failed(localizedFailureMessage(for: connectionInfo))
                 }
             }
 
@@ -311,6 +323,27 @@ final class ManagedTerminalSession: Identifiable {
 
     var failureMessage: String? {
         connectionInfo?.failureMessage
+    }
+
+    /// UI 用户可见失败文案：按当前 App Locale 即时解析 `failureError`，
+    /// 不读 `failureMessage`（英文 fallback）。语言切换后 Locale 变 →
+    /// `displayState` 重算 → `.failed` 携带新语言文案 → UI 自动刷新。
+    /// `failureError` 为 nil 时返回 nil（UI 回退到通用"连接失败"文案）。
+    private func localizedFailureMessage(for info: SSHConnectionInfo?) -> String? {
+        guard let error = info?.failureError else {
+            return nil
+        }
+        return error.localizedDescription(locale: currentLocale)
+    }
+
+    /// UI 层入口：按传入 Locale 即时解析失败文案（任务书七十三：不缓存启动时文案）。
+    /// 与 `displayState` 内部解析一致，但供不通过 `displayState.failed(String?)`
+    /// 读取的 UI 路径使用（如 `remotePlaceholder` 直接展示 `session.failureMessage`）。
+    func localizedFailureMessage(locale: Locale) -> String? {
+        guard let error = connectionInfo?.failureError else {
+            return nil
+        }
+        return error.localizedDescription(locale: locale)
     }
 
     // MARK: - 状态栏

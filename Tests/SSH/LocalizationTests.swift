@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import XCTest
 @testable import MacSSH
 
@@ -192,6 +193,139 @@ final class LocalizationTests: XCTestCase {
 
     // MARK: - 运行时文案按 Locale 切换（任务书七十三：不缓存）
 
+    // MARK: - SSH 失败展示路径（P1 回归：不缓存启动时英文文案）
+
+    /// 任务书七十三：Alert 字符串不能在启动时缓存。验证 SSHConnectionInfo
+    /// 的失败路径不再缓存英文 `errorDescription`，而是缓存语言无关的
+    /// `SSHError` 枚举，UI 按 Locale 即时解析。
+    @MainActor
+    func testSSHConnectionInfoCachesErrorEnumNotLocalizedText() {
+        let info = SSHConnectionInfo(
+            hostID: UUID(),
+            hostname: "example.com",
+            port: 22,
+            username: "user"
+        )
+
+        // 通过 setFailure 写入失败（SSHConnection.failConnect / SSHService.rejected 路径）。
+        info.setFailure(error: .authenticationFailed)
+
+        // 缓存的是语言无关的枚举，不是英文文案。
+        XCTAssertEqual(info.failureError, .authenticationFailed)
+
+        // failureMessage 作为 debug fallback 仍是英文，但 UI 不应直接读它。
+        XCTAssertEqual(info.failureMessage, "Authentication failed. Check your username and password.")
+
+        // UI 按 Locale 即时解析 failureError，zh-Hans / en 必须不同。
+        let zh = info.failureError?.localizedDescription(locale: AppLanguage.simplifiedChinese.locale)
+        let en = info.failureError?.localizedDescription(locale: AppLanguage.english.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "SSH 失败文案必须按 Locale 切换")
+        XCTAssertTrue(zh?.contains("认证") == true, "zh-Hans authentication 错误必须含'认证': \(zh ?? "")")
+    }
+
+    /// 任务书七十三：语言切换后重新触发错误，Alert 必须显示新语言。
+    /// 验证 ManagedTerminalSession.localizedFailureMessage(locale:)
+    /// 在 zh-Hans / en 下返回不同文案，且 failureError 缓存语言无关枚举。
+    @MainActor
+    func testManagedSessionFailureMessageSwitchesWithLocale() throws {
+        let appState = try makeAppState()
+
+        // 构造 Remote SSH Session（不触发真实连接流程），用于验证失败展示路径。
+        let session = ManagedTerminalSession(
+            remoteHostID: UUID(),
+            hostDisplayName: "Example",
+            hostname: "example.com",
+            port: 22,
+            baseTitle: "Example",
+            titleCounter: 1
+        )
+        session.localeProvider = appState.sessionManager.localeProvider
+
+        // 模拟 SSHService.rejected 路径：phase=.failed + failureError。
+        let info = SSHConnectionInfo(
+            hostID: UUID(),
+            hostname: "example.com",
+            port: 22,
+            username: "user"
+        )
+        info.phase = .failed(.connectionTimeout)
+        info.setFailure(error: .connectionTimeout)
+        session.attachRejected(info: info)
+
+        // UI 按 Locale 即时解析——zh-Hans / en 必须不同。
+        let zh = session.localizedFailureMessage(locale: AppLanguage.simplifiedChinese.locale)
+        let en = session.localizedFailureMessage(locale: AppLanguage.english.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "Session 失败文案必须按 Locale 切换")
+        XCTAssertTrue(zh?.contains("超时") == true, "zh-Hans timeout 错误必须含'超时': \(zh ?? "")")
+        XCTAssertTrue(en?.lowercased().contains("timed out") == true, "en timeout 错误必须含 'timed out': \(en ?? "")")
+
+        // displayState.failed(String?) 携带的也是当前 Locale 文案（非英文缓存）。
+        if case let .failed(message) = session.displayState {
+            XCTAssertNotNil(message)
+            XCTAssertEqual(message, zh, "displayState.failed 必须携带当前 Locale 文案，不是英文缓存")
+        } else {
+            XCTFail("displayState 必须为 .failed（已 attachRejected）")
+        }
+    }
+
+    /// 任务书七十三：语言切换后重新解析失败文案，不重建 Session。
+    /// 验证切换 language 后 displayState.failed 携带新语言文案，
+    /// 且 Session 实例 / ID / Shell 引用保持不变。
+    @MainActor
+    func testLanguageSwitchRefreshesFailureMessageWithoutRebuildingSession() throws {
+        let appState = try makeAppState()
+
+        // 构造 Remote SSH Session（不触发真实连接流程），用于验证语言切换
+        // 后失败文案刷新且 Session 实例不重建。
+        let session = ManagedTerminalSession(
+            remoteHostID: UUID(),
+            hostDisplayName: "Example",
+            hostname: "example.com",
+            port: 22,
+            baseTitle: "Example",
+            titleCounter: 1
+        )
+        session.localeProvider = appState.sessionManager.localeProvider
+        let initialSessionID = session.id
+
+        // 写入失败状态。
+        let info = SSHConnectionInfo(
+            hostID: UUID(),
+            hostname: "example.com",
+            port: 22,
+            username: "user"
+        )
+        info.phase = .failed(.hostKeyChanged)
+        info.setFailure(error: .hostKeyChanged)
+        session.attachRejected(info: info)
+
+        // 初始 zh-Hans：失败文案必须是中文。
+        if case let .failed(message) = session.displayState {
+            XCTAssertTrue(message?.contains("主机密钥已更改") == true, "初始 zh-Hans 失败文案必须是中文: \(message ?? "")")
+        } else {
+            XCTFail("displayState 必须为 .failed")
+        }
+
+        // 切换 English：displayState 重算，失败文案必须变英文。
+        appState.language = .english
+        if case let .failed(message) = session.displayState {
+            XCTAssertTrue(message?.lowercased().contains("host key has changed") == true, "切换 English 后失败文案必须变英文: \(message ?? "")")
+        }
+
+        // 切换回 zh-Hans：失败文案必须再变中文。
+        appState.language = .simplifiedChinese
+        if case let .failed(message) = session.displayState {
+            XCTAssertTrue(message?.contains("主机密钥已更改") == true, "切回 zh-Hans 后失败文案必须再变中文: \(message ?? "")")
+        }
+
+        // Session 实例 / ID 完全保持（任务书十八：语言切换不重建 Runtime）。
+        XCTAssertEqual(session.id, initialSessionID)
+    }
+
     /// TransferError 的失败文案在 zh-Hans / en 下必须不同，
     /// 证明 Alert 文案不是启动时缓存的英文。
     func testTransferErrorMessageSwitchesWithLocale() {
@@ -383,5 +517,17 @@ final class LocalizationTests: XCTestCase {
             throw NSError(domain: "LocalizationTests", code: 1, userInfo: nil)
         }
         return url
+    }
+
+    /// 构造内存态 AppState（绝不动用户真实偏好 / 持久化存储）。
+    /// 与 AppLanguageTests.makeAppState 同模式，用于 SSH 失败展示路径回归。
+    @MainActor
+    private func makeAppState() throws -> AppState {
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let suiteName = "MacSSH.LocalizationTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        return AppState(modelContainer: container, userDefaults: defaults)
     }
 }

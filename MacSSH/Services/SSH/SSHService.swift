@@ -124,12 +124,14 @@ final class SSHService {
     // MARK: - 前置失败
 
     /// 不创建 actor 的快速失败：直接进入 failed 状态。
+    /// MacSSH 1.1：缓存语言无关的 SSHError 枚举，UI 按 Locale 即时解析
+    /// （不在连接准备阶段缓存英文文案，任务书七十三）。
     private func rejected(
         _ info: SSHConnectionInfo,
         error: SSHError
     ) -> SSHConnectionInfo {
         info.phase = .failed(error)
-        info.failureMessage = error.errorDescription
+        info.setFailure(error: error)
         AppLogger.ssh.error("SSH connection rejected before start: \(String(describing: error))")
         return info
     }

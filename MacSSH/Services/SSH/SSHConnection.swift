@@ -30,7 +30,15 @@ final class SSHConnectionInfo {
     ///   （Cancel / Replace Trusted Key 二次确认），阻断认证直到用户明确替换。
     var hostKeyVerification: HostKeyVerification?
 
-    /// 失败时展示给用户的错误信息（不含 Secret）。
+    /// 失败时缓存的业务错误枚举（语言无关）。
+    ///
+    /// MacSSH 1.1 Phase 1：UI 不直接读 `failureMessage`（英文 fallback），
+    /// 改为读 `failureError` 并按当前 App Locale 即时解析——语言切换
+    /// 立即生效，不在连接层缓存启动时文案（任务书七十三）。
+    var failureError: SSHError?
+
+    /// 失败时的英文 fallback 文案（debug / 诊断用途，非 UI 主路径）。
+    /// UI 应通过 `failureError?.localizedDescription(locale:)` 展示。
     var failureMessage: String?
 
     init(hostID: UUID, hostname: String, port: UInt16, username: String) {
@@ -53,6 +61,13 @@ final class SSHConnectionInfo {
     /// 更新 Host Key 验证结果。
     func setHostKeyVerification(_ verification: HostKeyVerification) {
         self.hostKeyVerification = verification
+    }
+
+    /// 更新失败信息：同时记录语言无关的业务错误枚举与英文 fallback 文案。
+    /// UI 按 Locale 即时解析 `failureError`，不读 `failureMessage`。
+    func setFailure(error: SSHError, fallbackMessage: String? = nil) {
+        failureError = error
+        failureMessage = fallbackMessage ?? error.errorDescription
     }
 
     /// 更新失败信息。
@@ -1397,10 +1412,11 @@ actor SSHConnection {
         closeSocket()
 
         // 用户主动取消时展示为 disconnected，其余展示 failed。
+        // MacSSH 1.1：缓存语言无关的 SSHError 枚举，UI 按 Locale 即时解析。
         if error == .cancelled {
             await transition(to: .disconnected)
         } else {
-            await info.setFailure(message: error.errorDescription ?? "The connection failed.")
+            await info.setFailure(error: error)
             await transition(to: .failed(error))
         }
         AppLogger.ssh.error("SSH connection failed: \(String(describing: error))")

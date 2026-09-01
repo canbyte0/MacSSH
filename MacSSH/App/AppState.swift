@@ -54,6 +54,13 @@ final class AppState {
         transferManager.localeProvider = { [weak self] in
             self?.language.locale ?? AppLanguage.defaultLanguage.locale
         }
+        sessionManager.localeProvider = { [weak self] in
+            self?.language.locale ?? AppLanguage.defaultLanguage.locale
+        }
+        // 启动时 SessionManager.init 已创建初始 Local Session；回填 provider。
+        for session in sessionManager.sessions {
+            session.localeProvider = sessionManager.localeProvider
+        }
 
         // Phase 11：SFTPService 的 Rename / Delete 经本闸查询传输冲突。
         TransferConflictGate.install(manager: transferManager)

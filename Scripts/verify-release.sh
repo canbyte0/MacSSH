@@ -119,9 +119,13 @@ fi
 
 echo "=== 6. Hardened Runtime runtime flag ==="
 # codesign -dvv 输出形如：CodeDirectory v=20500 ... flags=0x10002(adhoc,runtime) ...
-if codesign -dvv "$APP" 2>&1 | grep -q "flags=.*runtime"; then
+# 注意：在 set -o pipefail 下，`codesign ... | grep -q` 会因 grep -q 提前关闭管道
+# 触发 SIGPIPE 让 codesign 非零退出，使整个管道失败（假阴性）。
+# 因此先捕获到变量再 grep，避免 pipefail 干扰。
+CODESIGN_INFO="$(codesign -dvv "$APP" 2>&1 || true)"
+if echo "$CODESIGN_INFO" | grep -q "flags=.*runtime"; then
     echo "PASS: Hardened Runtime (runtime flag)"; PASS=$((PASS+1))
-    codesign -dvv "$APP" 2>&1 | grep "CodeDirectory" | head -1
+    echo "$CODESIGN_INFO" | grep "CodeDirectory" | head -1
 else
     echo "FAIL: Hardened Runtime runtime flag absent" >&2; FAIL=$((FAIL+1))
 fi

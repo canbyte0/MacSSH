@@ -41,6 +41,11 @@ final class SessionManager {
     /// 会话前必须经其屏障取消并等待传输清理完成。
     weak var transferManager: TransferManager?
 
+    /// MacSSH 1.1：由 AppState 装配的语言 provider；创建 Session 时复制，
+    /// 失败文案按当前 App Locale 即时解析（任务书七十三：不缓存启动时文案）。
+    @ObservationIgnored
+    var localeProvider: (@MainActor () -> Locale)?
+
     init(sshService: SSHService) {
         self.sshService = sshService
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
@@ -105,6 +110,7 @@ final class SessionManager {
             baseTitle: "Local",
             titleCounter: nextTitleCounter(base: "Local")
         )
+        session.localeProvider = localeProvider
         sessions.append(session)
         activeSessionID = session.id
         AppLogger.app.info("Local terminal session created")
@@ -125,6 +131,7 @@ final class SessionManager {
             baseTitle: host.name,
             titleCounter: nextTitleCounter(base: host.name)
         )
+        session.localeProvider = localeProvider
         sessions.append(session)
         activeSessionID = session.id
         AppLogger.app.info("Remote terminal session created")

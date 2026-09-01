@@ -262,7 +262,6 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("settings.open_main_window", "Open main window", "打开主窗口"),
     ("settings.confirm_before_closing_ssh", "Confirm before closing SSH session", "关闭 SSH 会话前确认"),
     ("settings.font", "Font", "字体"),
-    ("settings.system_monospaced", "System monospaced", "系统等宽字体"),
     ("settings.font_size", "Font size", "字体大小"),
     ("settings.font_size_value", "14 pt", "14 pt"),
     ("settings.scrollback", "Scrollback", "回滚行数"),

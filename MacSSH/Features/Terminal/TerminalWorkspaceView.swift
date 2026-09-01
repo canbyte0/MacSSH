@@ -188,7 +188,7 @@ struct TerminalWorkspaceView: View {
                 Text("terminal.connection_failed")
                     .font(.headline)
 
-                Text(verbatim: session.failureMessage ?? L10n.string(
+                Text(verbatim: session.localizedFailureMessage(locale: locale) ?? L10n.string(
                     "terminal.connection_failed_message",
                     defaultValue: "The connection could not be established.",
                     locale: locale

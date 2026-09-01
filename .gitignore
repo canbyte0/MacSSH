@@ -53,3 +53,6 @@ dist/
 release/
 *.dmg
 *.app
+
+# 占位文件（目录已纳入版本控制，无需跟踪 .gitkeep）
+*.gitkeep
