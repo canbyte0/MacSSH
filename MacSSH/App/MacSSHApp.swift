@@ -8,6 +8,10 @@ struct MacSSHApp: App {
     /// 全局状态独立于具体页面生命周期，持有本地 Terminal 与 SSH 连接。
     @State private var appState: AppState
 
+    /// Phase 11 退出屏障（任务书三十五）：退出前取消并等待全部传输收尾，
+    /// 不做后台继续传输，无崩溃 / 无 double-free。
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     /// 使用本地持久化容器；Secret 只进入 Keychain，不进入 SwiftData 或 CloudKit。
     private let modelContainer: ModelContainer
 
@@ -41,6 +45,9 @@ struct MacSSHApp: App {
         }
 
         _appState = State(initialValue: AppState(modelContainer: modelContainer))
+        // Phase 11 退出屏障装配：AppDelegate 需要访问 TransferManager，
+        // 窗口层级反查不可靠，改用弱引用静态注入。
+        AppDelegate.appState = _appState.wrappedValue
     }
 
     var body: some Scene {
@@ -56,6 +63,31 @@ struct MacSSHApp: App {
         )
         .commands {
             terminalCommands
+        }
+    }
+
+    /// Phase 11 App Quit 屏障（任务书三十五）：
+    /// `applicationShouldTerminate` 返回 `.terminateLater` 阻断默认退出流程 →
+    /// 取消全部传输（pending 直接终态 / running 协作式取消）并等待执行任务收尾 →
+    /// `reply(.terminateNow)` 完成退出。期间绝不后台继续传输。
+    @MainActor
+    final class AppDelegate: NSObject, NSApplicationDelegate {
+        /// 应用入口装配的弱引用（App 生命周期内唯一，仅退出屏障读取）。
+        static weak var appState: AppState?
+
+        func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+            guard let manager = AppDelegate.appState?.transferManager else {
+                return .terminateNow
+            }
+            let hasPending = manager.tasks.contains { $0.state == .pending }
+            guard manager.hasActiveTransfer || hasPending else {
+                return .terminateNow
+            }
+            Task { @MainActor in
+                await manager.cancelAndAwaitAllTransfers()
+                sender.reply(toApplicationShouldTerminate: true)
+            }
+            return .terminateLater
         }
     }
 

@@ -101,6 +101,52 @@ final class SSHConnectionTests: XCTestCase {
         _ = await connectTask.result
     }
 
+    // MARK: - 测试：KEX 排除 mlkem 后真实握手成功（Phase 11 P1 修复回归）
+
+    /// Phase 11 P1 修复回归：method_pref 名单排除 mlkem 系后，与标准
+    /// OpenSSH 服务器仍能握手成功，且协商的 KEX 不是 mlkem 路径
+    ///（避免 rekey sig verify 间歇失败）。
+    ///
+    /// 防止 method_pref 名单"restrict 化"（遗漏 group14-sha256 等默认
+    /// 安全算法）导致仅支持这些算法的标准 sshd 握手失败（handshake -5）。
+    func testKexPrefExcludesMlkemAndHandshakeSucceedsWithLiveSSHD() async throws {
+        try await requireLocalSSHAndLiveCredential()
+
+        let info = makeInfo()
+        let connection = makeConnection(info: info, credentialID: liveCredentialID)
+        let connectTask = Task { await connection.connect() }
+
+        _ = try await waitForPhase(info, "等待 Host Trust") { $0 == .awaitingHostTrust }
+        await connection.resolveHostTrust(.trustOnce)
+        _ = try await waitForPhase(info, "KEX 排除 mlkem 后仍握手成功") { $0 == .connected }
+
+        let negotiated = await connection.negotiatedKexMethod
+        XCTAssertNotNil(negotiated, "必须能读取协商的 KEX 算法名")
+        if let negotiated {
+            XCTAssertFalse(
+                negotiated.hasPrefix("mlkem"),
+                "协商 KEX 不得为 mlkem 路径（实测 \(negotiated)），否则触发 rekey sig verify 间歇失败")
+            XCTAssertTrue(
+                [
+                    "curve25519-sha256",
+                    "curve25519-sha256@libssh.org",
+                    "ecdh-sha2-nistp256",
+                    "ecdh-sha2-nistp384",
+                    "ecdh-sha2-nistp521",
+                    "diffie-hellman-group-exchange-sha256",
+                    "diffie-hellman-group16-sha512",
+                    "diffie-hellman-group18-sha512",
+                    "diffie-hellman-group14-sha256",
+                ].contains(negotiated),
+                "协商 KEX 必须在 libssh2 默认安全算法集内（实测 \(negotiated)）")
+        }
+
+        await connection.disconnect()
+        _ = try await waitForPhase(info, "断开") { $0 == .disconnected }
+
+        _ = await connectTask.result
+    }
+
     // MARK: - 测试 B：错误 Password
 
     func testB_WrongPasswordFailsWithAuthenticationFailure() async throws {
@@ -1185,34 +1231,61 @@ final class SSHConnectionTests: XCTestCase {
         let memoryBefore = residentMemoryBytes()
 
         for cycle in 1...20 {
-            let info = makeInfo()
-            let connection = makeConnection(
-                info: info,
-                credentialID: nil,
-                authenticationType: .privateKey,
-                privateKeyPath: TestKeys.ed25519NoPass,
-                privateKeyID: nil
-            )
-            let connectTask = Task { await connection.connect() }
+            // 节流：20 轮连续建连会触发本机 sshd MaxStartups 瞬时限流（环境因素，
+            // 曾以握手层 -8 形式出现）；轮间 200ms 间隔 + 每轮有限重试对抗环境噪声，
+            // 泄漏断言（20 轮完整建断）语义不变。
+            if cycle > 1 {
+                try await Task.sleep(nanoseconds: 200_000_000)
+            }
 
-            _ = try await waitForPhase(
-                info,
-                "第 \(cycle) 轮等待 Host Trust",
-                timeout: 15
-            ) { $0 == .awaitingHostTrust }
+            var connected = false
+            for attempt in 1...3 {
+                let info = makeInfo()
+                let connection = makeConnection(
+                    info: info,
+                    credentialID: nil,
+                    authenticationType: .privateKey,
+                    privateKeyPath: TestKeys.ed25519NoPass,
+                    privateKeyID: nil
+                )
+                let connectTask = Task { await connection.connect() }
 
-            await connection.resolveHostTrust(.trustOnce)
+                let trustPhase = try await waitForPhase(
+                    info,
+                    "第 \(cycle) 轮等待 Host Trust",
+                    timeout: 15
+                ) { $0 == .awaitingHostTrust || Self.isFailed($0) }
 
-            _ = try await waitForPhase(
-                info,
-                "第 \(cycle) 轮私钥连接成功",
-                timeout: 20
-            ) { $0 == .connected }
+                if trustPhase != .awaitingHostTrust {
+                    // 建连被限流丢弃：断开后 0.5s 退避，重试本轮。
+                    await connection.disconnect()
+                    _ = await connectTask.result
+                    if attempt < 3 {
+                        try await Task.sleep(nanoseconds: 500_000_000)
+                        continue
+                    }
+                    XCTFail("第 \(cycle) 轮建连 3 次重试均失败（最后状态：\(trustPhase.statusText)）")
+                    break
+                }
 
-            await connection.disconnect()
-            _ = try await waitForPhase(info, "第 \(cycle) 轮断开") { $0 == .disconnected }
+                await connection.resolveHostTrust(.trustOnce)
 
-            _ = await connectTask.result
+                _ = try await waitForPhase(
+                    info,
+                    "第 \(cycle) 轮私钥连接成功",
+                    timeout: 20
+                ) { $0 == .connected }
+
+                await connection.disconnect()
+                _ = try await waitForPhase(info, "第 \(cycle) 轮断开") { $0 == .disconnected }
+
+                _ = await connectTask.result
+                connected = true
+                break
+            }
+            guard connected else {
+                break
+            }
         }
 
         let fdProbeAfter = probeFileDescriptor()

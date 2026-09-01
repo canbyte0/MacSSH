@@ -248,13 +248,13 @@ final class SFTPTransferTests: XCTestCase {
         let modifiedURL = makeLocalFile(name: "exists.bin", content: modified, uniqueDirectory: true)
         let (second, rejection) = manager.requestUpload(session: session, localURL: modifiedURL)
         XCTAssertNil(rejection)
-        let retry = try XCTUnwrap(second)
-        try await waitForTerminal(retry)
+        let repeated = try XCTUnwrap(second)
+        try await waitForTerminal(repeated)
 
-        XCTAssertEqual(retry.state, .failed)
+        XCTAssertEqual(repeated.state, .failed)
         XCTAssertEqual(
-            retry.failureMessage,
-            "远程文件已存在。Phase 10 当前不会自动覆盖该文件。"
+            repeated.failureMessage,
+            "远程文件已存在，不会自动覆盖该文件。"
         )
         let remoteData = try await connection.testReadWholeRemoteFile(uploadDir + "/exists.bin")
         XCTAssertEqual(remoteData, original, "失败上传绝不允许触碰远端原文件")
@@ -622,11 +622,12 @@ final class SFTPTransferTests: XCTestCase {
         XCTAssertEqual(upload.state, .completed, "Browser 共存时上传必须完成")
     }
 
-    // MARK: - 测试 M：单活跃传输限制 + 会话隔离
+    // MARK: - 测试 M：每会话单活跃传输 + 队列补位 + 会话隔离（Phase 11）
 
-    /// 已有活跃传输时并发请求被拒绝并给出明确文案；
+    /// 会话槽位满时第二个请求不再拒绝而是入队保持 Pending；
+    /// 首个完成后调度器事件驱动补位启动排队任务；
     /// `hasActiveTransfer(forSession:)` 按 Session 隔离。
-    func testM_SingleActiveTransferAndSessionIsolation() async throws {
+    func testM_PerSessionSingleActiveAndQueueBackfill() async throws {
         try await requireLocalSSHAndTestKey()
         let fixture = try requireFixture()
         let uploadDir = fixture + "/upload"
@@ -652,16 +653,23 @@ final class SFTPTransferTests: XCTestCase {
         XCTAssertTrue(manager.hasActiveTransfer(forSession: session.id))
         XCTAssertFalse(manager.hasActiveTransfer(forSession: UUID()))
 
+        // Phase 11：不再拒绝，而是入队等待（绝不触碰连接 / 文件）。
         let second = manager.requestUpload(
             session: session,
             localURL: makeLocalFile(name: "single-2.bin", content: content)
         )
-        XCTAssertNil(second.task)
-        XCTAssertEqual(second.rejection, "已有文件正在传输，请等待当前任务完成或取消。")
+        XCTAssertNil(second.rejection)
+        let secondTask = try XCTUnwrap(second.task)
+        XCTAssertEqual(secondTask.state, .pending, "会话槽位满时新任务必须排队")
+        XCTAssertEqual(manager.activeTasks.count, 1, "每会话活跃传输不得超过 1")
 
         await gate.release()
         try await waitForTerminal(firstTask)
         XCTAssertEqual(firstTask.state, .completed)
+
+        // 事件驱动补位：排队任务被启动并完成（无需任何轮询）。
+        try await waitForTerminal(secondTask, timeout: 60)
+        XCTAssertEqual(secondTask.state, .completed, "首任务完成后排队任务必须被调度完成")
         XCTAssertFalse(manager.hasActiveTransfer)
         await connection.setTestSFTPFileTransferChunkHook(armed: false, nil)
     }

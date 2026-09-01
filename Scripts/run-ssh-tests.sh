@@ -59,6 +59,12 @@ AK_END="# macssh-phase6-test-end"
 PHASE9_FIXTURE_PATH_FILE="/tmp/macssh_phase9_fixture_path"
 PHASE9_FIXTURE_ROOT="/tmp/macssh-phase9-$(uuidgen | tr '[:upper:]' '[:lower:]')"
 
+# Phase 10 / 11 传输夹具：upload / readonly(555) + 交接文件（仅含路径，不含 Secret）。
+# 供 SFTPTransferTests / SFTPFileOpsTests / TransferManagerTests /
+# TransferQueueRealTests / SFTPLargeFileTests / TransferResourceTests 读取。
+PHASE10_FIXTURE_PATH_FILE="/tmp/macssh_phase10_fixture_path"
+PHASE10_FIXTURE_ROOT="/tmp/macssh-phase10-$(uuidgen | tr '[:upper:]' '[:lower:]')"
+
 cleanup_test_credential() {
     security delete-generic-password \
         -a "$TEST_CREDENTIAL_ID" \
@@ -90,10 +96,23 @@ cleanup_phase9_fixture() {
     rm -f "$PHASE9_FIXTURE_PATH_FILE" 2>/dev/null || true
 }
 
+cleanup_phase10_fixture() {
+    if [[ -d "$PHASE10_FIXTURE_ROOT" ]]; then
+        chmod -R u+rwx "$PHASE10_FIXTURE_ROOT" 2>/dev/null || true
+        rm -rf "$PHASE10_FIXTURE_ROOT"
+    fi
+    rm -f "$PHASE10_FIXTURE_PATH_FILE" 2>/dev/null || true
+    rm -rf "$TMPDIR/macssh-p11-real-tests" 2>/dev/null || true
+    rm -rf "$TMPDIR/macssh-p11-queue-tests" 2>/dev/null || true
+    rm -rf "$TMPDIR/macssh-p11-resource-tests" 2>/dev/null || true
+    rm -rf "$TMPDIR/macssh-p11-large-tests" 2>/dev/null || true
+}
+
 cleanup_all() {
     cleanup_test_credential
     cleanup_phase6_keys
     cleanup_phase9_fixture
+    cleanup_phase10_fixture
 }
 trap cleanup_all EXIT
 
@@ -121,6 +140,16 @@ if [[ -f "$PHASE9_FIXTURE_PATH_FILE" ]]; then
         rm -rf "$STALE_FIXTURE"
     fi
     rm -f "$PHASE9_FIXTURE_PATH_FILE"
+fi
+
+# 清理上次异常中断遗留的 Phase 10 / 11 传输夹具（按遗留交接文件指向的目录）。
+if [[ -f "$PHASE10_FIXTURE_PATH_FILE" ]]; then
+    STALE_FIXTURE="$(cat "$PHASE10_FIXTURE_PATH_FILE" 2>/dev/null || true)"
+    if [[ -n "$STALE_FIXTURE" && "$STALE_FIXTURE" == /tmp/macssh-phase1* && -d "$STALE_FIXTURE" ]]; then
+        chmod -R u+rwx "$STALE_FIXTURE" 2>/dev/null || true
+        rm -rf "$STALE_FIXTURE"
+    fi
+    rm -f "$PHASE10_FIXTURE_PATH_FILE"
 fi
 
 echo "==> 生成 Phase 6 测试专用私钥（ed25519 无/有 Passphrase、未授权 ed25519、RSA、ECDSA）"
@@ -182,6 +211,15 @@ chmod 000 "$PHASE9_FIXTURE_ROOT/restricted"
 seq -f "$PHASE9_FIXTURE_ROOT/big/f-%04g.txt" 1 1000 | xargs touch
 printf '%s' "$PHASE9_FIXTURE_ROOT" > "$PHASE9_FIXTURE_PATH_FILE"
 echo "Phase 9 SFTP 夹具已创建（退出时整体删除；交接文件 ${PHASE9_FIXTURE_PATH_FILE}）✓"
+echo ""
+
+echo "==> 创建 Phase 10 / 11 传输夹具：$PHASE10_FIXTURE_ROOT"
+mkdir -p "$PHASE10_FIXTURE_ROOT/upload" \
+         "$PHASE10_FIXTURE_ROOT/readonly"
+printf 'phase10-fixture' > "$PHASE10_FIXTURE_ROOT/readme.txt"
+chmod 555 "$PHASE10_FIXTURE_ROOT/readonly"
+printf '%s' "$PHASE10_FIXTURE_ROOT" > "$PHASE10_FIXTURE_PATH_FILE"
+echo "Phase 10 / 11 传输夹具已创建（退出时整体删除；交接文件 ${PHASE10_FIXTURE_PATH_FILE}）✓"
 echo ""
 
 echo "==> 构建测试产物"

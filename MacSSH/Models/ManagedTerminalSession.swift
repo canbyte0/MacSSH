@@ -149,9 +149,11 @@ final class ManagedTerminalSession: Identifiable {
         remoteService = service
     }
 
-    /// 挂接 SFTP 运行时（SessionManager / 测试装配）。
+    /// 挂接 SFTP 运行时（SessionManager / 测试装配）；
+    /// 同时写入所属 Session 标识（传输冲突防护查询用）。
     func attachSFTPService(_ service: SFTPService) {
         sftpService = service
+        service.bindOwningSession(id)
     }
 
     /// UI 切换到 Files 面板时调用（MainActor 串行，幂等）：
@@ -165,6 +167,7 @@ final class ManagedTerminalSession: Identifiable {
             return
         }
         let service = SFTPService(connection: connection)
+        service.bindOwningSession(id)
         sftpService = service
         service.startIfNeeded()
     }

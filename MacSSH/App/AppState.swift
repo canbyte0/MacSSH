@@ -33,6 +33,9 @@ final class AppState {
         self.sessionManager = sessionManager
         self.transferManager = transferManager
 
+        // Phase 11：SFTPService 的 Rename / Delete 经本闸查询传输冲突。
+        TransferConflictGate.install(manager: transferManager)
+
         // 日志不包含密码、私钥、终端内容或其他敏感信息。
         AppLogger.app.info("Application state initialized")
     }
@@ -55,10 +58,11 @@ final class AppState {
     /// 主窗口底部左侧展示当前阶段或 Active Session 状态（任务书 66）。
     var statusText: String {
         guard selectedSection == .terminal else {
-            if selectedSection == .transfers, let active = transferManager.activeTask {
-                return "传输中 · \(active.localName)"
+            if selectedSection == .transfers,
+               let summary = transferManager.queueSummary {
+                return summary
             }
-            return "Phase 10 · SFTP Transfers"
+            return "Phase 11 · Transfer Queue"
         }
 
         guard let session = sessionManager.activeSession else {

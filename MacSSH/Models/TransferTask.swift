@@ -10,6 +10,8 @@ enum TransferDirection: Sendable {
 /// 传输状态机（任务书：字节数到达绝不等于 Completed——Completed 只能在
 /// 数据完成 + 句柄正确关闭 + 发布 / 替换成功之后出现）。
 enum TransferState: Equatable, Sendable {
+    /// 队列中等待调度（Phase 11）：尚未触碰任何连接 / 文件资源。
+    case pending
     /// 预检与准备（本地 / 远端校验、临时文件打开）。
     case preparing
     /// 流式传输进行中。
@@ -27,19 +29,34 @@ enum TransferState: Equatable, Sendable {
         switch self {
         case .completed, .failed, .cancelled:
             return true
+        case .pending, .preparing, .transferring, .cancelling:
+            return false
+        }
+    }
+
+    /// 是否占用活跃传输槽位（全局 / 每会话并发限额计数用）：
+    /// pending 不占槽（尚未触碰连接），进入 preparing 起占用，
+    /// 终态释放（槽位释放等价于状态机终态，无需独立计数器漂移）。
+    var occupiesActiveSlot: Bool {
+        switch self {
         case .preparing, .transferring, .cancelling:
+            return true
+        case .pending, .completed, .failed, .cancelled:
             return false
         }
     }
 }
 
-/// 单个文件传输的运行时记录（Phase 10）。
+/// 单个文件传输的运行时记录（Phase 10 建立，Phase 11 队列化）。
 ///
 /// 职责边界（任务书）：
 /// - 由 `TransferManager`（App 层稳定对象）持有，切换页面 / 切换会话 /
 ///   关闭 Transfers 面板都不影响传输；UI 只观察本对象；
 /// - 纯内存对象，不进 SwiftData；绝不携带任何 Secret；
 /// - 日志不记录路径细节，仅生命周期事件。
+///
+/// Phase 11 路径快照：`remotePath` / `localURL` / `sessionID` 在入队时冻结，
+/// 后续 Files 导航绝不改变已排队任务的目标路径。
 @MainActor
 @Observable
 final class TransferTask: Identifiable {
@@ -71,13 +88,22 @@ final class TransferTask: Identifiable {
     /// 平均速度（B/s）；未知 / 无意义时为 0，绝不出现 NaN / Infinity / 负值。
     private(set) var speedBytesPerSecond: Double = 0
 
-    private(set) var state: TransferState = .preparing
+    private(set) var state: TransferState = .pending
 
     /// 失败时的用户可见原因（不含 Secret 与原始 libssh2 码）。
     private(set) var failureMessage: String?
 
-    let startedAt = Date()
+    /// 入队时刻。
+    let queuedAt = Date()
+
+    /// 真正开始执行（调度启动）的时刻；pending 期间为 nil——
+    /// 速度只从实际开始时刻起算，绝不把排队时间算进去。
+    private(set) var startedAt: Date?
+
     private(set) var finishedAt: Date?
+
+    /// pending 且所属会话已断开：展示"等待连接"与普通过队区分（调度器维护）。
+    private(set) var awaitingConnection = false
 
     // MARK: - 内部运行时（Manager 维护，非观察语义）
 
@@ -92,6 +118,12 @@ final class TransferTask: Identifiable {
     /// 进度节流存储（非观察语义）：上次提交时刻。
     @ObservationIgnored
     var lastProgressCommit = Date.distantPast
+
+    /// 入队时登记的所属会话弱引用（非观察语义）：生产路径调度器始终经
+    /// SessionManager 解析**当前**会话；仅未装配 SessionManager 的测试直连
+    /// 场景回退本引用，启动时仍从会话取当前连接（重连后是新 generation）。
+    @ObservationIgnored
+    weak var sessionRef: ManagedTerminalSession?
 
     init(
         direction: TransferDirection,
@@ -113,7 +145,25 @@ final class TransferTask: Identifiable {
 
     // MARK: - Manager 专用写入
 
-    /// 设置总大小（预检后；仅一次，准备阶段）。
+    /// 调度启动：pending → preparing 原子转换的一部分（仅 pending 可进入，
+    /// 防重复调度的第二道闸——首次成功进入者才是启动者）。
+    /// - Returns: 是否由本次调用完成转换。
+    @discardableResult
+    func markStarted() -> Bool {
+        guard state == .pending else {
+            return false
+        }
+        state = .preparing
+        startedAt = Date()
+        return true
+    }
+
+    /// pending 等待连接标记（调度器在会话断开时维护；重连后复位）。
+    func setAwaitingConnection(_ awaiting: Bool) {
+        awaitingConnection = awaiting
+    }
+
+    /// 设置总大小（预检后；启动时重新快照，绝不沿用入队时的旧值）。
     func setTotalBytes(_ bytes: Int64) {
         totalBytes = bytes
     }
@@ -131,12 +181,12 @@ final class TransferTask: Identifiable {
         state = .cancelling
     }
 
-    /// 报告进度：单调（只增不减）；速度取整段平均，
+    /// 报告进度：单调（只增不减）；速度取实际开始后的整段平均，
     /// 分母非正时置 0，绝不出现 NaN / Infinity / 负值。
     func reportProgress(_ bytes: Int64) {
         transferredBytes = max(transferredBytes, bytes)
         lastProgressCommit = Date()
-        let elapsed = Date().timeIntervalSince(startedAt)
+        let elapsed = Date().timeIntervalSince(startedAt ?? queuedAt)
         if elapsed > 0 {
             speedBytesPerSecond = Double(transferredBytes) / elapsed
         } else {
@@ -149,7 +199,7 @@ final class TransferTask: Identifiable {
         if let totalBytes {
             transferredBytes = totalBytes
         }
-        let elapsed = Date().timeIntervalSince(startedAt)
+        let elapsed = Date().timeIntervalSince(startedAt ?? queuedAt)
         if elapsed > 0 {
             speedBytesPerSecond = Double(transferredBytes) / elapsed
         } else {
@@ -187,9 +237,11 @@ final class TransferTask: Identifiable {
         return min(1, Double(transferredBytes) / Double(totalBytes))
     }
 
-    /// 状态文案（中文，任务书示例）。
+    /// 状态文案（中文；pending 区分普通过队与等待连接，绝不显示 0% / 0 B/s）。
     var stateDisplay: String {
         switch state {
+        case .pending:
+            return awaitingConnection ? "等待连接" : "等待中"
         case .preparing:
             return "准备中"
         case .transferring:
@@ -277,7 +329,7 @@ enum TransferError: Error, Equatable {
             }
             return "SSH 连接已断开，传输失败。"
         case .remoteFileExists:
-            return "远程文件已存在。Phase 10 当前不会自动覆盖该文件。"
+            return "远程文件已存在，不会自动覆盖该文件。"
         case .permissionDenied:
             return "权限不足，无法完成传输。"
         case .remoteFileMissing:

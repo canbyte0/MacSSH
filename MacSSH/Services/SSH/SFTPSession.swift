@@ -146,8 +146,6 @@ extension SSHConnection {
         }
     }
 
-    // MARK: - realpath
-
     /// 解析远端路径为规范绝对路径（初始目录使用 `realpath(".")`，
     /// 绝不硬编码 `/` 或 `~`）。
     ///
@@ -696,7 +694,10 @@ extension SSHConnection {
 
     /// readiness 等待的统一映射：超时 / 取消 → 业务错误（不泄漏 SSHError 细节）。
     /// `internal` 供同模块的 `SFTPFileOperations.swift` 扩展复用。
-    func sftpWaitForReadiness(session: OpaquePointer, deadline: Date) async throws {
+    func sftpWaitForReadiness(
+        session: OpaquePointer,
+        deadline: Date
+    ) async throws {
         do {
             try await waitForLibssh2Readiness(session: session, deadline: deadline)
         } catch is CancellationError {
@@ -716,7 +717,18 @@ extension SSHConnection {
             let statusCode = UInt32(libssh2_sftp_last_error(sftp))
             return SFTPError(sftpStatusCode: statusCode)
         }
-        AppLogger.ssh.error("SFTP transport failed with libssh2 code \(lastError)")
+        // 传输层错误：附带 libssh2 内部描述（含 socket 层失败细节），
+        // 偶发断连（如 -8 SOCKET_RECV）取证必需。
+        var reasonPointer: UnsafeMutablePointer<CChar>?
+        var reasonLength: Int32 = 0
+        _ = libssh2_session_last_error(session, &reasonPointer, &reasonLength, 0)
+        let reason = reasonPointer.map { String(cString: $0) } ?? "—"
+        // recv 失败后同线程内立即采集的 errno：区分对端 FIN（干净关闭，
+        // errno 多为陈旧值）、对端 RST（ECONNRESET）、本端 fd 异常等。
+        let socketErrno = errno
+        AppLogger.ssh.error(
+            "SFTP transport failed with libssh2 code \(lastError) (\(reason), errno \(socketErrno)/\(String(cString: strerror(socketErrno))))"
+        )
         return .connectionLost
     }
 }

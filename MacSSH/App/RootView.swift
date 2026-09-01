@@ -50,17 +50,19 @@ struct RootView: View {
                 manager.confirmClose()
             }
         } message: {
-            if let session = manager.pendingCloseConfirmation,
-               appState.transferManager.hasActiveTransfer(forSession: session.id) {
-                // Phase 10：会话有活跃传输时明确告知取消后果。
-                Text(
-                    "该会话有文件正在传输，关闭会话将取消传输。"
-                )
-            } else {
-                Text(
-                    "This will disconnect from "
-                        + (manager.pendingCloseConfirmation?.hostDisplayName ?? "the host") + "."
-                )
+            if let session = manager.pendingCloseConfirmation {
+                let transferCount = appState.transferManager.transferCount(forSession: session.id)
+                if transferCount > 0 {
+                    // Phase 11（任务书二十六）：关闭确认明确列出任务数与后果。
+                    Text(
+                        "此 SSH 会话包含 \(transferCount) 个文件传输任务。关闭会话将取消正在进行和等待中的传输。"
+                    )
+                } else {
+                    Text(
+                        "This will disconnect from "
+                            + (session.hostDisplayName ?? "the host") + "."
+                    )
+                }
             }
         }
         .alert(

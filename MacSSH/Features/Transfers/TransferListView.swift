@@ -108,6 +108,9 @@ private struct TransferRowView: View {
             }
 
             switch task.state {
+            case .pending:
+                // 排队中：不显示进度条，绝不伪造 0% / 0 B/s（任务书三十）。
+                EmptyView()
             case .preparing:
                 ProgressView()
                     .controlSize(.small)
@@ -161,6 +164,8 @@ private struct TransferRowView: View {
             return Color.secondary
         case .preparing, .transferring, .cancelling:
             return AppTheme.accentColor
+        case .pending:
+            return Color.orange
         }
     }
 }

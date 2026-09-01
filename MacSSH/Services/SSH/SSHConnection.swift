@@ -674,6 +674,8 @@ actor SSHConnection {
         // 全程 non-blocking；EAGAIN 交给 poll 等待。
         libssh2_session_set_blocking(newSession, 0)
 
+        applyRekeySafeMethodPreferences(newSession)
+
         let rc = try await runWithRetry(
             session: newSession,
             budget: Timeouts.handshake
@@ -685,6 +687,48 @@ actor SSHConnection {
             throw SSHError.handshakeFailed(libssh2Code: Int(rc))
         }
         AppLogger.ssh.info("SSH handshake completed")
+    }
+
+    /// Phase 11 P1 修复（第三轮整改）：仅排除 mlkem768x25519-sha256 等
+    /// post-quantum kex 路径（trace 取证定位其 rekey 时 ssh-ed25519
+    /// hostkey 签名验证间歇返回 0），**保留 libssh2 默认 kex 列表的全部
+    /// 其他安全算法**以维持与标准 OpenSSH 服务器的兼容性——含仅支持
+    /// `diffie-hellman-group14-sha256` 的服务器。
+    ///
+    /// 名单 = libssh2 默认 kex 列表减去
+    /// `mlkem768x25519-sha256` / `mlkem768nistp256-sha256` /
+    /// `mlkem1024nistp384-sha384` 三个。这是**排除**而非**覆盖**：
+    /// 任何支持 libssh2 默认 kex 之一的服务器都能协商成功，仅 mlkem
+    /// 系被排除（其非标准 OpenSSH 必选算法，curve25519/group14 等为
+    /// 标准基线，排除 mlkem 不破坏兼容）。
+    ///
+    /// Host Key **不限制**（保持 libssh2 默认协商），避免对仅支持
+    /// 某类 hostkey 的服务器造成兼容性破坏；rekey 的 ssh-ed25519
+    /// 签名验证在 curve25519 kex 路径下稳定（根因是 mlkem rekey 的
+    /// H 计算路径，非 ed25519 verify 本身——同 verify 函数首次
+    /// handshake 成功即证）。
+    ///
+    /// `method_pref rc=0` 只代表名单设置成功，不代表协商成功；本方法
+    /// 不依赖 rc 判断兼容性，名单本身保证覆盖 libssh2 默认安全算法。
+    private func applyRekeySafeMethodPreferences(_ session: OpaquePointer) {
+        let kexPrefs = "curve25519-sha256,curve25519-sha256@libssh.org," +
+            "ecdh-sha2-nistp256,ecdh-sha2-nistp384,ecdh-sha2-nistp521," +
+            "diffie-hellman-group-exchange-sha256," +
+            "diffie-hellman-group16-sha512,diffie-hellman-group18-sha512," +
+            "diffie-hellman-group14-sha256"
+        let rcKex = libssh2_session_method_pref(
+            session, Int32(LIBSSH2_METHOD_KEX), kexPrefs)
+        if rcKex != 0 {
+            AppLogger.ssh.info(
+                "kex method_pref rc=\(rcKex), using libssh2 defaults")
+        }
+    }
+
+    /// 协商的 KEX 算法名（回归测试断言排除 mlkem 路径）。
+    var negotiatedKexMethod: String? {
+        guard let session else { return nil }
+        return libssh2_session_methods(session, LIBSSH2_METHOD_KEX)
+            .map { String(cString: $0) }
     }
 
     /// 从 handshake 后的 session 中提取真实 Host Key 身份信息。
@@ -1218,7 +1262,21 @@ actor SSHConnection {
         }
     }
 
-    /// 按 libssh2 报告的阻塞方向等待 socket 就绪；超时抛出错误。
+    /// 等待 poll 单切片上限（Phase 11 testA 停滞根治）。
+    ///
+    /// 背景：EAGAIN 调用返回后到等待方 `poll()` 开始之间存在执行器跳转间隙；
+    /// 同一 actor 上串行调度到的其他任务（终端读循环等）可能在间隙内把已到达的
+    /// 数据消费进 libssh2 内部队列——此时 socket 已空，一次睡满预算的 poll 永不
+    /// 被唤醒（数据在队列中，poll 无法感知），操作白白耗光预算后失败。
+    /// 切片后：切片到期而总预算未耗尽即返回，调用方重试 libssh2 调用
+    /// （队列中已有数据时立即完成），最坏只多等一个切片。
+    private static let readinessPollMaximumSlice: TimeInterval = 0.25
+
+    /// 按 libssh2 报告的阻塞方向等待 socket 就绪；总预算耗尽才抛超时。
+    ///
+    /// poll 以短切片为上限（见 `readinessPollMaximumSlice`）：切片内就绪 → 返回；
+    /// 切片到期而总预算未耗尽 → 正常返回由调用方重试其 libssh2 调用（绝不把可完成
+    /// 的操作睡死在空 socket 上）；总预算耗尽 → `connectionTimeout`。
     ///
     /// `internal` 供同模块的 `SSHChannel.swift` 扩展复用（actor 隔离不变）。
     func waitForLibssh2Readiness(
@@ -1233,12 +1291,16 @@ actor SSHConnection {
 
         switch Self.libssh2WaitPlan(directions: directions, remaining: remaining) {
         case let .poll(events):
+            let slice = min(remaining, Self.readinessPollMaximumSlice)
             let ready = await pollSocket(
                 fd: socketFD,
                 events: events,
-                timeoutMs: Int32((remaining * 1000).rounded(.up))
+                timeoutMs: Int32((slice * 1000).rounded(.up))
             )
-            if !ready {
+            if ready {
+                return
+            }
+            guard deadline.timeIntervalSinceNow > 0 else {
                 throw SSHError.connectionTimeout
             }
 

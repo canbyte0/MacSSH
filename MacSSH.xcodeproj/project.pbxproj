@@ -73,6 +73,10 @@
 		M10000000000000000000001 /* SFTPTransferTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = M20000000000000000000001 /* SFTPTransferTests.swift */; };
 		N10000000000000000000001 /* TransferManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = N20000000000000000000001 /* TransferManagerTests.swift */; };
 		O10000000000000000000001 /* SFTPFileOpsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = O20000000000000000000001 /* SFTPFileOpsTests.swift */; };
+		P10000000000000000000001 /* TransferQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P20000000000000000000001 /* TransferQueueTests.swift */; };
+		Q10000000000000000000001 /* TransferQueueRealTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q20000000000000000000001 /* TransferQueueRealTests.swift */; };
+		R10000000000000000000001 /* SFTPLargeFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = R20000000000000000000001 /* SFTPLargeFileTests.swift */; };
+		S10000000000000000000001 /* TransferResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = S20000000000000000000001 /* TransferResourceTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -163,6 +167,10 @@
 		M20000000000000000000001 /* SFTPTransferTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPTransferTests.swift; sourceTree = "<group>"; };
 		N20000000000000000000001 /* TransferManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferManagerTests.swift; sourceTree = "<group>"; };
 		O20000000000000000000001 /* SFTPFileOpsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPFileOpsTests.swift; sourceTree = "<group>"; };
+		P20000000000000000000001 /* TransferQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferQueueTests.swift; sourceTree = "<group>"; };
+		Q20000000000000000000001 /* TransferQueueRealTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferQueueRealTests.swift; sourceTree = "<group>"; };
+		R20000000000000000000001 /* SFTPLargeFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPLargeFileTests.swift; sourceTree = "<group>"; };
+		S20000000000000000000001 /* TransferResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferResourceTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -322,6 +330,10 @@
 			M20000000000000000000001 /* SFTPTransferTests.swift */,
 			N20000000000000000000001 /* TransferManagerTests.swift */,
 			O20000000000000000000001 /* SFTPFileOpsTests.swift */,
+			P20000000000000000000001 /* TransferQueueTests.swift */,
+			Q20000000000000000000001 /* TransferQueueRealTests.swift */,
+			R20000000000000000000001 /* SFTPLargeFileTests.swift */,
+			S20000000000000000000001 /* TransferResourceTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -683,6 +695,10 @@
 				M10000000000000000000001 /* SFTPTransferTests.swift in Sources */,
 				N10000000000000000000001 /* TransferManagerTests.swift in Sources */,
 				O10000000000000000000001 /* SFTPFileOpsTests.swift in Sources */,
+				P10000000000000000000001 /* TransferQueueTests.swift in Sources */,
+				Q10000000000000000000001 /* TransferQueueRealTests.swift in Sources */,
+				R10000000000000000000001 /* SFTPLargeFileTests.swift in Sources */,
+				S10000000000000000000001 /* TransferResourceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

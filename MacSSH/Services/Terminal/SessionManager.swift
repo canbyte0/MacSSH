@@ -319,10 +319,11 @@ final class SessionManager {
 
             // 1. 旧 runtime 完整 teardown（屏障：等待旧打开 / 读取 / 列举 / 传输
             //    任务完全退出，不与新连接争用；P1）。
-            //    Phase 10：Reconnect 不自动恢复传输——先取消并等待清理，
-            //    旧传输绝不触碰新连接（generation 安全）。
+            //    Phase 11：Reconnect 只取消并等待运行中任务（旧传输绝不触碰
+            //    新连接，generation 安全）；排队的 pending 保留，重连成功后
+            //    由调度器经新连接继续（任务书十七 / 二十三）。
             if let transfers = self.transferManager, let sessionID = session?.id {
-                await transfers.cancelAndAwaitTransfers(forSession: sessionID)
+                await transfers.cancelAndAwaitRunningTransfersForReconnect(forSession: sessionID)
             }
             if let sftp = session?.sftpService {
                 await sftp.stopBarrier()
@@ -434,6 +435,10 @@ final class SessionManager {
                     // 认证成功后必须补创建，否则 Files 面板永远停在加载态。
                     session.ensureSFTPService()
                 }
+
+                // Phase 11：重连成功 → 通知传输队列补位（等待连接的排队任务
+                // 此时才有资格启动；绝不自动续传，任务书十七 / 二十三）。
+                self.transferManager?.notifySessionReconnected(sessionID: session.id)
             }
         }
 

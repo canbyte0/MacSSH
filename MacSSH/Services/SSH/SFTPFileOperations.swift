@@ -387,6 +387,11 @@ extension SSHConnection {
     /// 必须能完整关闭句柄；EAGAIN 按方向等待（有界预算），超时记日志
     /// 返回，不触碰已拆除的指针（每次循环顶部重新校验身份）。
     /// 计数在认领成功后递减（无论关闭结果），与打开计数配对。
+    ///
+    /// 串行门（Phase 11 testA 整改）：`libssh2_sftp_close_handle` 同样触碰
+    /// `LIBSSH2_SFTP` 子系统级共享状态，正常路径必须持门执行，绝不与任一
+    /// 在途操作交错；拆除路径已在持门状态下直接调用内部 `closeFileHandle`，
+    /// 不经本方法，认领幂等保证两路绝不重复关闭。
     func sftpCloseFileHandle(_ handle: SFTPFileHandle) async {
         guard claimFileHandleForClose(handle) else {
             return
@@ -396,6 +401,10 @@ extension SSHConnection {
         guard let session, let sftp = sftpSubsystem else {
             return
         }
+
+        await acquireSFTPOperationGate()
+        defer { releaseSFTPOperationGate() }
+
         await closeFileHandle(session: session, sftp: sftp, handle: handle.raw)
     }
 
@@ -409,7 +418,9 @@ extension SSHConnection {
         return true
     }
 
-    /// `libssh2_sftp_close_handle` 的 EAGAIN 安全执行（拆除与正常路径共用）。
+    /// `libssh2_sftp_close_handle` 的 EAGAIN 安全执行（拆除与正常路径共用；
+    /// 调用方必须已持串行门——正常路径经 `sftpCloseFileHandle` 进门，
+    /// 拆除路径持门直调）。
     ///
     /// 关闭计数按**成功关闭**递增（EAGAIN 重试不重复计数），
     /// 测试据此断言关闭数与打开数相等（无 double-close、无残留）。

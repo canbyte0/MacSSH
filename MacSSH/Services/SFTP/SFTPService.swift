@@ -70,8 +70,16 @@ final class SFTPService {
     /// 不存在时自动回落 `realpath(".")`）。
     private var lastKnownPath: String?
 
+    /// 所属 Session 标识（装配时写入；传输冲突防护查询用）。
+    private(set) var owningSessionID: UUID?
+
     init(connection: SSHConnection) {
         self.connection = connection
+    }
+
+    /// 装配所属 Session（`ensureSFTPService` / 测试装配调用）。
+    func bindOwningSession(_ sessionID: UUID) {
+        owningSessionID = sessionID
     }
 
     /// 是否位于根目录（Parent 按钮禁用）。
@@ -160,6 +168,11 @@ final class SFTPService {
         }
         let source = RemotePath.join(currentPath, child: entry.name)
         let destination = RemotePath.join(currentPath, child: name)
+        // Phase 11 冲突防护（任务书八十九）：源或目标正被活跃传输使用时拒绝。
+        if isInActiveTransfer(source) || isInActiveTransfer(destination) {
+            fileOperationNotice = "该文件正在传输中，操作被阻止。"
+            return
+        }
         runFileOperation { [connection] in
             try await connection.sftpRenameFile(from: source, to: destination)
         }
@@ -177,6 +190,11 @@ final class SFTPService {
             return
         }
         let path = RemotePath.join(currentPath, child: entry.name)
+        // Phase 11 冲突防护（任务书九十）：下载源正被活跃传输使用时拒绝。
+        if isInActiveTransfer(path) {
+            fileOperationNotice = "该文件正在传输中，操作被阻止。"
+            return
+        }
         runFileOperation { [connection] in
             try await connection.sftpUnlinkFile(path)
         }
@@ -228,6 +246,16 @@ final class SFTPService {
     }
 
     // MARK: - 私有
+
+    /// 传输冲突查询（任务书九十一：Mkdir 不冲突，不接入）：
+    /// 经 `TransferConflictGate` 查当前会话的活跃传输是否占用该路径；
+    /// 未装配（测试直连）时恒为不冲突。
+    private func isInActiveTransfer(_ path: String) -> Bool {
+        guard let owningSessionID else {
+            return false
+        }
+        return TransferConflictGate.isRemotePathInActiveTransfer?(owningSessionID, path) == true
+    }
 
     /// 名称校验（业务层防线；服务器另有自己的路径规则）：
     /// 去首尾空白后非空、不含 `/` 与 NUL、不是 `.` / `..`。
