@@ -46,3 +46,10 @@ ThirdParty/openssl/*.dist
 
 # LLVM profiling output (build/test artifacts, not source)
 *.profraw
+
+# Phase 12 release distribution artifacts (signed .app / .dmg / .xcarchive
+# never enter source control; only source, scripts, and docs are tracked).
+dist/
+release/
+*.dmg
+*.app

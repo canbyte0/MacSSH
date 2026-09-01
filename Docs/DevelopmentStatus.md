@@ -2734,3 +2734,258 @@ Phase 10 传输回归 14/14；Debug/Release clean build 0 warning、
 TransferListView 队列化 UI 预览图已提供（不含 Retry，属 2.0），
 待用户确认后实施。停止开发，等待正式复验；复验通过后下一阶段为计划书
 Phase 12，只有用户明确要求后才能开始。
+
+---
+
+## Phase 12：Final Release / Developer ID / Notarization / DMG
+
+> 本阶段按用户决定拆分为两个子阶段：
+> - **Phase 12A：Ad-hoc Release + DMG Packaging**（本地/内部测试）—— **PASS**
+> - **Phase 12B：Developer ID + Notarization**（正式分发）—— **Deferred**（待 Apple Developer Program）
+
+状态：**Phase 12A PASS — MacSSH-1.0.0.dmg 已生成（ad-hoc / 本地内部测试）；
+Phase 12B（Developer ID / Notarization）Deferred**
+
+开始日期：2026-09-01
+
+Git baseline：`fbb9b29`（Phase 11 已最终验收并通过 Git 提交）
+
+### 阶段目标
+
+不新增产品功能。把已通过 Phase 0～11 验收的 MacSSH 转换为可分发的
+macOS Release。原计划 Developer ID 签名 + Apple Notarization + Stapling +
+Gatekeeper 全链路；因 Apple Developer Program 暂不申请，Phase 12A 先完成
+ad-hoc Release + DMG 打包用于本地安装/备份/内部测试，Phase 12B 在获得
+Apple Developer Program 后继续（保留全部基础设施脚本）。
+
+### 已完成（不依赖 Apple 分发凭据）
+
+**Release Configuration Audit（计划书四 / 五 / 六 / 七 / 九十一）**
+
+- Bundle Identifier：`com.macssh.MacSSH`（正式稳定，非 placeholder，保持）。
+- Marketing Version：`0.1.0` → **`1.0.0`**（Debug/Release 两配置均改）。
+- Build Number：`1`（保持，符合首版 Build 1）。
+- App Display Name：`MacSSH`（保持，无 Phase/Dev/Test 后缀）。
+- Minimum macOS：`14.0`（保持已验证基线，不随意降低）。
+- Architecture：`arm64`（首发 Apple Silicon，不临时增加 Intel/Universal）。
+- `ENABLE_APP_SANDBOX = NO`（非 Sandbox Developer ID 分发，符合计划书十七）。
+- `ENABLE_HARDENED_RUNTIME = YES`（Debug/Release 均开启）。
+
+**Entitlements Audit（计划书十一~十六）**
+
+- 新建 `MacSSH/MacSSH.entitlements`：最小 entitlements（空 dict），无 Sandbox、
+  无 JIT / allow-unsigned-executable-memory / disable-executable-page-protection /
+  disable-library-validation / debugger 等例外。静态 libssh2 + OpenSSL 不要求
+  关闭 Library Validation（计划书十六）。
+- Release 配置新增 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS = NO`，阻止
+  `get-task-allow` 自动注入。
+- Release 配置新增 `CODE_SIGN_ENTITLEMENTS = "MacSSH/MacSSH.entitlements"`。
+- 实测 ad-hoc preflight Release `.app`：`codesign --display --entitlements` 输出
+  `<dict></dict>`，**`get-task-allow` ABSENT（PASS）**。
+- Debug 配置保持 base entitlement 注入（`get-task-allow` 保留，调试未破坏，
+  计划书十三）。实测 Debug `.app` 仍含 `get-task-allow`。
+
+**Debug UI / Phase 状态 UI / print 泄漏清理（计划书八~十）**
+
+- 全项目扫描用户可见 UI 文本：无 `Phase 8/9/10/11` 开发阶段标识显示
+  （代码注释中的 Phase 引用非 UI 文本，保留，无 churn）。`MacSSHApp.swift`
+  命令均为正式产品功能（Close / New Local Terminal / Show Tab）。
+- 全项目扫描 `print(` / `NSLog` / `os_log.*password|passphrase|privateKey`：
+  **0 处**（无密码/私钥/终端内容/文件缓冲打印）。
+- 无 Debug button / Test SSH button / Fake error button / test fixture UI /
+  developer-only menu / Phase test controls。
+
+**Build 验证（计划书一零八）**
+
+- `Scripts/build-app.sh`：Debug/Release arm64 clean build 均
+  **BUILD SUCCEEDED**，项目代码 **0 warning**。
+- ad-hoc `codesign --verify --strict`：Debug/Release 均满足 Designated
+  Requirement（preflight，Developer ID 实际签名见 archive/export）。
+
+**Runtime Linkage / Bundle 审计（计划书三十二 / 七十五~七十六）**
+
+- `otool -L` Release 可执行体：仅 macOS 系统库 / Framework + `/usr/lib/swift`
+  运行时。无 `/opt/homebrew`、`/usr/local`、动态 `libssh2/libssl/libcrypto`。
+- `file`：`Mach-O 64-bit executable arm64`。
+- Bundle 内容审计（maxdepth 4）：仅 `Info.plist` / `MacOS/MacSSH` / `PkgInfo` /
+  `_CodeSignature/CodeResources`，无 Frameworks/dylib/helper/XPC/plugin
+  （单二进制干净 bundle，无需 `--deep`）。
+- 无测试代码 / test keys / fixture / authorized_keys / 10GB 文件 / test sshd
+  config / XCTest bundle / `.profraw` / coverage 进入 Release `.app`。
+- Release `.app` 体积 **13 MB**（与 Phase 11 基线持平）。
+
+**依赖身份最终确认（计划书三十三）**
+
+- libssh2：`1.11.2_DEV` @ `be937743a85c4064a6399cee39e606672a401069`
+- OpenSSL：`3.5.8`
+- Phase 5.1 依赖身份断言（`DependencyIdentityTests`）继续通过，未被修改。
+
+**XCTest 回归（计划书四十~四十一）**
+
+- 纯单元测试（不依赖 sshd）：4 套件全绿 —— `HostEditorValidationTests` /
+  `DependencyIdentityTests` / `KnownHostServiceTests` / `CredentialServiceTests`
+  共 29 executed、**28 pass + 1 intended skip（testConfiguredProductionPasswordState）、0 failure**。
+- SSH/SFTP/Transfer 集成测试（12 套件：SSHConnectionTests / SFTPServiceTests /
+  RemoteTerminalTests / SessionManagerTests / SFTPFileOpsTests / SFTPTransferTests /
+  TransferManagerTests / TransferQueueTests / TransferQueueRealTests /
+  SFTPLargeFileTests / TransferResourceTests / SFTPSessionTests）需本机
+  **远程登录（sshd）开启 + Keychain 凭据**（`Scripts/run-ssh-tests.sh` harness，
+  需用户输入本机账户密码授权），当前 sshd 未开启，**环境门控未执行**。
+- Phase 12 未修改任何核心 runtime（Transfer Core / Scheduler / SFTP Core），
+  Phase 11 全量回归基线（191 项 / 189 pass / 1 环境归因 / 1 skip，四轮整改全绿）
+  继续有效；集成套件需用户开启 sshd 后由 `run-ssh-tests.sh` 复跑。
+
+**Release Scripts（计划书八十一~九十）**
+
+- 新建 `Scripts/ExportOptions.plist`（Developer ID 导出选项模板）。
+- 新建 `Scripts/build-release.sh`：clean → `xcodebuild archive`（generic
+  macOS arm64）→ Developer ID export；凭据前置检查（无证书则 fail-fast
+  退出码 2，不伪造）；Team ID 经 `MACSSH_DEVELOPMENT_TEAM` 环境变量传入，
+  不写私钥。
+- 新建 `Scripts/package-dmg.sh`：staging（`.app` + Applications 符号链接）→
+  `hdiutil` UDBZ → Developer ID 签名 DMG；无证书时仅 ad-hoc preflight。
+- 新建 `Scripts/notarize.sh`：`notarytool submit --keychain-profile
+  "MacSSH-notary" --wait` → Accepted 校验 → 取 notary log（含 warning 计数）→
+  `stapler staple`；profile 缺失则提示人工 `store-credentials`，不问密码；
+  禁止 `|| true` 吞失败。
+- 新建 `Scripts/verify-release.sh`：基于最终产物做 fail-fast 全量校验
+  （codesign strict / Developer ID authority / secure Timestamp / Hardened
+  Runtime runtime flag / get-task-allow absent / runtime linkage / arm64 /
+  bundle version / stapler validate / spctl assess）；输出 PASS/FAIL 计数。
+- 全部脚本 `set -euo pipefail`，`bash -n` 语法检查通过，已置可执行位。
+
+**安全扫描（计划书一百零四~一百零六）**
+
+- `TODO SECURITY` / `FIXME SECURITY`：**0 处**。
+- 入库私钥 / 证书 / 凭据文件（`.p12/.p8/.pem/.key`、`id_ed25519/id_rsa`、
+  `authorized_keys`）：**无**（`git ls-files` 核实）。
+- Release 脚本明文凭据：**无**（仅引用 profile 名 `MacSSH-notary` 与 Team ID
+  变量）。
+- `git diff --check`：空白干净 PASS。
+- Git status 仅含 Phase 12 预期改动（`.gitignore` / `project.pbxproj` /
+  `MacSSH.entitlements` / 4 脚本 / `ExportOptions.plist`），无
+  `.app/.dmg/.xcarchive/.p12/.p8/notary log/fixture/.partial`。
+- `.gitignore` 新增 `dist/` `release/`，禁止发行产物入库。
+
+### Phase 12A 已完成（ad-hoc Release + DMG）
+
+**Release 构建**
+
+- `DEVELOPER_DIR=/Applications/Xcode26.app/Contents/Developer bash Scripts/build-app.sh`：
+  Debug/Release arm64 clean build 均 **BUILD SUCCEEDED**，项目代码 **0 warning**。
+- ad-hoc `codesign --verify --strict`：Debug/Release 均满足 Designated Requirement。
+
+**Entitlements / Hardened Runtime / Runtime Linkage（真实最终产物验证）**
+
+- Release ad-hoc `.app` entitlements：`<dict></dict>`（空），**`get-task-allow` ABSENT**。
+- Release ad-hoc `.app` Hardened Runtime：**保留**（`CodeDirectory flags=0x10002(adhoc,runtime)`，
+  `Signature=adhoc`）——ad-hoc 签名未剥离 runtime flag（与 Debug 不同；Release
+  的 `CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO` 使 runtime 保留）。
+- Debug `.app`：`get-task-allow=true`（调试未破坏）。
+- `otool -L` Release 可执行体：仅 macOS 系统库/Framework + `/usr/lib/swift`，
+  无 `/opt/homebrew`、`/usr/local`、动态 `libssh2/libssl/libcrypto`。
+- 依赖身份未改：libssh2 `1.11.2_DEV` @ `be937743...`，OpenSSL `3.5.8`；
+  `DependencyIdentityTests` 通过。
+
+**DMG 打包**
+
+- `Scripts/package-dmg.sh` 改造为双模式（ad-hoc 一等模式 / developer-id 可选）。
+- `Scripts/verify-release.sh` 改造为双模式自动探测（ad-hoc 模式跳过 Developer ID
+  Authority / secure Timestamp / stapler / Gatekeeper Notarized；保留
+  codesign strict / Hardened Runtime runtime flag / get-task-allow absent /
+  runtime linkage / arm64 / bundle version / app launch / DMG 内容校验）。
+- 生成 **`dist/MacSSH-1.0.0.dmg`**：UDBZ（zlib level 9），volume name `MacSSH`，
+  ad-hoc 签名，含 `MacSSH.app` + `Applications -> /Applications` 符号链接。
+- `verify-release.sh`（ad-hoc 模式）：**11 PASS / 0 FAIL**。
+- DMG SHA256：`8aa9082b3a6ff3d5400f3a302115813c9580e3b57f20479937cfe34292217365`。
+- 体积：App 13 MB（与 Phase 11 基线持平）、DMG 4.4 MB。
+
+**安装 / 启动 / Idle 采样**
+
+- 从 DMG 复制 `MacSSH.app` 到 `/Applications`：成功（admin 组可写）。
+- 从 `/Applications/MacSSH.app` 启动：进程稳定存活 30s+，`codesign --verify --strict` PASS。
+- Idle CPU（瞬时，~30s idle via `top -pid`）：**0.0%**。
+- Idle memory（phys_footprint via `top`）：**~73 MB**（与 Phase 11 基线 73–75 MB 一致；
+  早期 `ps rss` 的 ~126–148 MB 是含共享/缓存页的不同指标，非回归）。
+
+**功能 Smoke（计划书十五节，诚实报告）**
+
+- App 从 `/Applications` 启动：**PASS**（进程启动并稳定 idle）。
+- Local Terminal / Host Manager / SSH / Remote Terminal / SFTP / Upload /
+  Download / Transfer Queue：**not tested**（需手动 SwiftUI UI 交互；本机 sshd
+  未开启，`Scripts/run-ssh-tests.sh` 集成套件未跑）。Phase 12A 未修改任何
+  核心 runtime（Transfer Core / Scheduler / SFTP Core），Phase 11 全量回归
+  基线（191 项 / 189 pass / 1 环境归因 / 1 skip，四轮整改全绿）继续有效。
+  本阶段纯单元测试 4 套件：28 pass + 1 intended skip / 0 failure。
+
+**Gatekeeper 预期（计划书十八~十九、二十一节）**
+
+- 未要求 `source=Notarized Developer ID`（ad-hoc 模式）。
+- 未执行 `sudo spctl --master-disable`，未在脚本中 `xattr -d com.apple.quarantine`。
+- 本机生成的 DMG 无 quarantine 属性，故本地安装测试不模拟互联网下载的
+  Gatekeeper 路径（区分 Local DMG install test vs Internet-downloaded
+  quarantine test；当前仅完成前者）。
+
+**Release Manifest**：`Docs/Release-1.0.0.md` 已生成，记录 Product/Version/Build/
+Architecture/Minimum macOS/Signing/Notarization/Entitlements/Runtime Linkage/
+Dependencies/Artifacts/DMG SHA256/Verification/Runtime Behavior/Functional Smoke/
+Known Limitations/Deferred Phase 12B。
+
+### Phase 12B Deferred（Developer ID / Notarization）
+
+因 Apple Developer Program 暂不申请，以下保留为 deferred，相关基础设施脚本
+**未删除**，待获得 Apple Developer Program 后继续：
+
+1. Developer ID Application 签名（archive/export）—— `Scripts/build-release.sh` + `ExportOptions.plist`
+2. Secure Timestamp —— `verify-release.sh developer-id` 模式
+3. codesign strict verify（Developer ID 身份）
+4. stapler staple / validate —— `Scripts/notarize.sh`
+5. Gatekeeper assessment（`source=Notarized Developer ID`）
+6. DMG Developer ID 签名 + secure timestamp —— `Scripts/package-dmg.sh developer-id`
+7. Notarization submit / Accepted —— `Scripts/notarize.sh`
+8. Developer ID App 真实启动 + Keychain 凭据持久化回归（不同签名身份影响
+   Keychain 行为，需 Developer ID 签名后的 `.app`）
+9. Clean-machine 安装测试（需第二台干净 Mac）
+
+### 用户恢复 Phase 12B 时需完成的人工步骤
+
+1. **申请并安装 Developer ID Application 证书**（Apple Developer Program）。
+2. **配置 notarytool Keychain profile**（Terminal 交互，不要在 Codex 内）：
+   `xcrun notarytool store-credentials "MacSSH-notary"`。
+3. （可选）开启本机远程登录跑集成测试回归：
+   `bash Scripts/run-ssh-tests.sh`（需 Keychain 输入本机账户密码）。
+4. 执行 `MACSSH_DEVELOPMENT_TEAM=<TEAM_ID> bash Scripts/build-release.sh`
+   → `bash Scripts/package-dmg.sh dist/export/MacSSH.app developer-id`
+   → `bash Scripts/notarize.sh dist/MacSSH-1.0.0.dmg`
+   → `bash Scripts/verify-release.sh dist/MacSSH-1.0.0.dmg developer-id`。
+
+### 最终已知限制（计划书一百一十二~一百一十三）
+
+- **Apple Silicon arm64 only**（首发不含 Intel/Universal，需另立 Phase 重新
+  构建 libssh2/OpenSSL 多架构并完整重新验收）。
+- **This build is ad-hoc signed and not notarized.** macOS Gatekeeper may warn
+  or block it when downloaded from the Internet（互联网下载的 quarantine 路径
+  会触发；本地 DMG 无 quarantine 不复现）。
+- Phase 10 已知：物理断线期间，若无法继续与服务器通信，远端
+  transfer-owned `.partial` 文件可能残留；App 明确提示残留文件名，不偷偷
+  重连删除（Phase 12A 未修改 Transfer Core，此限制继续有效）。
+- 非阻塞技术债（计划书四十二）：KEX restricted-sshd 自动化 fixture 未固化
+  （Phase 11 手工 restricted sshd 流程保留），不修改 SSH Security Baseline。
+- Clean-machine 安装测试：未执行（仅一台开发 Mac；本地 DMG 安装测试已做）。
+
+### 最终 Release 状态
+
+```
+Phase 12A PASS
+
+MacSSH-1.0.0.dmg generated successfully.
+
+Distribution mode:
+Ad-hoc / Local / Internal Testing
+
+Developer ID / Notarization:
+Deferred (Phase 12B)
+```
+
+停止开发，等待最终验收。不得开始新功能，不得自行 Git Commit，不得伪造
+Developer ID。Phase 12B 由用户获得 Apple Developer Program 后再继续。

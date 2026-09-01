@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- MacSSH 1.0 Distribution Entitlements (Phase 12) -->
+	<!-- Non-Sandbox Developer ID app; Hardened Runtime enabled via build setting. -->
+	<!-- Intentionally empty: no get-task-allow (CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO
+	     in Release), no Sandbox, no JIT / unsigned-memory / library-validation
+	     exceptions (static libssh2 + OpenSSL do not require them). -->
+</dict>
+</plist>
