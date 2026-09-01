@@ -89,7 +89,9 @@ private struct TerminalTabItemView: View {
         .background(
             isActive
                 ? AppTheme.accentColor.opacity(0.10)
-                : Color.clear
+                : Color.clear,
+            // 活动底纹只能覆盖 Tab 自身，不能延伸到窗口标题栏安全区。
+            ignoresSafeAreaEdges: []
         )
         .contentShape(Rectangle())
         .onTapGesture(perform: activate)
