@@ -49,6 +49,17 @@ final class TransferManager {
 
     weak var sessionManager: SessionManager?
 
+    /// 由 AppState 装配的语言 provider：调度器与拒绝路径据此按当前 App Locale
+    /// 生成用户文案；不持有 AppState，避免引用环。语言切换只更新文案，
+    /// 绝不重建传输任务或 Session。
+    @ObservationIgnored
+    var localeProvider: (@MainActor () -> Locale)?
+
+    /// 调度与拒绝路径统一入口；装配前 fallback 到 zh-Hans，绝不 Crash。
+    private var schedulingLocale: Locale {
+        MainActor.assumeIsolated { localeProvider?() ?? AppLanguage.defaultLanguage.locale }
+    }
+
     /// 调度防重入闩（MainActor 串行内仍上锁：事件密集时避免重复扫描启动）。
     @ObservationIgnored
     private var isScheduling = false
@@ -78,8 +89,10 @@ final class TransferManager {
         tasks.count { $0.sessionID == sessionID && !$0.state.isTerminal }
     }
 
-    /// 底部状态栏汇总："2 传输中 · 3 等待"（无任务时返回 nil）。
-    var queueSummary: String? {
+    /// 底部状态栏汇总（按当前 App Locale 生成）：例如
+    /// "2 传输中 · 3 等待"（zh-Hans）/ "2 Transferring · 3 Waiting"（en）；
+    /// 无任务时返回 nil。
+    func queueSummary(locale: Locale) -> String? {
         let running = activeTasks.count
         let waiting = tasks.count { $0.state == .pending }
         guard running + waiting > 0 else {
@@ -87,10 +100,20 @@ final class TransferManager {
         }
         var parts: [String] = []
         if running > 0 {
-            parts.append("\(running) 传输中")
+            parts.append(L10n.format(
+                "transfer.queue.running",
+                defaultValue: "%lld Transferring",
+                locale: locale,
+                arguments: Int64(running)
+            ))
         }
         if waiting > 0 {
-            parts.append("\(waiting) 等待")
+            parts.append(L10n.format(
+                "transfer.queue.waiting",
+                defaultValue: "%lld Waiting",
+                locale: locale,
+                arguments: Int64(waiting)
+            ))
         }
         return parts.joined(separator: " · ")
     }
@@ -109,7 +132,11 @@ final class TransferManager {
         localURL: URL
     ) -> (task: TransferTask?, rejection: String?) {
         if tasks.count >= Self.maximumQueueLength {
-            return (nil, "传输队列已满，请等待部分任务完成。")
+            return (nil, L10n.string(
+                "error.transfer.queue_full",
+                defaultValue: "The transfer queue is full. Please wait for some tasks to finish.",
+                locale: schedulingLocale
+            ))
         }
 
         var isDirectory: ObjCBool = false
@@ -118,19 +145,31 @@ final class TransferManager {
             isDirectory: &isDirectory
         )
         guard exists, !isDirectory.boolValue else {
-            return (nil, "只能上传普通文件。")
+            return (nil, L10n.string(
+                "error.transfer.upload_regular_file_only",
+                defaultValue: "Only regular files can be uploaded.",
+                locale: schedulingLocale
+            ))
         }
 
         guard session.kind == .remoteSSH, !session.isClosed,
               let sftp = session.sftpService
         else {
-            return (nil, "当前会话不可用。")
+            return (nil, L10n.string(
+                "error.transfer.session_unavailable",
+                defaultValue: "The current session is unavailable.",
+                locale: schedulingLocale
+            ))
         }
 
         let remoteDirectory = sftp.currentPath
         let remoteTarget = RemotePath.join(remoteDirectory, child: localURL.lastPathComponent)
         if hasUploadConflict(sessionID: session.id, remoteTarget: remoteTarget) {
-            return (nil, "队列中已有相同远端目标的上传任务。")
+            return (nil, L10n.string(
+                "error.transfer.upload_conflict",
+                defaultValue: "A task uploading to the same remote destination is already in the queue.",
+                locale: schedulingLocale
+            ))
         }
 
         let task = TransferTask(
@@ -153,16 +192,32 @@ final class TransferManager {
         destinationURL: URL
     ) -> (task: TransferTask?, rejection: String?) {
         if tasks.count >= Self.maximumQueueLength {
-            return (nil, "传输队列已满，请等待部分任务完成。")
+            return (nil, L10n.string(
+                "error.transfer.queue_full",
+                defaultValue: "The transfer queue is full. Please wait for some tasks to finish.",
+                locale: schedulingLocale
+            ))
         }
         guard entry.kind == .regularFile else {
-            return (nil, "仅支持下载普通文件。")
+            return (nil, L10n.string(
+                "error.transfer.download_regular_file_only",
+                defaultValue: "Only regular files can be downloaded.",
+                locale: schedulingLocale
+            ))
         }
         guard session.kind == .remoteSSH, !session.isClosed else {
-            return (nil, "当前会话不可用。")
+            return (nil, L10n.string(
+                "error.transfer.session_unavailable",
+                defaultValue: "The current session is unavailable.",
+                locale: schedulingLocale
+            ))
         }
         if hasDownloadConflict(localDestination: destinationURL) {
-            return (nil, "队列中已有相同本地目标文件的传输任务。")
+            return (nil, L10n.string(
+                "error.transfer.download_conflict",
+                defaultValue: "A task downloading to the same local destination is already in the queue.",
+                locale: schedulingLocale
+            ))
         }
 
         let remotePath = RemotePath.join(session.sftpService?.currentPath ?? "", child: entry.name)
@@ -237,7 +292,11 @@ final class TransferManager {
                 // Session 已被移除（关闭屏障会先取消任务；此为防御路径，
                 // 不 fatalError，安全收尾，任务书九十九）。
                 task.markStarted()
-                task.markFailed(message: "会话不存在。")
+                task.markFailed(message: L10n.string(
+                    "error.transfer.session_missing",
+                    defaultValue: "The session no longer exists.",
+                    locale: schedulingLocale
+                ))
                 AppLogger.app.error("Scheduler found a task without session")
                 continue
             case .disconnected:
@@ -333,7 +392,7 @@ final class TransferManager {
         else {
             // 调度与断开竞态：启动瞬间连接已不可用——如实失败（任务书十七：
             // 绝不自动续传 / 自动重试，Retry 属计划书 2.0 路线）。
-            task.markFailed(message: TransferError.connectionLost(remoteResidue: nil).message)
+            task.markFailed(message: TransferError.connectionLost(remoteResidue: nil).message(locale: schedulingLocale))
             AppLogger.app.error("Transfer start aborted: session unavailable")
             scheduleNext()
             return
@@ -373,9 +432,9 @@ final class TransferManager {
                 task.markCompleted()
                 AppLogger.app.info("File transfer completed")
             } catch let error as TransferError {
-                Self.finish(task, with: error)
+                Self.finish(task, with: error, locale: self?.schedulingLocale ?? AppLanguage.defaultLanguage.locale)
             } catch {
-                Self.finish(task, with: TransferError(sftpError: (error as? SFTPError) ?? .connectionLost))
+                Self.finish(task, with: TransferError(sftpError: (error as? SFTPError) ?? .connectionLost), locale: self?.schedulingLocale ?? AppLanguage.defaultLanguage.locale)
             }
 
             // 任务到达终态（槽位释放）→ 事件驱动补位（任务书二十~二十二）。
@@ -396,7 +455,7 @@ final class TransferManager {
         guard FileManager.default.fileExists(atPath: task.localURL.path, isDirectory: &isDirectory),
               !isDirectory.boolValue
         else {
-            throw TransferError.generic("源文件不可用。")
+            throw TransferError.localReadFailed
         }
         let attributes = try FileManager.default.attributesOfItem(atPath: task.localURL.path)
         let size = (attributes[.size] as? NSNumber)?.int64Value ?? 0
@@ -432,8 +491,11 @@ final class TransferManager {
 
         let stat = try await connection.sftpStatFile(task.remotePath)
         guard stat.isRegularFile else {
-            throw TransferError.generic("仅支持下载普通文件。")
+            throw TransferError.remoteFileMissing
         }
+        // 注意：远端非普通文件已被业务预检在入队时拒绝，stat.isRegularFile
+        // 仅为防御路径（入队后远端可能变更为目录 / 符号链接）。失败语义统一
+        // 走 remoteFileMissing，提示用户重新选择下载条目。
         if let sizeBytes = stat.sizeBytes {
             task.setTotalBytes(sizeBytes)
         }
@@ -470,13 +532,14 @@ final class TransferManager {
     }
 
     /// 终态写入：区分取消 / 失败（取消是用户语义，不写失败文案）。
-    private static func finish(_ task: TransferTask, with error: TransferError) {
+    /// 失败消息按当前 App Locale 生成，不缓存英文 — 语言切换后立即生效。
+    private static func finish(_ task: TransferTask, with error: TransferError, locale: Locale) {
         if error == .cancelled {
             task.markCancelled()
             AppLogger.app.info("File transfer cancelled")
         } else {
-            task.markFailed(message: error.message)
-            AppLogger.app.error("File transfer failed: \(error.message)")
+            task.markFailed(message: error.message(locale: locale))
+            AppLogger.app.error("File transfer failed: \(error.message(locale: locale))")
         }
     }
 

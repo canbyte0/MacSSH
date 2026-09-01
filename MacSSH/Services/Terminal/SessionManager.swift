@@ -68,8 +68,8 @@ final class SessionManager {
         var activeSessionCount = 0
         /// 连接 / 认证 / 打开中的会话数。
         var busySessionCount = 0
-        /// 进行中文案（取最近一个 busy 会话）。
-        var busyStatusText: String?
+        /// 最近一个 busy 会话的语义状态；View 按当前 Locale 生成文案。
+        var busyDisplayState: TerminalSessionDisplayState?
 
         var isEmpty: Bool {
             activeSessionCount == 0 && busySessionCount == 0
@@ -84,7 +84,7 @@ final class SessionManager {
                 summary.activeSessionCount += 1
             case .starting, .connecting, .authenticating, .awaitingHostTrust, .opening:
                 summary.busySessionCount += 1
-                summary.busyStatusText = session.statusText
+                summary.busyDisplayState = session.displayState
             case .exited, .disconnected, .failed, .closing:
                 break
             }
@@ -103,7 +103,7 @@ final class SessionManager {
         let session = ManagedTerminalSession(
             localService: service,
             baseTitle: "Local",
-            title: nextTitle(base: "Local")
+            titleCounter: nextTitleCounter(base: "Local")
         )
         sessions.append(session)
         activeSessionID = session.id
@@ -123,7 +123,7 @@ final class SessionManager {
             hostname: host.hostname,
             port: host.port,
             baseTitle: host.name,
-            title: nextTitle(base: host.name)
+            titleCounter: nextTitleCounter(base: host.name)
         )
         sessions.append(session)
         activeSessionID = session.id
@@ -458,10 +458,11 @@ final class SessionManager {
 
     /// 同基准标题的第 2 个起编号：Local / Local 2 / Aliyun / Aliyun 2。
     /// 创建时分配并保持稳定（不随其他 Tab 关闭重排或回收）。
-    private func nextTitle(base: String) -> String {
+    /// 计数 key 使用语言无关的技术名，语言切换不影响编号连续性。
+    private func nextTitleCounter(base: String) -> Int {
         let counter = titleCounters[base, default: 0] + 1
         titleCounters[base] = counter
-        return counter == 1 ? base : "\(base) \(counter)"
+        return counter
     }
 }
 

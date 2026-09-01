@@ -33,14 +33,14 @@ struct TerminalTabBar: View {
                         .frame(width: AppTheme.Layout.tabBarHeight, height: AppTheme.Layout.tabBarHeight)
                 }
                 .buttonStyle(.plain)
-                .help("New Local Terminal")
-                .accessibilityLabel("New Local Terminal")
+                .help("terminal.new_local")
+                .accessibilityLabel("terminal.new_local")
                 .accessibilityIdentifier("tabBar.newSession")
             }
         }
         .frame(height: AppTheme.Layout.tabBarHeight)
         .background(.bar)
-        .accessibilityLabel("Terminal Tabs")
+        .accessibilityLabel("accessibility.terminal_tabs")
         .accessibilityIdentifier("tabBar")
     }
 
@@ -52,6 +52,8 @@ struct TerminalTabBar: View {
 
 /// 单个 Tab：标题 + 连接状态指示（Remote）+ 关闭按钮。
 private struct TerminalTabItemView: View {
+    @Environment(\.locale) private var locale
+
     let session: ManagedTerminalSession
     let isActive: Bool
     let activate: () -> Void
@@ -62,7 +64,7 @@ private struct TerminalTabItemView: View {
             HStack(spacing: AppTheme.Spacing.compact) {
                 statusIndicator
 
-                Text(session.title)
+                Text(verbatim: session.displayTitle(locale: locale))
                     .lineLimit(1)
                     .truncationMode(.tail)
 
@@ -74,8 +76,10 @@ private struct TerminalTabItemView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close Tab")
-                .accessibilityLabel("Close \(session.title) Tab")
+                .help("terminal.close_tab")
+                .accessibilityLabel(
+                    Text("terminal.close_named_tab \(session.displayTitle(locale: locale))")
+                )
                 .accessibilityIdentifier("tabBar.close")
             }
             .padding(.horizontal, AppTheme.Spacing.regular)
@@ -97,7 +101,7 @@ private struct TerminalTabItemView: View {
         .onTapGesture(perform: activate)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
-        .accessibilityValue(isActive ? "Selected" : "")
+        .accessibilityValue(isActive ? Text("accessibility.selected") : Text(verbatim: ""))
         .accessibilityIdentifier("tabBar.\(session.title)")
     }
 
@@ -141,8 +145,12 @@ private struct TerminalTabItemView: View {
         }
     }
 
-    private var accessibilityLabel: String {
-        let kindText = session.kind == .local ? "Local Terminal" : "SSH Terminal"
-        return "\(session.title) \(kindText)"
+    private var accessibilityLabel: Text {
+        switch session.kind {
+        case .local:
+            Text("terminal.local_tab_accessibility \(session.displayTitle(locale: locale))")
+        case .remoteSSH:
+            Text("terminal.ssh_tab_accessibility \(session.displayTitle(locale: locale))")
+        }
     }
 }

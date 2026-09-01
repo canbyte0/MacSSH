@@ -21,6 +21,20 @@ import Observation
 @MainActor
 @Observable
 final class SFTPService {
+    /// 文件操作错误的语义类型；UI 按当前 Locale 解析，切换语言不会重建 SFTP。
+    private enum FileOperationIssue {
+        case invalidName
+        case staleTarget
+        case activeTransfer
+        case regularFileOnly
+        case permissionDenied
+        case targetMissing
+        case connectionLost
+        case cancelled
+        case rejected
+        case unavailable
+    }
+
     /// 浏览状态。
     enum Phase: Equatable {
         /// 尚未启动（等待用户打开 Files 面板，或 Reconnect 后待重新启动）。
@@ -65,6 +79,9 @@ final class SFTPService {
 
     /// 最近一次文件操作的错误提示（UI 弹窗观察；置空即收起）。
     var fileOperationNotice: String?
+
+    /// 与兼容旧测试的中文 `fileOperationNotice` 并存，供 UI 动态本地化。
+    private var fileOperationIssue: FileOperationIssue?
 
     /// Reconnect 路径恢复：最近成功提交的路径（可选恢复，
     /// 不存在时自动回落 `realpath(".")`）。
@@ -159,18 +176,18 @@ final class SFTPService {
     /// `flags = 0` 的 posix-rename 语义保证目标名已存在时失败，绝不覆盖。
     func renameEntry(_ entry: SFTPFileEntry, to newName: String) {
         guard let name = sanitizedEntryName(newName) else {
-            fileOperationNotice = "名称无效：不能为空、包含 / 或为 . / ..。"
+            setFileOperationIssue(.invalidName)
             return
         }
         guard entries.contains(where: { $0.id == entry.id }) else {
-            fileOperationNotice = "目标已不在当前目录，请刷新后重试。"
+            setFileOperationIssue(.staleTarget)
             return
         }
         let source = RemotePath.join(currentPath, child: entry.name)
         let destination = RemotePath.join(currentPath, child: name)
         // Phase 11 冲突防护（任务书八十九）：源或目标正被活跃传输使用时拒绝。
         if isInActiveTransfer(source) || isInActiveTransfer(destination) {
-            fileOperationNotice = "该文件正在传输中，操作被阻止。"
+            setFileOperationIssue(.activeTransfer)
             return
         }
         runFileOperation { [connection] in
@@ -182,17 +199,17 @@ final class SFTPService {
     /// Phase 10 范围——避免递归风险，业务层拦截）。
     func deleteEntry(_ entry: SFTPFileEntry) {
         guard entry.kind == .regularFile else {
-            fileOperationNotice = "仅支持删除普通文件。"
+            setFileOperationIssue(.regularFileOnly)
             return
         }
         guard entries.contains(where: { $0.id == entry.id }) else {
-            fileOperationNotice = "目标已不在当前目录，请刷新后重试。"
+            setFileOperationIssue(.staleTarget)
             return
         }
         let path = RemotePath.join(currentPath, child: entry.name)
         // Phase 11 冲突防护（任务书九十）：下载源正被活跃传输使用时拒绝。
         if isInActiveTransfer(path) {
-            fileOperationNotice = "该文件正在传输中，操作被阻止。"
+            setFileOperationIssue(.activeTransfer)
             return
         }
         runFileOperation { [connection] in
@@ -203,7 +220,7 @@ final class SFTPService {
     /// 在当前目录新建子目录（权限 0755；同名已存在由服务器拒绝）。
     func createDirectory(named rawName: String) {
         guard let name = sanitizedEntryName(rawName) else {
-            fileOperationNotice = "名称无效：不能为空、包含 / 或为 . / ..。"
+            setFileOperationIssue(.invalidName)
             return
         }
         let path = RemotePath.join(currentPath, child: name)
@@ -288,7 +305,7 @@ final class SFTPService {
                    !(error is CancellationError),
                    (error as? SFTPError) != .operationCancelled
                 {
-                    self.fileOperationNotice = Self.fileOperationMessage(for: error)
+                    self.setFileOperationIssue(Self.fileOperationIssue(for: error))
                 }
             }
             // 无论成败 / 是否已拆除，忙碌标志都在任务末尾复位——
@@ -297,22 +314,71 @@ final class SFTPService {
         }
     }
 
-    /// 文件操作错误的用户可见中文文案（不回显原始协议码）。
-    private static func fileOperationMessage(for error: Error) -> String {
+    /// 把底层错误映射为稳定业务语义，不把协议码直接暴露给用户。
+    private static func fileOperationIssue(for error: Error) -> FileOperationIssue {
         let sftp = (error as? SFTPError) ?? .connectionLost
         switch sftp {
         case .permissionDenied:
-            return "权限不足，无法完成操作。"
+            return .permissionDenied
         case .noSuchPath:
-            return "目标不存在，请刷新后重试。"
+            return .targetMissing
         case .connectionLost:
-            return "SSH 连接已断开。"
+            return .connectionLost
         case .operationCancelled:
-            return "操作已取消。"
+            return .cancelled
         case .protocolFailure:
-            return "操作失败：目标名称可能已存在，或服务器拒绝。"
+            return .rejected
         case .subsystemInitFailed:
-            return "SFTP 会话不可用。"
+            return .unavailable
+        }
+    }
+
+    /// 同步兼容文案与语义；旧测试继续验证中文，新 UI 可即时切换语言。
+    private func setFileOperationIssue(_ issue: FileOperationIssue) {
+        fileOperationIssue = issue
+        fileOperationNotice = localizedFileOperationIssue(
+            issue,
+            locale: Locale(identifier: "zh-Hans")
+        )
+    }
+
+    /// UI 按根层 Locale 即时解析，不更改路径、连接或在途操作。
+    func localizedFileOperationNotice(locale: Locale) -> String? {
+        guard fileOperationNotice != nil else {
+            return nil
+        }
+        guard let fileOperationIssue else {
+            return fileOperationNotice
+        }
+        return localizedFileOperationIssue(fileOperationIssue, locale: locale)
+    }
+
+    /// 集中定义文件操作错误 key，避免各 View 自行判断语言。
+    private func localizedFileOperationIssue(
+        _ issue: FileOperationIssue,
+        locale: Locale
+    ) -> String {
+        switch issue {
+        case .invalidName:
+            L10n.string("error.sftp.invalid_name", defaultValue: "The name cannot be empty, contain /, or be . or ...", locale: locale)
+        case .staleTarget:
+            L10n.string("error.sftp.stale_target", defaultValue: "The item is no longer in this folder. Refresh and try again.", locale: locale)
+        case .activeTransfer:
+            L10n.string("error.sftp.active_transfer", defaultValue: "This file is being transferred, so the operation was blocked.", locale: locale)
+        case .regularFileOnly:
+            L10n.string("error.sftp.regular_file_only", defaultValue: "Only regular files can be deleted.", locale: locale)
+        case .permissionDenied:
+            L10n.string("error.sftp.operation_permission", defaultValue: "You do not have permission to complete this operation.", locale: locale)
+        case .targetMissing:
+            L10n.string("error.sftp.target_missing", defaultValue: "The item does not exist. Refresh and try again.", locale: locale)
+        case .connectionLost:
+            L10n.string("error.sftp.operation_connection_lost", defaultValue: "The SSH connection was lost.", locale: locale)
+        case .cancelled:
+            L10n.string("error.operation_cancelled", defaultValue: "The operation was cancelled.", locale: locale)
+        case .rejected:
+            L10n.string("error.sftp.operation_rejected", defaultValue: "The operation failed. The destination name may already exist, or the server refused it.", locale: locale)
+        case .unavailable:
+            L10n.string("error.sftp.unavailable", defaultValue: "The SFTP session is unavailable.", locale: locale)
         }
     }
 

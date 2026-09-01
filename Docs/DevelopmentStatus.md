@@ -2989,3 +2989,209 @@ Deferred (Phase 12B)
 
 停止开发，等待最终验收。不得开始新功能，不得自行 Git Commit，不得伪造
 Developer ID。Phase 12B 由用户获得 Apple Developer Program 后再继续。
+
+---
+
+# MacSSH 1.1
+
+## Phase 1：Localization / 中英文语言切换
+
+状态：**Phase 1 PASS — 中英文双语本地化已完成，等待最终验收**
+
+开始日期：2026-09-01
+
+Git branch：`feature/macssh-1.1-localization`（从 `v1.0.0` 稳定基线创建，
+不修改 1.0.0 历史；本阶段不 commit、不 merge main，等待验收）
+
+### 范围
+
+本阶段严格只实现 Localization 基础架构 + 现有 UI 文案国际化：
+- `zh-Hans` / `en` 双语
+- Settings Language Picker
+- 默认简体中文（不跟随系统语言）
+- 动态语言切换（不需重启 App）
+- 用户选择持久化（UserDefaults）
+- 所有现有用户可见 UI 文案迁移
+- Alert / Sheet / Context Menu / Toolbar / Accessibility 本地化
+- 测试 + Debug/Release 回归
+
+未实现（明确排除）：韩语 / 日语 / 德语 / 法语 / Follow System / 自动检测 /
+语言下载 / 在线翻译 / AI 翻译 / SwiftData 持久化 / 重新打 1.0.0 DMG /
+版本号 bump 到 1.1.0。
+
+### 支持语言
+
+- 简体中文（`zh-Hans`）
+- English（`en`）
+
+### 默认语言
+
+**简体中文**（`zh-Hans`）。无论 macOS 系统语言是什么，MacSSH 首次启动
+（无保存偏好）始终先显示简体中文。不实现"跟随系统语言"。
+
+### 持久化
+
+- 存储：`UserDefaults`（key 集中定义为 `AppPreferenceKey.language = "appLanguage"`）
+- 不使用 SwiftData / Keychain（语言偏好非 Secret）
+- 合法值：`"zh-Hans"` / `"en"`（与 `AppLanguage.rawValue` 一致）
+- 非法 / 损坏值安全 fallback 为 `zh-Hans`，绝不 Crash
+- 退出 → 重新启动后偏好保留
+
+### Runtime Locale 注入
+
+- `AppState.language` 是全局唯一语言状态源（`@Observable`）
+- 修改后立即持久化（`didSet { save(to:) }`）
+- `RootView` 通过 `.environment(\.locale, appState.language.locale)` 注入
+  SwiftUI View hierarchy，SwiftUI 自动按 Locale 解析 String Catalog
+- 非 SwiftUI 场景（模型状态 / 错误映射 / AppKit API）使用 `L10n.string(format:)`
+  并显式传入 `Locale`
+- `TransferManager.localeProvider` 由 `AppState` 装配，调度器 / 拒绝路径
+  据此按当前 Locale 生成用户文案
+
+### String Catalog
+
+- 资源：`MacSSH/Resources/Localizable.xcstrings`（Apple 原生 String Catalog）
+- 生成：`Scripts/gen_localizable.py`（315 个 key，每个 key 同时提供
+  zh-Hans + en 完整翻译，`extractionState = manual_uploaded`）
+- 编译产物：`MacSSH.app/Contents/Resources/zh-Hans.lproj/Localizable.strings`
+  与 `MacSSH.app/Contents/Resources/en.lproj/Localizable.strings`
+- 不使用 `ChineseStrings.swift` / `EnglishStrings.swift` 字典方案
+- 不使用大量三元表达式（`language == .chinese ? "设置" : "Settings"`）
+
+### Localization key 命名规则
+
+- 点分层级：`<domain>.<item>[.<sub>]`
+- 通用动作复用：`action.cancel` / `action.save` / `action.delete` / `action.close`
+  / `action.reconnect` / `action.retry` / `action.upload` / `action.download` 等
+- 上下文不同允许独立 key（如 `session.close.title` vs `action.close`）
+- 不使用中文句子作为 key
+- 不在 View 散落 `"zh"` / `"zh_CN"` / `"en-US"` 字面量
+
+### Settings Language Picker
+
+- 位于 Settings → General 区
+- Picker 固定显示语言自身名称（"简体中文" / "English"），不随 App Locale 切换
+  ——误切 English 后仍能看到"简体中文"入口
+- 选择后立即生效，整个 App UI 立即切换
+
+### 已本地化表面
+
+- **Terminal**：Tab 标题（Local → "本地终端" / "Local Terminal"）、
+  连接状态文案、Reconnect / Close / Retry、空工作区、连接失败占位、
+  Pane Picker（"终端" / "文件"）
+- **Hosts**：列表标题、搜索、收藏 / 全部、分组、新建 / 编辑 / 删除主机、
+  Host Editor 表单（名称 / 主机名 / 端口 / 用户名 / 认证 / 分组 / 收藏 / 备注）、
+  密码 / 私钥 / Passphrase 区段、保存失败提示、上下文菜单
+- **Settings**：通用 / 终端 / 外观 / SSH 区、Known Hosts 管理、Forget 确认、
+  Language Picker
+- **Known Hosts**：标题、Forget、Trust Once / Trust Always、Host Key Changed 警告
+  （含二次危险确认）、Fingerprint 展示
+- **Remote Terminal**：Connecting / Connected / Disconnected / Connection Lost /
+  Remote Shell Exited / Reconnect / Close Session
+- **SFTP Browser**：Files / Name / Size / Modified / Permissions / Refresh / Parent /
+  Empty Folder / Copy Path / Upload / Download / Rename / Delete / New Folder、
+  连接丢失 / 重连提示
+- **Transfer Manager**：Transfers / Upload / Download / Waiting / Waiting for
+  connection / Preparing / Transferring / Cancelling / Completed / Failed /
+  Cancelled / Clear Finished、队列汇总（"%lld 个进行中 · %lld 个等待中"）
+- **Alert / Confirmation**：删除主机 / 删除分组 / 关闭 SSH 会话 / 断开主机 /
+  传输进行中关闭 / 文件删除确认（含文件名插值）/ 重命名 / 新建文件夹
+- **Context Menu**：Hosts / Files / Transfers 全部右键菜单
+- **Toolbar / Tooltip**：新建会话按钮 + help tooltip
+- **Accessibility**：主侧栏 / 主机侧栏 / 终端标签栏 / 工作区 / 主机信任对话框 /
+  主机密钥警告对话框 / Selected 状态、Tab accessibility label（含插值）、
+  终端 NSView accessibilityLabel（在 SwiftUI 层覆盖 Service 层英文默认值）
+
+### 明确不翻译的内容
+
+- Shell 命令 / Terminal 输出 / 远程 Shell prompt（如 `cd /tmp` / `ls` / `pwd`）
+- 路径（`/home/user` / `/tmp` / `~/.ssh`）
+- 用户数据（Host Name / Hostname / Username / 备注 / Group 名称 / 文件名 /
+  目录名 / Transfer 文件名 / SSH Banner）
+- 协议 / 技术名（SSH / SFTP / TCP / PTY / RSA / ED25519 / ECDSA / SHA256 /
+  OpenSSL / libssh2 / KeepAlive）——可放在中英文句子中但不翻译
+- 产品名 MacSSH（始终 MacSSH，不做 localized app display name）
+- 版本号（MacSSH 1.0.0）
+- 测试 marker（如 `PHASE10_UPLOAD_TERMINAL_OK`）
+- OSLog category（SSH / SFTP / Transfer / Persistence）
+
+### Session 保留（语言切换不重建 Runtime）
+
+**最高风险点**（任务书十八）：语言改变只能更新 UI。
+
+设计与验证：
+- `AppState` 是 `@Observable`，`language` 是普通 `var`，修改只触发 SwiftUI
+  View hierarchy 刷新，绝不重建 `AppState` / `SessionManager` /
+  `TransferManager` / `SSHService`
+- `SessionManager.sessions` 数组与 `activeSessionID` 不变
+- Local Shell / PTY / SwiftTerm View 实例不变
+- Remote SSHConnection / Remote Shell / SFTP Session 不变
+- Transfer Queue / TransferTask ID / 进度不变
+- Tab 技术名（`title`）与编号（`titleCounter`）语言无关；展示名
+  （`displayTitle(locale:)`）按 Locale 动态生成
+- 错误文案通过 `TransferError.message(locale:)` / `SSHError.localizedDescription(locale:)`
+  / `KeychainError.localizedDescription(locale:)` 等按 Locale 即时解析，不缓存
+- 测试 `testRapidLanguageSwitchingNeverRebuildsRuntime`：连续 20 次切换后
+  Manager / Service / Session / Shell 引用全部保持
+
+### 测试
+
+新增 2 个测试文件（共 22 项，0 失败）：
+
+**`Tests/SSH/AppLanguageTests.swift`（11 项）**
+- 默认语言为 zh-Hans
+- locale identifier 稳定
+- English / 简体中文偏好持久化往返
+- 非法 / 缺失偏好安全 fallback
+- Picker 显示名语言自身
+- CaseIterable 顺序稳定
+- 连续 20 次快速切换不重建 Runtime
+- Locale provider 跟随语言变化
+- displayTitle 本地化而技术名稳定
+
+**`Tests/SSH/LocalizationTests.swift`（11 项）**
+- 关键 UI key 在 zh-Hans / en 均非空
+- 关键 UI key 不泄漏 raw key 且 zh-Hans != en
+- 动态字符串插值（队列汇总 / 删除确认文件名）
+- 错误文案本地化（SSH / SFTP / Transfer / Keychain / Remote）
+- Host Key Changed 警告翻译强度（含"更改" / "changed" / "替换" / "replace"）
+- TransferError / TransferTask 状态文案按 Locale 切换
+- AuthenticationType 使用 localization display label（不暴露 rawValue）
+- String Catalog 全量完整性（每个 key 在 zh-Hans / en 均非空、不等于 raw key）
+- String Catalog 无 obsolete key（每个 key 都在源码中被引用）
+
+**已有测试回归**：213 项全量通过（114 skip 为环境依赖的 SSH 集成测试），
+0 失败。其中 `TransferQueueTests` / `TransferQueueRealTests` 的
+`stateDisplay` / `queueSummary` 断言更新为新 `locale:` API + zh-Hans 文案。
+
+### 构建结果
+
+- Debug arm64 clean build：**BUILD SUCCEEDED**，0 warning
+- Release arm64 clean build：**BUILD SUCCEEDED**，0 warning
+- `Scripts/build-app.sh` 标准构建脚本通过
+
+### Release 安全性未变化
+
+- Release entitlements：空（与 Phase 12A 一致，无 `get-task-allow`）
+- Hardened Runtime：`flags=0x10002(adhoc,runtime)`（与 Phase 12A 一致）
+- SSH Security / KnownHost / Keychain / libssh2 / OpenSSL：未修改
+- 依赖基线：`DependencyIdentityTests` 6 项通过
+  - libssh2：1.11.2_DEV @ be937743a85c4064a6399cee39e606672a401069
+  - OpenSSL：3.5.8
+
+### 已知问题
+
+- `SSHConnectionPhase.statusText`（Phase 5 遗留的英文硬编码）未被 UI
+  使用（UI 全部走 `ManagedTerminalSession.statusText(locale:)`），保留为
+  诊断用途，不在本 Phase 范围删除。
+- `SessionManagerTests.testV_FiveIdleLocalSessionsNoBusyLoop` 是 Phase 8
+  性能基线测试（30 秒空闲 CPU 增量 ≤ 1 秒），受 host 负载影响偶发 flaky
+  （Phase 11 已知"1 环境归因"）。本阶段未修改该测试，单独运行通过。
+
+### git diff --check
+
+```
+PASS
+```
+
+停止开发，等待最终验收。不得开始 Phase 2，不得自行 Git Commit，不得 merge main。

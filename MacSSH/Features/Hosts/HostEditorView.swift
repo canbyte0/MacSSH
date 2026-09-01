@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct HostEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.locale) private var locale
 
     /// nil 表示创建；非 nil 表示编辑现有持久化对象。
     private let host: Host?
@@ -53,7 +54,11 @@ struct HostEditorView: View {
     var body: some View {
         VStack(spacing: AppTheme.Spacing.none) {
             HStack {
-                Text(host == nil ? "Add Host" : "Edit Host")
+                Text(
+                    host == nil
+                        ? LocalizedStringKey("hosts.add")
+                        : LocalizedStringKey("hosts.edit")
+                )
                     .font(.title2.bold())
 
                 Spacer()
@@ -63,25 +68,25 @@ struct HostEditorView: View {
             Divider()
 
             Form {
-                Section("Host") {
-                    TextField("Name", text: $name)
+                Section("host_editor.section.host") {
+                    TextField("host_editor.name", text: $name)
                         .accessibilityIdentifier("hostEditor.name")
 
-                    TextField("Hostname", text: $hostname)
+                    TextField("host_editor.hostname", text: $hostname)
                         .textContentType(.URL)
                         .accessibilityIdentifier("hostEditor.hostname")
 
-                    TextField("Port", text: $port)
+                    TextField("host_editor.port", text: $port)
                         .accessibilityIdentifier("hostEditor.port")
 
-                    TextField("Username", text: $username)
+                    TextField("host_editor.username", text: $username)
                         .accessibilityIdentifier("hostEditor.username")
                 }
 
-                Section("Authentication") {
-                    Picker("Authentication", selection: $authenticationType) {
+                Section("host_editor.section.authentication") {
+                    Picker("host_editor.authentication", selection: $authenticationType) {
                         ForEach(AuthenticationType.allCases) { type in
-                            Text(type.title).tag(type)
+                            Text(type.titleKey).tag(type)
                         }
                     }
                     .accessibilityIdentifier("hostEditor.authentication")
@@ -93,9 +98,9 @@ struct HostEditorView: View {
                     }
                 }
 
-                Section("Organization") {
-                    Picker("Group", selection: $selectedGroupID) {
-                        Text("None").tag(UUID?.none)
+                Section("host_editor.section.organization") {
+                    Picker("host_editor.group", selection: $selectedGroupID) {
+                        Text("common.none").tag(UUID?.none)
 
                         ForEach(groups) { group in
                             Text(group.name).tag(Optional(group.id))
@@ -103,11 +108,11 @@ struct HostEditorView: View {
                     }
                     .accessibilityIdentifier("hostEditor.group")
 
-                    Toggle("Favorite", isOn: $favorite)
+                    Toggle("hosts.favorite", isOn: $favorite)
                         .accessibilityIdentifier("hostEditor.favorite")
                 }
 
-                Section("Notes") {
+                Section("host_editor.notes") {
                     TextEditor(text: $notes)
                         .font(.body)
                         .frame(minHeight: 80)
@@ -129,7 +134,7 @@ struct HostEditorView: View {
             HStack {
                 Spacer()
 
-                Button("Cancel", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
@@ -141,7 +146,7 @@ struct HostEditorView: View {
                         ProgressView()
                             .controlSize(.small)
                     } else {
-                        Text("Save")
+                        Text("action.save")
                     }
                 }
                 .keyboardShortcut(.defaultAction)
@@ -151,10 +156,14 @@ struct HostEditorView: View {
             .padding(AppTheme.Spacing.regular)
         }
         .frame(width: 560, height: 660)
-        .alert("Unable to Save Host", isPresented: saveErrorBinding) {
-            Button("OK", role: .cancel) {}
+        .alert("host_editor.save_failed_title", isPresented: saveErrorBinding) {
+            Button("action.ok", role: .cancel) {}
         } message: {
-            Text(saveErrorMessage ?? "The Host could not be saved.")
+            Text(verbatim: saveErrorMessage ?? L10n.string(
+                "host_editor.save_failed_message",
+                defaultValue: "The Host could not be saved.",
+                locale: locale
+            ))
         }
     }
 
@@ -162,7 +171,20 @@ struct HostEditorView: View {
 
     @ViewBuilder
     private var passwordSection: some View {
-        SecureField(host == nil ? "Password" : "New Password", text: $password)
+        SecureField(
+            host == nil
+                ? L10n.string(
+                    "host_editor.password",
+                    defaultValue: "Password",
+                    locale: locale
+                )
+                : L10n.string(
+                    "host_editor.new_password",
+                    defaultValue: "New Password",
+                    locale: locale
+                ),
+            text: $password
+        )
             .textContentType(.password)
             .accessibilityIdentifier("hostEditor.password")
             .onChange(of: password) { _, newValue in
@@ -173,29 +195,29 @@ struct HostEditorView: View {
 
         if host?.credentialID != nil {
             if removeStoredPassword {
-                Label("Password will be removed when you save.", systemImage: "trash")
+                Label("host_editor.password_remove_on_save", systemImage: "trash")
                     .font(.footnote)
                     .foregroundStyle(.red)
             } else {
                 Label(
-                    "Password stored securely in macOS Keychain",
+                    "host_editor.password_stored",
                     systemImage: "checkmark.circle.fill"
                 )
                 .font(.footnote)
                 .foregroundStyle(.green)
 
-                Text("Leave blank to keep the saved password.")
+                Text("host_editor.password_keep_hint")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Button("Remove Saved Password", role: .destructive) {
+                Button("host_editor.remove_saved_password", role: .destructive) {
                     password = ""
                     removeStoredPassword = true
                 }
                 .accessibilityIdentifier("hostEditor.removePassword")
             }
         } else {
-            Text("Password will be stored securely in macOS Keychain.")
+            Text("host_editor.password_storage_hint")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -218,32 +240,49 @@ struct HostEditorView: View {
         HStack {
             Text(Self.hasValidPrivateKeyPath(privateKeyPath)
                 ? (privateKeyPath ?? "")
-                : "No file chosen")
+                : L10n.string(
+                    "host_editor.no_file_chosen",
+                    defaultValue: "No file chosen",
+                    locale: locale
+                ))
                 .font(.system(.callout, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .foregroundStyle(Self.hasValidPrivateKeyPath(privateKeyPath) ? .primary : .secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
 
-            Button("Choose…") {
+            Button("action.choose") {
                 choosePrivateKeyFile()
             }
             .accessibilityIdentifier("hostEditor.choosePrivateKey")
 
             if Self.hasValidPrivateKeyPath(privateKeyPath) {
-                Button("Clear") {
+                Button("action.clear") {
                     privateKeyPath = nil
                 }
                 .accessibilityIdentifier("hostEditor.clearPrivateKey")
             }
         }
 
-        Text("OpenSSH private key file (RSA / ECDSA / ED25519). Passphrase is optional.")
+        Text("host_editor.private_key_hint")
             .font(.footnote)
             .foregroundStyle(.secondary)
 
         // Passphrase（Secret；与 Password 使用不同 Keychain service）。
-        SecureField(host?.privateKeyID == nil ? "Passphrase" : "New Passphrase", text: $passphrase)
+        SecureField(
+            host?.privateKeyID == nil
+                ? L10n.string(
+                    "host_editor.passphrase",
+                    defaultValue: "Passphrase",
+                    locale: locale
+                )
+                : L10n.string(
+                    "host_editor.new_passphrase",
+                    defaultValue: "New Passphrase",
+                    locale: locale
+                ),
+            text: $passphrase
+        )
             .textContentType(.password)
             .accessibilityIdentifier("hostEditor.passphrase")
             .onChange(of: passphrase) { _, newValue in
@@ -254,29 +293,29 @@ struct HostEditorView: View {
 
         if host?.privateKeyID != nil {
             if removeStoredPassphrase {
-                Label("Passphrase will be removed when you save.", systemImage: "trash")
+                Label("host_editor.passphrase_remove_on_save", systemImage: "trash")
                     .font(.footnote)
                     .foregroundStyle(.red)
             } else {
                 Label(
-                    "Passphrase stored securely in macOS Keychain",
+                    "host_editor.passphrase_stored",
                     systemImage: "checkmark.circle.fill"
                 )
                 .font(.footnote)
                 .foregroundStyle(.green)
 
-                Text("Leave blank to keep the saved passphrase. No-passphrase keys need none.")
+                Text("host_editor.passphrase_keep_hint")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
 
-                Button("Remove Saved Passphrase", role: .destructive) {
+                Button("host_editor.remove_saved_passphrase", role: .destructive) {
                     passphrase = ""
                     removeStoredPassphrase = true
                 }
                 .accessibilityIdentifier("hostEditor.removePassphrase")
             }
         } else {
-            Text("Leave blank for a key without a passphrase.")
+            Text("host_editor.passphrase_optional_hint")
                 .font(.footnote)
                 .foregroundStyle(.secondary)
         }
@@ -285,7 +324,11 @@ struct HostEditorView: View {
     /// 原生 NSOpenPanel 选择私钥文件（仅文件；不使用 Web 文件选择器）。
     private func choosePrivateKeyFile() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Private Key File"
+        panel.title = L10n.string(
+            "host_editor.choose_private_key_title",
+            defaultValue: "Choose Private Key File",
+            locale: locale
+        )
         panel.allowsMultipleSelection = false
         panel.canChooseDirectories = false
         panel.canChooseFiles = true
@@ -308,22 +351,38 @@ struct HostEditorView: View {
         let trimmedUsername = username.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
-            validationMessage = "Name is required."
+            validationMessage = L10n.string(
+                "validation.name_required",
+                defaultValue: "Name is required.",
+                locale: locale
+            )
             return
         }
 
         guard !trimmedHostname.isEmpty else {
-            validationMessage = "Hostname is required."
+            validationMessage = L10n.string(
+                "validation.hostname_required",
+                defaultValue: "Hostname is required.",
+                locale: locale
+            )
             return
         }
 
         guard !trimmedUsername.isEmpty else {
-            validationMessage = "Username is required."
+            validationMessage = L10n.string(
+                "validation.username_required",
+                defaultValue: "Username is required.",
+                locale: locale
+            )
             return
         }
 
         guard let validatedPort = Int(port), (1...65_535).contains(validatedPort) else {
-            validationMessage = "Port must be between 1 and 65535."
+            validationMessage = L10n.string(
+                "validation.port_range",
+                defaultValue: "Port must be between 1 and 65535.",
+                locale: locale
+            )
             return
         }
 
@@ -332,7 +391,11 @@ struct HostEditorView: View {
         if authenticationType == .privateKey,
            !Self.hasValidPrivateKeyPath(privateKeyPath)
         {
-            validationMessage = "Choose a private key file."
+            validationMessage = L10n.string(
+                "validation.private_key_required",
+                defaultValue: "Choose a private key file.",
+                locale: locale
+            )
             return
         }
 
@@ -418,7 +481,11 @@ struct HostEditorView: View {
             let rollbackSucceeded = passwordRestored && passphraseRestored
             saveErrorMessage = rollbackSucceeded
                 ? userFacingMessage(for: error)
-                : "The Host was not saved and macOS Keychain cleanup also failed. Please retry."
+                : L10n.string(
+                    "host_editor.keychain_cleanup_failed",
+                    defaultValue: "The Host was not saved and macOS Keychain cleanup also failed. Please retry.",
+                    locale: locale
+                )
             AppLogger.persistence.error("Failed to save Host metadata")
         }
 
@@ -558,9 +625,13 @@ struct HostEditorView: View {
 
     private func userFacingMessage(for error: Error) -> String {
         if let keychainError = error as? KeychainError {
-            return keychainError.localizedDescription
+            return keychainError.localizedDescription(locale: locale)
         }
-        return "SwiftData could not save the Host. Please try again."
+        return L10n.string(
+            "host_editor.swiftdata_save_failed",
+            defaultValue: "SwiftData could not save the Host. Please try again.",
+            locale: locale
+        )
     }
 
     /// 将可空错误文本桥接成 SwiftUI Alert 的布尔绑定。

@@ -76,7 +76,7 @@ actor SFTPTransferService {
         do {
             localFile = try FileHandle(forReadingFrom: localURL)
         } catch {
-            throw TransferError.generic("无法读取本地文件。")
+            throw TransferError.localReadFailed
         }
         defer { try? localFile.close() }
 
@@ -106,7 +106,7 @@ actor SFTPTransferService {
                 do {
                     chunk = try localFile.read(upToCount: Self.chunkSize) ?? Data()
                 } catch {
-                    throw TransferError.generic("读取本地文件失败。")
+                    throw TransferError.localReadFailed
                 }
                 if chunk.isEmpty {
                     break // EOF
@@ -141,7 +141,7 @@ actor SFTPTransferService {
                 AppLogger.app.error(
                     "Upload byte verification failed (local \(transferred), remote \(stat.sizeBytes.map(String.init) ?? "nil"))"
                 )
-                throw TransferError.generic("传输校验失败，远端字节数不一致。")
+                throw TransferError.verificationFailed
             }
 
             if await isCancelled() {
@@ -205,7 +205,7 @@ actor SFTPTransferService {
                 throw await mapOperationError(error, cancellation: isCancelled)
             }
             guard written > 0 else {
-                throw TransferError.generic("服务器写入异常。")
+                throw TransferError.remoteWriteFailed
             }
             offset += written
             pending.removeFirst(written)
@@ -251,7 +251,7 @@ actor SFTPTransferService {
         } catch {
             try? FileManager.default.removeItem(at: tempURL)
             await connection.sftpCloseFileHandle(handle)
-            throw TransferError.generic("无法写入本地临时文件。")
+            throw TransferError.localWriteFailed
         }
         defer { try? localFile.close() }
 
@@ -287,7 +287,7 @@ actor SFTPTransferService {
                 do {
                     try localFile.write(contentsOf: Data(buffer[0..<readCount]))
                 } catch {
-                    throw TransferError.generic("写入本地文件失败。")
+                    throw TransferError.localWriteFailed
                 }
 
                 transferred += Int64(readCount)
@@ -310,7 +310,7 @@ actor SFTPTransferService {
                 AppLogger.app.error(
                     "Download byte verification failed (expected \(expectedBytes), received \(transferred))"
                 )
-                throw TransferError.generic("传输校验失败，字节数不一致。")
+                throw TransferError.verificationFailed
             }
 
             if await isCancelled() {
@@ -326,10 +326,10 @@ actor SFTPTransferService {
                     withItemAt: tempURL
                 )
             } catch {
-                throw TransferError.generic("替换目标文件失败。")
+                throw TransferError.publishFailed
             }
             guard FileManager.default.fileExists(atPath: localDestination.path) else {
-                throw TransferError.generic("替换目标文件失败。")
+                throw TransferError.publishFailed
             }
         } catch let error as TransferError {
             streamFailure = error

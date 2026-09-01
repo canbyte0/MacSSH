@@ -92,7 +92,7 @@ final class TransferQueueRealTests: XCTestCase {
         for (index, task) in tasks.enumerated() {
             XCTAssertEqual(task.state, .completed, "任务 \(index + 1) 必须完成（\(task.failureMessage ?? "")）")
         }
-        XCTAssertNil(transferManager.queueSummary, "全部终态后汇总必须为空")
+        XCTAssertNil(transferManager.queueSummary(locale: AppLanguage.defaultLanguage.locale), "全部终态后汇总必须为空")
         XCTAssertFalse(hasResidualUploadTempFiles(in: uploadDir))
     }
 
@@ -339,7 +339,7 @@ final class TransferQueueRealTests: XCTestCase {
         }
         XCTAssertTrue(heldPending, "断线后排队任务必须保持等待")
         XCTAssertTrue(waiting.awaitingConnection, "必须展示等待连接")
-        XCTAssertEqual(waiting.stateDisplay, "等待连接")
+        XCTAssertEqual(waiting.stateDisplay(locale: AppLanguage.defaultLanguage.locale), "等待连接")
 
         // 重连前提（任务书 23）：仅终态且无在途连接任务才允许手动 Reconnect，
         // 否则 `reconnectSession` 的合法 guard 直接返回。断线拆卸收敛到

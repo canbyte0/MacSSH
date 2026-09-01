@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// Phase 1 Sidebar 支持的顶层页面。
 enum AppSection: String, CaseIterable, Identifiable, Hashable, Sendable {
@@ -10,17 +11,31 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     /// 让枚举值直接作为 SwiftUI List 的稳定标识。
     var id: Self { self }
 
-    /// Sidebar 和状态栏展示的用户可读名称。
-    var title: String {
+    /// Sidebar 使用的稳定 String Catalog key。
+    var titleKey: LocalizedStringKey {
         switch self {
         case .terminal:
-            "Local Terminal"
+            "sidebar.local_terminal"
         case .hosts:
-            "Hosts"
+            "sidebar.hosts"
         case .transfers:
-            "Transfers"
+            "sidebar.transfers"
         case .settings:
-            "Settings"
+            "sidebar.settings"
+        }
+    }
+
+    /// 状态栏需要普通 String，按当前 App Locale 动态解析。
+    func localizedTitle(locale: Locale) -> String {
+        switch self {
+        case .terminal:
+            L10n.string("sidebar.local_terminal", defaultValue: "Local Terminal", locale: locale)
+        case .hosts:
+            L10n.string("sidebar.hosts", defaultValue: "Hosts", locale: locale)
+        case .transfers:
+            L10n.string("sidebar.transfers", defaultValue: "Transfers", locale: locale)
+        case .settings:
+            L10n.string("sidebar.settings", defaultValue: "Settings", locale: locale)
         }
     }
 

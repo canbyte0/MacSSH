@@ -39,23 +39,28 @@ enum RemoteTerminalError: Error, Equatable, Sendable {
 extension RemoteTerminalError: LocalizedError {
     /// UI 展示的用户可读信息；不回显任何 Secret 或原始状态码。
     var errorDescription: String? {
+        localizedDescription(locale: Locale(identifier: "en"))
+    }
+
+    /// Remote Terminal 的用户文案按当前 App Locale 生成。
+    func localizedDescription(locale: Locale) -> String {
         switch self {
         case .channelOpenFailed:
-            "The server refused to open a terminal channel."
+            L10n.string("error.remote.channel_open", defaultValue: "The server refused to open a terminal channel.", locale: locale)
         case .ptyRequestFailed:
-            "The server refused to allocate a pseudo-terminal."
+            L10n.string("error.remote.pty", defaultValue: "The server refused to allocate a pseudo-terminal.", locale: locale)
         case .shellRequestFailed:
-            "The server refused to start a remote shell."
+            L10n.string("error.remote.shell", defaultValue: "The server refused to start a remote shell.", locale: locale)
         case .channelReadFailed:
-            "The terminal connection was interrupted while receiving output."
+            L10n.string("error.remote.read", defaultValue: "The terminal connection was interrupted while receiving output.", locale: locale)
         case .channelWriteFailed:
-            "Input could not be delivered to the remote terminal."
+            L10n.string("error.remote.write", defaultValue: "Input could not be delivered to the remote terminal.", locale: locale)
         case .channelClosed:
-            "The remote terminal channel is closed."
+            L10n.string("error.remote.closed", defaultValue: "The remote terminal channel is closed.", locale: locale)
         case .connectionLost:
-            "The SSH connection was lost."
+            L10n.string("error.ssh.connection_lost", defaultValue: "The SSH connection was lost.", locale: locale)
         case .resizeFailed:
-            "The remote terminal could not be resized."
+            L10n.string("error.remote.resize", defaultValue: "The remote terminal could not be resized.", locale: locale)
         }
     }
 }

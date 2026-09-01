@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 
 /// 只记录认证方式；Password 与 Passphrase 始终由 Keychain 独立保存。
 enum AuthenticationType: String, Codable, CaseIterable, Identifiable, Sendable {
@@ -8,13 +9,13 @@ enum AuthenticationType: String, Codable, CaseIterable, Identifiable, Sendable {
     /// 让认证方式可直接用于 SwiftUI Picker。
     var id: Self { self }
 
-    /// Host 编辑表单展示的用户可读名称。
-    var title: String {
+    /// Host 编辑表单展示的稳定 String Catalog key。
+    var titleKey: LocalizedStringKey {
         switch self {
         case .password:
-            "Password"
+            "authentication.password"
         case .privateKey:
-            "Private Key"
+            "authentication.private_key"
         }
     }
 }

@@ -24,21 +24,21 @@ struct HostTrustDialogView: View {
                     .font(.system(size: 34))
                     .foregroundStyle(.orange)
 
-                Text("无法验证服务器身份")
+                Text("host_trust.title")
                     .font(.title2.bold())
             }
             .padding(.top, AppTheme.Spacing.regular)
 
             GroupBox {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.regular) {
-                    fieldRow(label: "Host", value: info.hostname)
-                    fieldRow(label: "Port", value: String(info.port))
+                    fieldRow(label: "host.field.host", value: info.hostname)
+                    fieldRow(label: "host.field.port", value: String(info.port))
 
                     if let hostKey = info.hostKey {
-                        fieldRow(label: "Key Type", value: hostKey.keyTypeDisplayName)
+                        fieldRow(label: "host_trust.key_type", value: hostKey.keyTypeDisplayName)
 
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("Fingerprint")
+                            Text("host_trust.fingerprint")
                                 .font(.callout.weight(.medium))
                                 .foregroundStyle(.secondary)
 
@@ -52,14 +52,12 @@ struct HostTrustDialogView: View {
                 .padding(AppTheme.Spacing.compact)
             }
 
-            Text(
-                "该服务器身份尚未被信任。请核对 Fingerprint 与服务器管理员提供的信息一致后继续。"
-            )
+            Text("host_trust.message")
             .font(.callout)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
 
-            Text("Trust Once 仅对本次连接有效；Trust Always 会保存该服务器身份，之后不再询问。")
+            Text("host_trust.choice_explanation")
                 .font(.caption)
                 .foregroundStyle(.tertiary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,18 +65,18 @@ struct HostTrustDialogView: View {
             HStack {
                 Spacer()
 
-                Button("Cancel", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     onCancel()
                 }
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("hostTrust.cancel")
 
-                Button("Trust Once") {
+                Button("host_trust.trust_once") {
                     onTrustOnce()
                 }
                 .accessibilityIdentifier("hostTrust.trustOnce")
 
-                Button("Trust Always") {
+                Button("host_trust.trust_always") {
                     onTrustAlways()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -89,10 +87,11 @@ struct HostTrustDialogView: View {
         .padding(.horizontal, AppTheme.Spacing.regular)
         .frame(width: 460)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Host Trust Dialog")
+        .accessibilityLabel("accessibility.host_trust_dialog")
     }
 
-    private func fieldRow(label: String, value: String) -> some View {
+    /// 字段名称来自 String Catalog；服务器值保持原样，不参与翻译。
+    private func fieldRow(label: LocalizedStringKey, value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
                 .font(.callout.weight(.medium))

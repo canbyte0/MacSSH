@@ -102,21 +102,37 @@ struct MacSSHApp: App {
         CommandGroup(replacing: .newItem) {
             // ⌘W：有 Session 时关闭 Active Terminal（走确认流程），
             // 无 Session 时保持系统语义（关闭窗口）。
-            Button("Close") {
+            Button {
                 let manager = appState.sessionManager
                 if manager.sessions.isEmpty {
                     NSApp.keyWindow?.performClose(nil)
                 } else if let active = manager.activeSession {
                     manager.requestClose(id: active.id)
                 }
+            } label: {
+                Text(verbatim: L10n.string(
+                    "action.close",
+                    defaultValue: "Close",
+                    locale: appState.language.locale
+                ))
             }
             .keyboardShortcut("w", modifiers: .command)
         }
 
-        CommandMenu("Terminal") {
-            Button("New Local Terminal") {
+        CommandMenu(L10n.string(
+            "menu.terminal",
+            defaultValue: "Terminal",
+            locale: appState.language.locale
+        )) {
+            Button {
                 appState.selectedSection = .terminal
                 appState.sessionManager.createLocalSession()
+            } label: {
+                Text(verbatim: L10n.string(
+                    "terminal.new_local",
+                    defaultValue: "New Local Terminal",
+                    locale: appState.language.locale
+                ))
             }
             .keyboardShortcut("t", modifiers: .command)
 
@@ -124,9 +140,16 @@ struct MacSSHApp: App {
 
             // ⌘1~⌘9：按创建顺序激活对应 Tab。
             ForEach(1..<10, id: \.self) { index in
-                Button("Show Tab \(index)") {
+                Button {
                     appState.selectedSection = .terminal
                     appState.sessionManager.activateTab(at: index - 1)
+                } label: {
+                    Text(verbatim: L10n.format(
+                        "terminal.show_tab",
+                        defaultValue: "Show Tab %lld",
+                        locale: appState.language.locale,
+                        arguments: Int64(index)
+                    ))
                 }
                 .keyboardShortcut(KeyEquivalent(Character("\(index)")), modifiers: .command)
             }

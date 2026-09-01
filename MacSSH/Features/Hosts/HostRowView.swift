@@ -3,6 +3,8 @@ import SwiftUI
 /// Host 列表中的原生行，只展示普通元数据与该 Host 的 Terminal Session
 /// 聚合状态，不展示任何凭据。
 struct HostRowView: View {
+    @Environment(\.locale) private var locale
+
     let host: Host
     /// 该 Host 在 Terminal 侧的聚合会话状态（Phase 8 per-session 连接）。
     let summary: SessionManager.HostSessionSummary
@@ -20,8 +22,10 @@ struct HostRowView: View {
                     .frame(width: 20)
             }
             .buttonStyle(.borderless)
-            .help(host.favorite ? "Remove from Favorites" : "Add to Favorites")
-            .accessibilityLabel(host.favorite ? "Remove from Favorites" : "Add to Favorites")
+            .help(host.favorite ? Text("hosts.remove_favorite") : Text("hosts.add_favorite"))
+            .accessibilityLabel(
+                host.favorite ? Text("hosts.remove_favorite") : Text("hosts.add_favorite")
+            )
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(host.name)
@@ -39,7 +43,11 @@ struct HostRowView: View {
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
-                Text(host.group?.name ?? "Ungrouped")
+                Text(verbatim: host.group?.name ?? L10n.string(
+                    "hosts.ungrouped",
+                    defaultValue: "Ungrouped",
+                    locale: locale
+                ))
                     .font(.caption)
                     .foregroundStyle(.tertiary)
             }
@@ -80,38 +88,42 @@ struct HostRowView: View {
                     .help(busyText)
             }
         } else {
-            connectButton(label: "Connect", help: "Open a new terminal session on this host")
+            connectButton
         }
     }
 
     private var busyText: String {
-        if let statusText = summary.busyStatusText {
-            let components = statusText.components(separatedBy: " · ")
-            if components.count > 2 {
-                return components.dropFirst(2).joined(separator: " · ")
-            }
-            return statusText
+        switch summary.busyDisplayState {
+        case .authenticating:
+            return L10n.string("status.authenticating", defaultValue: "Authenticating…", locale: locale)
+        case .awaitingHostTrust:
+            return L10n.string("status.verifying_host", defaultValue: "Verifying Host…", locale: locale)
+        case .opening:
+            return L10n.string("status.opening", defaultValue: "Opening…", locale: locale)
+        case .starting, .connecting:
+            return L10n.string("status.connecting", defaultValue: "Connecting…", locale: locale)
+        case .active, .exited, .disconnected, .failed, .closing, .none:
+            return L10n.string("status.connecting", defaultValue: "Connecting…", locale: locale)
         }
-        return "Connecting…"
     }
 
-    private func connectButton(label: String, help: String) -> some View {
+    private var connectButton: some View {
         Button(action: connect) {
-            Text(label)
+            Text("action.connect")
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
-        .help(help)
+        .help("hosts.open_new_terminal_help")
         .accessibilityIdentifier("hostRow.connect")
     }
 
     private func disconnectButton() -> some View {
         Button(action: disconnect) {
-            Text("Disconnect")
+            Text("action.disconnect")
         }
         .controlSize(.small)
         .buttonStyle(.bordered)
-        .help("Close all terminal sessions for this host")
+        .help("hosts.disconnect_all_help")
         .accessibilityIdentifier("hostRow.disconnect")
     }
 
@@ -122,8 +134,8 @@ struct HostRowView: View {
         }
         .controlSize(.small)
         .buttonStyle(.borderless)
-        .help("Open Remote Terminal")
-        .accessibilityLabel("Open Remote Terminal")
+        .help("hosts.open_remote_terminal")
+        .accessibilityLabel("hosts.open_remote_terminal")
         .accessibilityIdentifier("hostRow.openTerminal")
     }
 }

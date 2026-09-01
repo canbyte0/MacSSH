@@ -7,7 +7,9 @@ import SwiftUI
 /// 列出已持久化的服务器身份（hostname + port + Key Type + Fingerprint + 信任时间），
 /// 支持 Forget（删除 KnownHost，下次连接重新出现未知主机对话框）。
 struct SettingsView: View {
+    @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.locale) private var locale
 
     @Query(
         sort: [SortDescriptor(\KnownHost.hostname), SortDescriptor(\KnownHost.port)]
@@ -20,64 +22,96 @@ struct SettingsView: View {
     @State private var forgetError: ForgetFailureInfo?
 
     var body: some View {
+        @Bindable var appState = appState
+
         Form {
-            Section("General") {
-                LabeledContent("Launch Behavior", value: "Open Main Window")
-                LabeledContent("Confirm Before Closing SSH", value: "On")
+            Section("settings.section.general") {
+                Picker("settings.language", selection: $appState.language) {
+                    ForEach(AppLanguage.allCases) { language in
+                        // 语言名称固定使用自身语言，避免误切后找不到返回入口。
+                        Text(verbatim: language.displayName)
+                            .tag(language)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("settings.language")
+
+                LabeledContent("settings.launch_behavior") {
+                    Text("settings.open_main_window")
+                }
+                LabeledContent("settings.confirm_before_closing_ssh") {
+                    Text("common.on")
+                }
             }
 
-            Section("Terminal") {
-                LabeledContent("Font", value: "System Monospaced")
-                LabeledContent("Font Size", value: "13 pt")
-                LabeledContent("Scrollback", value: "10,000 lines")
+            Section("settings.section.terminal") {
+                LabeledContent("settings.font") {
+                    Text("settings.system_monospaced")
+                }
+                LabeledContent("settings.font_size") {
+                    Text("settings.font_size_value")
+                }
+                LabeledContent("settings.scrollback") {
+                    Text("settings.scrollback_value")
+                }
             }
 
-            Section("Appearance") {
-                LabeledContent("Mode", value: "System")
+            Section("settings.section.appearance") {
+                LabeledContent("settings.mode") {
+                    Text("settings.system_mode")
+                }
             }
 
             Section("SSH") {
-                LabeledContent("Connection Timeout", value: "10 seconds")
-                LabeledContent("KeepAlive", value: "On")
+                LabeledContent("settings.connection_timeout") {
+                    Text("settings.connection_timeout_value")
+                }
+                LabeledContent("KeepAlive") {
+                    Text("common.on")
+                }
             }
 
-            Section("Known Hosts") {
+            Section("known_hosts.title") {
                 if knownHosts.isEmpty {
-                    Text("No trusted hosts yet. The first connection to a server will ask you to verify its host key.")
+                    Text("known_hosts.empty_message")
                         .font(.footnote)
                         .foregroundStyle(.secondary)
                 } else {
                     ForEach(knownHosts) { knownHost in
-                        KnownHostRow(knownHost: knownHost, onForget: { pendingForgetID = knownHost.id })
+                        KnownHostRow(
+                            knownHost: knownHost,
+                            locale: locale,
+                            onForget: { pendingForgetID = knownHost.id }
+                        )
                     }
                 }
             }
 
             Section {
-                Text("General/Terminal/Appearance/SSH values are read-only mock data and are not persisted. Known Hosts are persisted in SwiftData.")
+                Text("settings.read_only_note")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("Settings")
+        .navigationTitle("settings.title")
         .accessibilityIdentifier("workspace.settings")
-        .alert("Forget Trusted Host?", isPresented: forgetBinding, presenting: pendingForgetID) { _ in
-            Button("Cancel", role: .cancel) {}
-            Button("Forget", role: .destructive) {
+        .alert("known_hosts.forget_title", isPresented: forgetBinding, presenting: pendingForgetID) { _ in
+            Button("action.cancel", role: .cancel) {}
+            Button("known_hosts.forget", role: .destructive) {
                 forget()
             }
         } message: { _ in
-            Text("The next connection to this host will show the Unknown Host dialog again.")
+            Text("known_hosts.forget_message")
         }
         .alert(
-            "无法移除受信任的主机",
+            "known_hosts.forget_failed_title",
             isPresented: $forgetError.mappedToBool,
             presenting: forgetError
         ) { _ in
-            Button("好", role: .cancel) {}
+            Button("action.ok", role: .cancel) {}
         } message: { _ in
-            Text("Known Host 更改未能保存，请稍后重试。")
+            Text("known_hosts.forget_failed_message")
         }
     }
 
@@ -126,14 +160,8 @@ private extension Optional where Wrapped == ForgetFailureInfo {
 /// 单条 KnownHost 展示行。
 private struct KnownHostRow: View {
     let knownHost: KnownHost
+    let locale: Locale
     let onForget: () -> Void
-
-    private static let dateFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .short
-        return formatter
-    }()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
@@ -148,7 +176,7 @@ private struct KnownHostRow: View {
 
                 Spacer()
 
-                Button("Forget", role: .destructive) {
+                Button("known_hosts.forget", role: .destructive) {
                     onForget()
                 }
                 .buttonStyle(.borderless)
@@ -160,10 +188,24 @@ private struct KnownHostRow: View {
                 .textSelection(.enabled)
                 .foregroundStyle(.secondary)
 
-            Text("Trusted \(Self.dateFormatter.string(from: knownHost.updatedAt))")
+            Text(verbatim: L10n.format(
+                "known_hosts.trusted_at",
+                defaultValue: "Trusted %@",
+                locale: locale,
+                arguments: formattedDate
+            ))
                 .font(.caption2)
                 .foregroundStyle(.tertiary)
         }
         .padding(.vertical, 2)
+    }
+
+    /// 日期格式显式采用当前 App Locale，语言切换后立即更新。
+    private var formattedDate: String {
+        let formatter = DateFormatter()
+        formatter.locale = locale
+        formatter.dateStyle = .short
+        formatter.timeStyle = .short
+        return formatter.string(from: knownHost.updatedAt)
     }
 }

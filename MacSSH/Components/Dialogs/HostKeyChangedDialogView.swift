@@ -31,24 +31,24 @@ struct HostKeyChangedDialogView: View {
                     .font(.system(size: 34))
                     .foregroundStyle(.red)
 
-                Text("SSH 主机密钥已变更")
+                Text("host_key_changed.title")
                     .font(.title2.bold())
             }
             .padding(.top, AppTheme.Spacing.regular)
 
             GroupBox {
                 VStack(alignment: .leading, spacing: AppTheme.Spacing.regular) {
-                    fieldRow(label: "Host", value: info.hostname)
-                    fieldRow(label: "Port", value: String(info.port))
+                    fieldRow(label: "host.field.host", value: info.hostname)
+                    fieldRow(label: "host.field.port", value: String(info.port))
 
                     if let hostKey = info.hostKey {
                         fingerprintRow(
-                            label: "旧 Fingerprint",
+                            label: "host_key_changed.old_fingerprint",
                             fingerprint: storedFingerprint,
                             keyType: storedKeyType
                         )
                         fingerprintRow(
-                            label: "新 Fingerprint",
+                            label: "host_key_changed.new_fingerprint",
                             fingerprint: hostKey.fingerprintSHA256,
                             keyType: hostKey.keyTypeDisplayName
                         )
@@ -57,9 +57,7 @@ struct HostKeyChangedDialogView: View {
                 .padding(AppTheme.Spacing.compact)
             }
 
-            Text(
-                "服务器身份信息与之前保存的信息不同。这可能是服务器重新安装，也可能表示存在中间人攻击。在您决定之前，认证已被阻断。"
-            )
+            Text("host_key_changed.message")
             .font(.callout)
             .foregroundStyle(.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -67,13 +65,13 @@ struct HostKeyChangedDialogView: View {
             HStack {
                 Spacer()
 
-                Button("Cancel", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     onCancel()
                 }
                 .keyboardShortcut(.cancelAction)
                 .accessibilityIdentifier("hostKeyChanged.cancel")
 
-                Button("Replace Trusted Key", role: .destructive) {
+                Button("host_key_changed.replace", role: .destructive) {
                     showingSecondConfirmation = true
                 }
                 .accessibilityIdentifier("hostKeyChanged.replace")
@@ -83,20 +81,21 @@ struct HostKeyChangedDialogView: View {
         .padding(.horizontal, AppTheme.Spacing.regular)
         .frame(width: 480)
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Host Key Changed Dialog")
+        .accessibilityLabel("accessibility.host_key_changed_dialog")
         // 二次危险确认：不一次点击就静默替换。
-        .alert("Replace Trusted Host Key?", isPresented: $showingSecondConfirmation) {
-            Button("Cancel", role: .cancel) {}
-            Button("Confirm Replace", role: .destructive) {
+        .alert("host_key_changed.confirm_title", isPresented: $showingSecondConfirmation) {
+            Button("action.cancel", role: .cancel) {}
+            Button("host_key_changed.confirm_replace", role: .destructive) {
                 onReplace()
             }
             .accessibilityIdentifier("hostKeyChanged.confirmReplace")
         } message: {
-            Text("确认后将删除之前信任的 SSH Host Key，并将当前服务器密钥作为新的可信身份保存。仅在确信变更为合法时执行。")
+            Text("host_key_changed.confirm_message")
         }
     }
 
-    private func fieldRow(label: String, value: String) -> some View {
+    /// 字段名称来自 String Catalog；服务器值保持原样，不参与翻译。
+    private func fieldRow(label: LocalizedStringKey, value: String) -> some View {
         HStack(alignment: .firstTextBaseline) {
             Text(label)
                 .font(.callout.weight(.medium))
@@ -109,7 +108,12 @@ struct HostKeyChangedDialogView: View {
         }
     }
 
-    private func fingerprintRow(label: String, fingerprint: String, keyType: String) -> some View {
+    /// 指纹字段使用本地化标签，算法名与指纹保持协议原值。
+    private func fingerprintRow(
+        label: LocalizedStringKey,
+        fingerprint: String,
+        keyType: String
+    ) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Text(label)

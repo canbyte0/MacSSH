@@ -41,7 +41,7 @@ final class TransferQueueTests: XCTestCase {
             hostname: "127.0.0.1",
             port: 22,
             baseTitle: "QueueHost",
-            title: "QueueHost"
+            titleCounter: 1
         )
     }
 
@@ -196,7 +196,7 @@ final class TransferQueueTests: XCTestCase {
         XCTAssertEqual(task.state, .pending, "断开会话的任务必须保持等待")
         XCTAssertTrue(task.awaitingConnection, "必须标记等待连接")
         XCTAssertNil(task.executionTask, "等待中的任务绝不启动")
-        XCTAssertEqual(task.stateDisplay, "等待连接")
+        XCTAssertEqual(task.stateDisplay(locale: AppLanguage.defaultLanguage.locale), "等待连接")
     }
 
     // MARK: - Cancel Pending
@@ -307,6 +307,6 @@ final class TransferQueueTests: XCTestCase {
         XCTAssertEqual(manager.transferCount(forSession: UUID()), 0)
         XCTAssertFalse(manager.hasActiveTransfer, "pending 绝不占用活跃槽位")
         XCTAssertFalse(manager.hasActiveTransfer(forSession: sessionA.id))
-        XCTAssertEqual(manager.queueSummary, "2 等待")
+        XCTAssertEqual(manager.queueSummary(locale: AppLanguage.defaultLanguage.locale), "2 个等待中")
     }
 }

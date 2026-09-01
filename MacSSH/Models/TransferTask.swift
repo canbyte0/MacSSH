@@ -237,23 +237,26 @@ final class TransferTask: Identifiable {
         return min(1, Double(transferredBytes) / Double(totalBytes))
     }
 
-    /// 状态文案（中文；pending 区分普通过队与等待连接，绝不显示 0% / 0 B/s）。
-    var stateDisplay: String {
+    /// 状态文案：按当前 App Locale 生成；pending 区分普通过队与等待连接，
+    /// 绝不显示 0% / 0 B/s。语言切换只更新文案，绝不重建传输任务或 Session。
+    func stateDisplay(locale: Locale) -> String {
         switch state {
         case .pending:
-            return awaitingConnection ? "等待连接" : "等待中"
+            return awaitingConnection
+                ? L10n.string("transfer.state.waiting_for_connection", defaultValue: "Waiting for connection", locale: locale)
+                : L10n.string("transfer.state.waiting", defaultValue: "Waiting", locale: locale)
         case .preparing:
-            return "准备中"
+            return L10n.string("transfer.state.preparing", defaultValue: "Preparing", locale: locale)
         case .transferring:
-            return "传输中"
+            return L10n.string("transfer.state.transferring", defaultValue: "Transferring", locale: locale)
         case .cancelling:
-            return "正在取消"
+            return L10n.string("transfer.state.cancelling", defaultValue: "Cancelling", locale: locale)
         case .completed:
-            return "已完成"
+            return L10n.string("transfer.state.completed", defaultValue: "Completed", locale: locale)
         case .failed:
-            return "失败"
+            return L10n.string("transfer.state.failed", defaultValue: "Failed", locale: locale)
         case .cancelled:
-            return "已取消"
+            return L10n.string("transfer.state.cancelled", defaultValue: "Cancelled", locale: locale)
         }
     }
 
@@ -315,28 +318,95 @@ enum TransferError: Error, Equatable {
     case permissionDenied
     /// 远端文件不存在（下载源消失）。
     case remoteFileMissing
-    /// 其他错误（含本地 I/O、校验、协议错误）。
+    /// 本地文件无法读取（不存在 / 权限不足 / 文件系统错误）。
+    case localReadFailed
+    /// 本地临时文件无法写入（磁盘满 / 权限不足 / 路径无效）。
+    case localWriteFailed
+    /// 服务器写入异常（连接未断开但服务器拒绝接收数据）。
+    case remoteWriteFailed
+    /// 传输校验失败（远端字节数与已传输字节不一致）。
+    case verificationFailed
+    /// 发布 / 替换本地目标文件失败（替换操作被系统拒绝）。
+    case publishFailed
+    /// 其他错误（含本地 I/O、校验、协议错误，保留底层文案用于诊断）。
     case generic(String)
 
-    /// UI 展示的用户可读信息（中文，任务书示例文案）。
-    var message: String {
+    /// UI 展示的用户可读信息；按当前 App Locale 生成。
+    /// 不携带 Secret；libssh2 / FX 原始码只进安全日志，不直接进入用户可见信息。
+    func message(locale: Locale) -> String {
         switch self {
         case .cancelled:
-            return "传输已取消。"
+            return L10n.string("error.transfer.cancelled", defaultValue: "The transfer was cancelled.", locale: locale)
         case let .connectionLost(remoteResidue):
             if let remoteResidue {
-                return "SSH 连接已断开，传输失败。远端可能残留临时文件 \(remoteResidue)，可稍后手动清理。"
+                return L10n.format(
+                    "error.transfer.connection_lost_residue",
+                    defaultValue: "The SSH connection was lost and the transfer failed. A temporary file may remain on the server: %@. You can clean it up manually later.",
+                    locale: locale,
+                    arguments: remoteResidue
+                )
             }
-            return "SSH 连接已断开，传输失败。"
+            return L10n.string(
+                "error.transfer.connection_lost",
+                defaultValue: "The SSH connection was lost and the transfer failed.",
+                locale: locale
+            )
         case .remoteFileExists:
-            return "远程文件已存在，不会自动覆盖该文件。"
+            return L10n.string(
+                "error.transfer.remote_file_exists",
+                defaultValue: "A file with the same name already exists on the server and will not be overwritten.",
+                locale: locale
+            )
         case .permissionDenied:
-            return "权限不足，无法完成传输。"
+            return L10n.string(
+                "error.transfer.permission_denied",
+                defaultValue: "Permission denied; the transfer could not be completed.",
+                locale: locale
+            )
         case .remoteFileMissing:
-            return "远程文件不存在。"
+            return L10n.string(
+                "error.transfer.remote_file_missing",
+                defaultValue: "The remote file no longer exists.",
+                locale: locale
+            )
+        case .localReadFailed:
+            return L10n.string(
+                "error.transfer.local_read_failed",
+                defaultValue: "The local file could not be read.",
+                locale: locale
+            )
+        case .localWriteFailed:
+            return L10n.string(
+                "error.transfer.local_write_failed",
+                defaultValue: "The local temporary file could not be written.",
+                locale: locale
+            )
+        case .remoteWriteFailed:
+            return L10n.string(
+                "error.transfer.remote_write_failed",
+                defaultValue: "The server reported an error while writing data.",
+                locale: locale
+            )
+        case .verificationFailed:
+            return L10n.string(
+                "error.transfer.verification_failed",
+                defaultValue: "Transfer verification failed; the byte count does not match.",
+                locale: locale
+            )
+        case .publishFailed:
+            return L10n.string(
+                "error.transfer.publish_failed",
+                defaultValue: "Replacing the destination file failed.",
+                locale: locale
+            )
         case let .generic(text):
             return text
         }
+    }
+
+    /// LocalizedError 兜底：非 UI 路径使用英文 fallback，与既有测试兼容。
+    var errorDescription: String? {
+        message(locale: Locale(identifier: "en"))
     }
 
     /// SFTP 业务错误映射（连接层统一入口）。
@@ -351,7 +421,7 @@ enum TransferError: Error, Equatable {
         case .operationCancelled:
             self = .cancelled
         case .protocolFailure:
-            self = .generic("服务器报告传输错误。")
+            self = .generic("The server reported a transfer error.")
         }
     }
 }

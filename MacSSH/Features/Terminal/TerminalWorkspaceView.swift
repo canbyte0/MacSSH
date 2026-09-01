@@ -8,6 +8,7 @@ import SwiftUI
 /// 后台输出且不产生渲染开销）。
 struct TerminalWorkspaceView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.locale) private var locale
 
     private var manager: SessionManager {
         appState.sessionManager
@@ -38,16 +39,16 @@ struct TerminalWorkspaceView: View {
     /// Local Session 的 Files 段禁用（文件浏览仅对 SSH 会话可用）。
     private func paneSelector(for session: ManagedTerminalSession) -> some View {
         Picker(
-            "Pane",
+            "terminal.pane",
             selection: Binding(
                 get: { session.activePane },
                 set: { session.selectPane($0) }
             )
         ) {
-            Text("Terminal")
+            Text("terminal.pane")
                 .tag(WorkspacePane.terminal)
 
-            Text("Files")
+            Text("files.title")
                 .tag(WorkspacePane.files)
                 .disabled(session.kind == .local)
         }
@@ -80,6 +81,10 @@ struct TerminalWorkspaceView: View {
     }
 
     /// Active Session 的终端内容；同一 Session 内 View 保持稳定。
+    ///
+    /// Accessibility 标签在 SwiftUI 层按当前注入的 Locale 覆盖
+    /// Service 层（AppKit）设置的英文默认值——语言切换立即生效，
+    /// 且不在 Service 层注入语言状态（任务书十七：语言状态单一来源）。
     @ViewBuilder
     private func terminalView(for session: ManagedTerminalSession) -> some View {
         switch session.kind {
@@ -87,12 +92,16 @@ struct TerminalWorkspaceView: View {
             if let service = session.localService {
                 TerminalRepresentable(service: service)
                     .id(session.id)
+                    .accessibilityLabel("terminal.local")
             }
 
         case .remoteSSH:
             if let service = session.remoteService {
                 RemoteTerminalRepresentable(service: service)
                     .id(session.id)
+                    .accessibilityLabel(
+                        Text("terminal.remote \(session.hostDisplayName ?? session.hostname ?? "")")
+                    )
             }
         }
     }
@@ -107,7 +116,11 @@ struct TerminalWorkspaceView: View {
         case .local:
             if case .exited = session.displayState {
                 sessionBanner(
-                    "Shell exited",
+                    L10n.string(
+                        "terminal.shell_exited",
+                        defaultValue: "Shell exited",
+                        locale: locale
+                    ),
                     session: session,
                     showsReconnect: false
                 )
@@ -119,19 +132,39 @@ struct TerminalWorkspaceView: View {
             } else {
                 switch session.displayState {
                 case .exited:
-                    sessionBanner("Remote shell exited", session: session, showsReconnect: true)
+                    sessionBanner(
+                        L10n.string(
+                            "terminal.remote_shell_exited",
+                            defaultValue: "Remote shell exited",
+                            locale: locale
+                        ),
+                        session: session,
+                        showsReconnect: true
+                    )
                 case .disconnected:
-                    sessionBanner("Connection lost", session: session, showsReconnect: true)
+                    sessionBanner(
+                        L10n.string(
+                            "terminal.connection_lost",
+                            defaultValue: "Connection lost",
+                            locale: locale
+                        ),
+                        session: session,
+                        showsReconnect: true
+                    )
                 case let .failed(message):
                     sessionBanner(
-                        message ?? "Connection failed",
+                        message ?? L10n.string(
+                            "terminal.connection_failed",
+                            defaultValue: "Connection failed",
+                            locale: locale
+                        ),
                         session: session,
                         showsReconnect: true
                     )
                 case .connecting, .authenticating, .awaitingHostTrust:
                     // Reconnect 进行中：保留终端历史，仅提示进度。
                     sessionBanner(
-                        session.statusText,
+                        session.statusText(locale: locale),
                         session: session,
                         showsReconnect: false
                     )
@@ -152,22 +185,26 @@ struct TerminalWorkspaceView: View {
                     .font(.title)
                     .foregroundStyle(Color.red)
 
-                Text("Connection Failed")
+                Text("terminal.connection_failed")
                     .font(.headline)
 
-                Text(session.failureMessage ?? "The connection could not be established.")
+                Text(verbatim: session.failureMessage ?? L10n.string(
+                    "terminal.connection_failed_message",
+                    defaultValue: "The connection could not be established.",
+                    locale: locale
+                ))
                     .font(.callout)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
                     .padding(.horizontal, AppTheme.Spacing.spacious)
 
                 HStack(spacing: AppTheme.Spacing.regular) {
-                    Button("Retry") {
+                    Button("action.retry") {
                         manager.reconnectSession(id: session.id)
                     }
                     .accessibilityIdentifier("terminal.retry")
 
-                    Button("Close", role: .destructive) {
+                    Button("action.close", role: .destructive) {
                         manager.requestClose(id: session.id)
                     }
                     .accessibilityIdentifier("terminal.close")
@@ -179,7 +216,7 @@ struct TerminalWorkspaceView: View {
         case .closing:
             VStack {
                 ProgressView()
-                Text("Closing…")
+                Text("terminal.closing")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -189,12 +226,14 @@ struct TerminalWorkspaceView: View {
             VStack(spacing: AppTheme.Spacing.regular) {
                 ProgressView()
 
-                Text(session.statusText)
+                Text(verbatim: session.statusText(locale: locale))
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .accessibilityLabel("Connecting to \(session.hostDisplayName ?? "")")
+            .accessibilityLabel(
+                Text("terminal.connecting_to \(session.hostDisplayName ?? "")")
+            )
         }
     }
 
@@ -208,20 +247,20 @@ struct TerminalWorkspaceView: View {
             Spacer()
 
             HStack(spacing: AppTheme.Spacing.regular) {
-                Text(text)
+                Text(verbatim: text)
                     .font(.callout)
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
                 if showsReconnect && session.canReconnect {
-                    Button("Reconnect") {
+                    Button("action.reconnect") {
                         manager.reconnectSession(id: session.id)
                     }
                     .accessibilityIdentifier("terminal.reconnect")
                 }
 
-                Button("Close", role: .destructive) {
+                Button("action.close", role: .destructive) {
                     manager.requestClose(id: session.id)
                 }
                 .accessibilityIdentifier("terminal.close")
@@ -235,11 +274,11 @@ struct TerminalWorkspaceView: View {
     /// 全部 Session 关闭后的空工作区（任务书 17/55）。
     private var emptyWorkspace: some View {
         ContentUnavailableView {
-            Label("No Terminal Sessions", systemImage: "terminal")
+            Label("terminal.no_sessions", systemImage: "terminal")
         } description: {
-            Text("Create a terminal to get started.")
+            Text("terminal.empty_message")
         } actions: {
-            Button("New Terminal") {
+            Button("terminal.new") {
                 manager.createLocalSession()
             }
             .accessibilityIdentifier("terminal.new")
@@ -248,13 +287,26 @@ struct TerminalWorkspaceView: View {
 
     private var navigationTitle: String {
         guard let session = manager.activeSession else {
-            return "Terminal"
+            return L10n.string(
+                "terminal.title",
+                defaultValue: "Terminal",
+                locale: locale
+            )
         }
         switch session.kind {
         case .local:
-            return "Local Terminal"
+            return L10n.string(
+                "terminal.local_title",
+                defaultValue: "Local Terminal",
+                locale: locale
+            )
         case .remoteSSH:
-            return "SSH · \(session.hostDisplayName ?? session.hostname ?? "Remote")"
+            return L10n.format(
+                "terminal.ssh_title",
+                defaultValue: "SSH · %@",
+                locale: locale,
+                arguments: session.hostDisplayName ?? session.hostname ?? "Remote"
+            )
         }
     }
 }
