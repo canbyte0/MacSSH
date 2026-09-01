@@ -48,11 +48,37 @@ final class ManagedTerminalSession: Identifiable {
 
     let createdAt = Date()
 
-    /// 编号前的基准标题（"Local" 或 Host 显示名）。
+    /// 编号前的基准标题：Local 固定为技术名 "Local"（语言无关，
+    /// 供计数器与 accessibility identifier 使用）；Remote 为 Host 显示名。
     let baseTitle: String
 
-    /// 创建时分配的稳定标题；同基准第 2 个起编号（Local 2 / Aliyun 2）。
-    let title: String
+    /// 同基准内的序号（1 = 无后缀，2 起 = " 2"）。
+    let titleCounter: Int
+
+    /// 技术名（baseTitle + 编号后缀，如 "Local 2"）。语言无关：
+    /// 用于 accessibility identifier、日志与传输任务的会话标识。
+    var title: String {
+        titleCounter == 1 ? baseTitle : "\(baseTitle) \(titleCounter)"
+    }
+
+    /// Tab 与 Transfers 展示的用户可读标题：Local 按 Locale 本地化
+    /// （"本地终端" / "Local"），Remote 保持 Host 显示名（用户数据不翻译）。
+    /// 第 2 个会话起附加语言无关的编号后缀。语言切换只更新文案，
+    /// 不重建 Session / Shell / 连接（任务书十八）。
+    func displayTitle(locale: Locale) -> String {
+        let base: String
+        switch kind {
+        case .local:
+            base = L10n.string(
+                "terminal.local",
+                defaultValue: "Local",
+                locale: locale
+            )
+        case .remoteSSH:
+            base = hostDisplayName ?? hostname ?? baseTitle
+        }
+        return titleCounter == 1 ? base : "\(base) \(titleCounter)"
+    }
 
     // MARK: - Local runtime（kind == .local 时非 nil）
 
@@ -100,12 +126,12 @@ final class ManagedTerminalSession: Identifiable {
     init(
         localService: LocalTerminalService,
         baseTitle: String,
-        title: String
+        titleCounter: Int
     ) {
         kind = .local
         self.localService = localService
         self.baseTitle = baseTitle
-        self.title = title
+        self.titleCounter = titleCounter
         hostID = nil
         hostDisplayName = nil
         hostname = nil
@@ -118,7 +144,7 @@ final class ManagedTerminalSession: Identifiable {
         hostname: String,
         port: Int,
         baseTitle: String,
-        title: String
+        titleCounter: Int
     ) {
         kind = .remoteSSH
         localService = nil
@@ -127,7 +153,7 @@ final class ManagedTerminalSession: Identifiable {
         self.hostname = hostname
         self.port = port
         self.baseTitle = baseTitle
-        self.title = title
+        self.titleCounter = titleCounter
     }
 
     // MARK: - Runtime 装配（SessionManager 调用）
@@ -290,24 +316,59 @@ final class ManagedTerminalSession: Identifiable {
     // MARK: - 状态栏
 
     /// 状态栏左侧（跟随 activeSession，任务书 66）。
+    /// 兼容内部诊断与既有测试的英文状态文本；用户界面调用 Locale 版本。
     var statusText: String {
+        statusText(locale: Locale(identifier: "en"))
+    }
+
+    /// 状态栏用户文案显式按当前 App Locale 生成，语言切换时不会改动 Session。
+    func statusText(locale: Locale) -> String {
         switch kind {
         case .local:
             guard let local = localService else {
-                return "Local"
+                return L10n.string(
+                    "terminal.local",
+                    defaultValue: "Local",
+                    locale: locale
+                )
             }
             let shellName = URL(fileURLWithPath: local.session.shellPath).lastPathComponent
             switch displayState {
             case .starting:
-                return "Local · \(shellName) · Starting"
+                return L10n.format(
+                    "status.local.starting",
+                    defaultValue: "Local · %@ · Starting",
+                    locale: locale,
+                    arguments: shellName
+                )
             case .active:
-                return "Local · \(shellName)"
+                return L10n.format(
+                    "status.local.active",
+                    defaultValue: "Local · %@",
+                    locale: locale,
+                    arguments: shellName
+                )
             case .exited:
-                return "Local · \(shellName) · Exited"
+                return L10n.format(
+                    "status.local.exited",
+                    defaultValue: "Local · %@ · Exited",
+                    locale: locale,
+                    arguments: shellName
+                )
             case .failed:
-                return "Local · \(shellName) · Failed to Start"
+                return L10n.format(
+                    "status.local.failed_to_start",
+                    defaultValue: "Local · %@ · Failed to Start",
+                    locale: locale,
+                    arguments: shellName
+                )
             default:
-                return "Local · \(shellName)"
+                return L10n.format(
+                    "status.local.active",
+                    defaultValue: "Local · %@",
+                    locale: locale,
+                    arguments: shellName
+                )
             }
 
         case .remoteSSH:
@@ -323,25 +384,74 @@ final class ManagedTerminalSession: Identifiable {
 
             switch displayState {
             case .starting, .connecting:
-                return "SSH · \(host) · Connecting…"
+                return localizedSSHStatus(
+                    "status.ssh.connecting",
+                    defaultValue: "SSH · %@ · Connecting…",
+                    host: host,
+                    locale: locale
+                )
             case .authenticating:
-                return "SSH · \(host) · Authenticating…"
+                return localizedSSHStatus(
+                    "status.ssh.authenticating",
+                    defaultValue: "SSH · %@ · Authenticating…",
+                    host: host,
+                    locale: locale
+                )
             case .awaitingHostTrust:
-                return "SSH · \(host) · Verifying Host…"
+                return localizedSSHStatus(
+                    "status.ssh.verifying_host",
+                    defaultValue: "SSH · %@ · Verifying Host…",
+                    host: host,
+                    locale: locale
+                )
             case .opening:
-                return "SSH · \(host) · Opening…"
+                return localizedSSHStatus(
+                    "status.ssh.opening",
+                    defaultValue: "SSH · %@ · Opening…",
+                    host: host,
+                    locale: locale
+                )
             case .active:
                 return "SSH ● \(host)"
             case .exited:
-                return "SSH · \(host) · Exited"
+                return localizedSSHStatus(
+                    "status.ssh.exited",
+                    defaultValue: "SSH · %@ · Exited",
+                    host: host,
+                    locale: locale
+                )
             case .disconnected:
-                return "SSH ○ \(host) · Disconnected"
+                return localizedSSHStatus(
+                    "status.ssh.disconnected",
+                    defaultValue: "SSH ○ %@ · Disconnected",
+                    host: host,
+                    locale: locale
+                )
             case .failed:
-                return "SSH ○ \(host) · Failed"
+                return localizedSSHStatus(
+                    "status.ssh.failed",
+                    defaultValue: "SSH ○ %@ · Failed",
+                    host: host,
+                    locale: locale
+                )
             case .closing:
-                return "SSH · \(host) · Closing…"
+                return localizedSSHStatus(
+                    "status.ssh.closing",
+                    defaultValue: "SSH · %@ · Closing…",
+                    host: host,
+                    locale: locale
+                )
             }
         }
+    }
+
+    private func localizedSSHStatus(
+        _ key: StaticString,
+        defaultValue: String.LocalizationValue,
+        host: String,
+        locale: Locale
+    ) -> String {
+        L10n.format(key, defaultValue: defaultValue, locale: locale, arguments: host)
     }
 
     /// 状态栏右侧的 PTY 字符网格尺寸。

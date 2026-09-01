@@ -740,7 +740,7 @@ final class SFTPTransferTests: XCTestCase {
             hostname: testHostname,
             port: Int(testPort),
             baseTitle: "Loopback",
-            title: "Loopback"
+            titleCounter: 1
         )
         session.attach(connection: connection, info: try XCTUnwrap(lastInfo))
 

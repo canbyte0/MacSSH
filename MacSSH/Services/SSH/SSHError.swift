@@ -61,55 +61,60 @@ enum SSHError: Error, Equatable, Sendable {
 extension SSHError: LocalizedError {
     /// UI 展示的用户可读信息；不回显任何 Secret 或内部状态码。
     var errorDescription: String? {
+        localizedDescription(locale: Locale(identifier: "en"))
+    }
+
+    /// 按当前 App Locale 生成安全、业务级错误文案。
+    func localizedDescription(locale: Locale) -> String {
         switch self {
         case .invalidHost:
-            "Please check the host name and username before connecting."
+            L10n.string("error.ssh.invalid_host", defaultValue: "Please check the host name and username before connecting.", locale: locale)
         case .dnsResolutionFailed:
-            "The server address could not be resolved. Check the hostname and your network."
+            L10n.string("error.ssh.dns", defaultValue: "The server address could not be resolved. Check the hostname and your network.", locale: locale)
         case .connectionTimeout:
-            "The connection timed out. The server or network may be unreachable."
+            L10n.string("error.ssh.timeout", defaultValue: "The connection timed out. The server or network may be unreachable.", locale: locale)
         case .connectionRefused:
-            "The connection was refused. No SSH server is listening on this port."
+            L10n.string("error.ssh.refused", defaultValue: "The connection was refused. No SSH server is listening on this port.", locale: locale)
         case .socketError:
-            "A network error occurred while connecting to the server."
+            L10n.string("error.ssh.network", defaultValue: "A network error occurred while connecting to the server.", locale: locale)
         case .sessionInitializationFailed:
-            "The SSH session could not be created."
+            L10n.string("error.ssh.session_init", defaultValue: "The SSH session could not be created.", locale: locale)
         case .handshakeFailed:
-            "The SSH handshake failed. The server may not be a compatible SSH server."
+            L10n.string("error.ssh.handshake", defaultValue: "The SSH handshake failed. The server may not be a compatible SSH server.", locale: locale)
         case .hostKeyUnavailable:
-            "The server identity could not be read after the handshake."
+            L10n.string("error.ssh.host_key_unavailable", defaultValue: "The server identity could not be read after the handshake.", locale: locale)
         case .hostTrustRejected:
-            "The connection was cancelled because the server identity was not trusted."
+            L10n.string("error.ssh.trust_rejected", defaultValue: "The connection was cancelled because the server identity was not trusted.", locale: locale)
         case .hostKeyChanged:
-            "The server's host key has changed. The connection was blocked to protect against a possible man-in-the-middle attack."
+            L10n.string("error.ssh.host_key_changed", defaultValue: "The server's host key has changed. The connection was blocked to protect against a possible man-in-the-middle attack.", locale: locale)
         case .knownHostPersistenceFailed:
-            "The trusted host key could not be saved, so the connection was closed before signing in. Please try again."
+            L10n.string("error.ssh.known_host_save", defaultValue: "The trusted host key could not be saved, so the connection was closed before signing in. Please try again.", locale: locale)
         case .credentialNotFound:
-            "No saved password was found for this host. Save a password before connecting."
+            L10n.string("error.ssh.credential_missing", defaultValue: "No saved password was found for this host. Save a password before connecting.", locale: locale)
         case .passwordAuthenticationUnsupported:
-            "This server does not support password authentication."
+            L10n.string("error.ssh.password_unsupported", defaultValue: "This server does not support password authentication.", locale: locale)
         case .authenticationFailed:
-            "Authentication failed. Check your username and password."
+            L10n.string("error.ssh.authentication", defaultValue: "Authentication failed. Check your username and password.", locale: locale)
         case .privateKeyPathMissing:
-            "No private key file is configured for this host. Choose a private key before connecting."
+            L10n.string("error.ssh.private_key_missing", defaultValue: "No private key file is configured for this host. Choose a private key before connecting.", locale: locale)
         case .privateKeyFileNotFound:
-            "The configured private key file could not be found. It may have been moved or deleted."
+            L10n.string("error.ssh.private_key_not_found", defaultValue: "The configured private key file could not be found. It may have been moved or deleted.", locale: locale)
         case .privateKeyFileUnreadable:
-            "The private key file exists but could not be read. Check its file permissions."
+            L10n.string("error.ssh.private_key_unreadable", defaultValue: "The private key file exists but could not be read. Check its file permissions.", locale: locale)
         case .privateKeyPassphraseRequired:
-            "This private key requires a passphrase, but none is saved. Save a passphrase before connecting."
+            L10n.string("error.ssh.passphrase_required", defaultValue: "This private key requires a passphrase, but none is saved. Save a passphrase before connecting.", locale: locale)
         case .privateKeyPassphraseIncorrect:
-            "The saved passphrase is incorrect and could not decrypt the private key."
+            L10n.string("error.ssh.passphrase_incorrect", defaultValue: "The saved passphrase is incorrect and could not decrypt the private key.", locale: locale)
         case .publicKeyAuthenticationUnsupported:
-            "This server does not support public key authentication."
+            L10n.string("error.ssh.public_key_unsupported", defaultValue: "This server does not support public key authentication.", locale: locale)
         case .privateKeyAuthenticationFailed:
-            "Private key authentication was rejected by the server. Check that the key is authorized."
+            L10n.string("error.ssh.private_key_authentication", defaultValue: "Private key authentication was rejected by the server. Check that the key is authorized.", locale: locale)
         case .connectionLost:
-            "The SSH connection was lost."
+            L10n.string("error.ssh.connection_lost", defaultValue: "The SSH connection was lost.", locale: locale)
         case .cancelled:
-            "The connection was cancelled."
+            L10n.string("error.ssh.cancelled", defaultValue: "The connection was cancelled.", locale: locale)
         case .disconnectFailed:
-            "The connection closed, but the SSH session could not be cleaned up cleanly."
+            L10n.string("error.ssh.disconnect_cleanup", defaultValue: "The connection closed, but the SSH session could not be cleaned up cleanly.", locale: locale)
         }
     }
 }

@@ -1,10 +1,21 @@
 import Observation
 import SwiftData
+import Foundation
 
 /// 保存顶层页面选择，并持有独立于 SwiftUI 页面生命周期的会话状态。
 @MainActor
 @Observable
 final class AppState {
+    /// 简单偏好存储；仅由 AppState 访问，View 不直接读取 UserDefaults。
+    private let userDefaults: UserDefaults
+
+    /// 全局语言唯一状态源。修改后立即持久化，但不会重建任何 Runtime Manager。
+    var language: AppLanguage {
+        didSet {
+            language.save(to: userDefaults)
+        }
+    }
+
     /// Sidebar 当前选择的顶层页面。
     var selectedSection: AppSection = .terminal
 
@@ -22,7 +33,13 @@ final class AppState {
     /// 经 `cancelAndAwaitTransfers` 屏障先取消并等待清理。
     let transferManager: TransferManager
 
-    init(modelContainer: ModelContainer) {
+    init(
+        modelContainer: ModelContainer,
+        userDefaults: UserDefaults = .standard
+    ) {
+        self.userDefaults = userDefaults
+        language = AppLanguage.load(from: userDefaults)
+
         let sshService = SSHService(modelContainer: modelContainer)
         self.sshService = sshService
         let sessionManager = SessionManager(sshService: sshService)
@@ -32,6 +49,11 @@ final class AppState {
         sessionManager.transferManager = transferManager
         self.sessionManager = sessionManager
         self.transferManager = transferManager
+        // Phase 1（1.1 Localization）：调度器 / 拒绝路径按当前 App Locale
+        // 生成用户文案；语言切换只更新文案，绝不重建传输队列或 Session。
+        transferManager.localeProvider = { [weak self] in
+            self?.language.locale ?? AppLanguage.defaultLanguage.locale
+        }
 
         // Phase 11：SFTPService 的 Rename / Delete 经本闸查询传输冲突。
         TransferConflictGate.install(manager: transferManager)
@@ -56,25 +78,33 @@ final class AppState {
     }
 
     /// 主窗口底部左侧展示当前阶段或 Active Session 状态（任务书 66）。
-    var statusText: String {
+    func statusText(locale: Locale) -> String {
         guard selectedSection == .terminal else {
             if selectedSection == .transfers,
-               let summary = transferManager.queueSummary {
+               let summary = transferManager.queueSummary(locale: locale) {
                 return summary
             }
-            return "Phase 11 · Transfer Queue"
+            return L10n.string(
+                "status.transfer_queue",
+                defaultValue: "Transfer Queue",
+                locale: locale
+            )
         }
 
         guard let session = sessionManager.activeSession else {
-            return "No Terminal Sessions"
+            return L10n.string(
+                "terminal.no_sessions",
+                defaultValue: "No Terminal Sessions",
+                locale: locale
+            )
         }
-        return session.statusText
+        return session.statusText(locale: locale)
     }
 
     /// Terminal 页面显示 Active Session 的 PTY 尺寸，其他页面显示页面名称。
-    var statusDetail: String {
+    func statusDetail(locale: Locale) -> String {
         guard selectedSection == .terminal else {
-            return selectedSection.title
+            return selectedSection.localizedTitle(locale: locale)
         }
 
         guard let session = sessionManager.activeSession else {

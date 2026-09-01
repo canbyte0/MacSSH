@@ -24,8 +24,8 @@ struct RootView: View {
             Divider()
 
             AppStatusBar(
-                statusText: appState.statusText,
-                detailText: appState.statusDetail
+                statusText: appState.statusText(locale: appState.language.locale),
+                detailText: appState.statusDetail(locale: appState.language.locale)
             )
         }
         .frame(
@@ -36,17 +36,19 @@ struct RootView: View {
         .toolbar {
             AppToolbarContent()
         }
+        // 语言变化只刷新 View hierarchy；AppState 与全部 Runtime Manager 保持原实例。
+        .environment(\.locale, appState.language.locale)
         .sheet(item: hostTrustDialogBinding) { request in
             hostTrustDialog(for: request)
         }
         .alert(
-            "Close SSH Session?",
+            "session.close.title",
             isPresented: closeConfirmationBinding
         ) {
-            Button("Cancel", role: .cancel) {
+            Button("action.cancel", role: .cancel) {
                 manager.cancelCloseConfirmation()
             }
-            Button("Close", role: .destructive) {
+            Button("action.close", role: .destructive) {
                 manager.confirmClose()
             }
         } message: {
@@ -54,37 +56,48 @@ struct RootView: View {
                 let transferCount = appState.transferManager.transferCount(forSession: session.id)
                 if transferCount > 0 {
                     // Phase 11（任务书二十六）：关闭确认明确列出任务数与后果。
-                    Text(
-                        "此 SSH 会话包含 \(transferCount) 个文件传输任务。关闭会话将取消正在进行和等待中的传输。"
-                    )
+                    Text(verbatim: L10n.format(
+                        "session.close.active_transfers",
+                        defaultValue: "This SSH session has %lld file transfer tasks. Closing it will cancel active and waiting transfers.",
+                        locale: appState.language.locale,
+                        arguments: Int64(transferCount)
+                    ))
                 } else {
-                    Text(
-                        "This will disconnect from "
-                            + (session.hostDisplayName ?? "the host") + "."
-                    )
+                    Text(verbatim: L10n.format(
+                        "session.close.disconnect_host",
+                        defaultValue: "This will disconnect from %@.",
+                        locale: appState.language.locale,
+                        arguments: session.hostDisplayName ?? L10n.string(
+                            "host.generic_name",
+                            defaultValue: "the host",
+                            locale: appState.language.locale
+                        )
+                    ))
                 }
             }
         }
         .alert(
-            "Disconnect Host?",
+            "host.disconnect.title",
             isPresented: hostCloseConfirmationBinding
         ) {
-            Button("Cancel", role: .cancel) {
+            Button("action.cancel", role: .cancel) {
                 manager.cancelHostClose()
             }
-            Button("Disconnect", role: .destructive) {
+            Button("action.disconnect", role: .destructive) {
                 manager.confirmHostClose()
             }
         } message: {
             if let request = manager.pendingHostClose {
-                Text(
-                    "This will close \(request.sessionCount) terminal session(s) connected to "
-                        + request.hostName + "."
-                )
+                Text(verbatim: L10n.format(
+                    "host.disconnect.sessions_message",
+                    defaultValue: "This will close %lld terminal session(s) connected to %@.",
+                    locale: appState.language.locale,
+                    arguments: Int64(request.sessionCount), request.hostName
+                ))
             }
         }
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("MacSSH Phase 10")
+        .accessibilityLabel("accessibility.macssh_workspace")
     }
 
     /// 根据 Sidebar 选择装配当前阶段允许的 Workspace。

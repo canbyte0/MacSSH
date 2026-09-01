@@ -37,19 +37,24 @@ enum SFTPError: Error, Equatable, Sendable {
 extension SFTPError: LocalizedError {
     /// UI 展示的用户可读信息；不回显任何 Secret 或原始状态码。
     var errorDescription: String? {
+        localizedDescription(locale: Locale(identifier: "en"))
+    }
+
+    /// 用户界面按当前 App Locale 解析，底层 FX 状态码仍只进入日志。
+    func localizedDescription(locale: Locale) -> String {
         switch self {
         case .subsystemInitFailed:
-            "The server could not open an SFTP session."
+            L10n.string("error.sftp.subsystem", defaultValue: "The server could not open an SFTP session.", locale: locale)
         case .noSuchPath:
-            "This folder no longer exists on the server."
+            L10n.string("error.sftp.no_such_path", defaultValue: "This folder no longer exists on the server.", locale: locale)
         case .permissionDenied:
-            "You do not have permission to view this folder."
+            L10n.string("error.sftp.permission_denied", defaultValue: "You do not have permission to view this folder.", locale: locale)
         case .connectionLost:
-            "The SSH connection was lost."
+            L10n.string("error.ssh.connection_lost", defaultValue: "The SSH connection was lost.", locale: locale)
         case .protocolFailure:
-            "The SFTP server reported an error."
+            L10n.string("error.sftp.protocol", defaultValue: "The SFTP server reported an error.", locale: locale)
         case .operationCancelled:
-            "The operation was cancelled."
+            L10n.string("error.operation_cancelled", defaultValue: "The operation was cancelled.", locale: locale)
         }
     }
 }

@@ -5,6 +5,7 @@ import SwiftUI
 struct HostGroupEditorView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.locale) private var locale
 
     /// nil 表示新建分组；非 nil 表示重命名。
     private let group: HostGroup?
@@ -21,7 +22,11 @@ struct HostGroupEditorView: View {
     var body: some View {
         VStack(spacing: AppTheme.Spacing.none) {
             HStack {
-                Text(group == nil ? "New Group" : "Rename Group")
+                Text(
+                    group == nil
+                        ? LocalizedStringKey("groups.new")
+                        : LocalizedStringKey("groups.rename")
+                )
                     .font(.title2.bold())
 
                 Spacer()
@@ -31,7 +36,7 @@ struct HostGroupEditorView: View {
             Divider()
 
             Form {
-                TextField("Name", text: $name)
+                TextField("host_editor.name", text: $name)
                     .accessibilityIdentifier("groupEditor.name")
 
                 if let validationMessage {
@@ -46,12 +51,12 @@ struct HostGroupEditorView: View {
             HStack {
                 Spacer()
 
-                Button("Cancel", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     dismiss()
                 }
                 .keyboardShortcut(.cancelAction)
 
-                Button("Save") {
+                Button("action.save") {
                     save()
                 }
                 .keyboardShortcut(.defaultAction)
@@ -60,10 +65,14 @@ struct HostGroupEditorView: View {
             .padding(AppTheme.Spacing.regular)
         }
         .frame(width: 420, height: 240)
-        .alert("Unable to Save Group", isPresented: saveErrorBinding) {
-            Button("OK", role: .cancel) {}
+        .alert("groups.save_failed_title", isPresented: saveErrorBinding) {
+            Button("action.ok", role: .cancel) {}
         } message: {
-            Text(saveErrorMessage ?? "The Group could not be saved.")
+            Text(verbatim: saveErrorMessage ?? L10n.string(
+                "groups.save_failed_message",
+                defaultValue: "The Group could not be saved.",
+                locale: locale
+            ))
         }
     }
 
@@ -72,7 +81,11 @@ struct HostGroupEditorView: View {
         let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedName.isEmpty else {
-            validationMessage = "Name is required."
+            validationMessage = L10n.string(
+                "validation.name_required",
+                defaultValue: "Name is required.",
+                locale: locale
+            )
             return
         }
 
@@ -91,7 +104,11 @@ struct HostGroupEditorView: View {
             dismiss()
         } catch {
             modelContext.rollback()
-            saveErrorMessage = "A Group with this name may already exist."
+            saveErrorMessage = L10n.string(
+                "groups.duplicate_name",
+                defaultValue: "A Group with this name may already exist.",
+                locale: locale
+            )
             AppLogger.persistence.error("Failed to save Host group")
         }
     }

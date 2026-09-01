@@ -13,6 +13,7 @@ import SwiftUI
 /// 导航 / 刷新 / 重试 / 文件操作全部委托业务层（原子提交与竞态防护在业务层）。
 struct SFTPBrowserView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.locale) private var locale
 
     let session: ManagedTerminalSession
 
@@ -60,62 +61,67 @@ struct SFTPBrowserView: View {
             }
             .accessibilityIdentifier("sftp.browser")
             .alert(
-                "无法开始传输",
+                "sftp.transfer_unavailable_title",
                 isPresented: transferNoticeBinding
             ) {
-                Button("好", role: .cancel) {}
+                Button("action.ok", role: .cancel) {}
             } message: {
                 Text(transferNotice ?? "")
             }
             // 文件操作失败提示（业务层写入，置空即收起）。
             .alert(
-                "操作失败",
+                "sftp.operation_failed_title",
                 isPresented: fileOperationNoticeBinding(service)
             ) {
-                Button("好", role: .cancel) {}
+                Button("action.ok", role: .cancel) {}
             } message: {
-                Text(service.fileOperationNotice ?? "")
+                Text(verbatim: service.localizedFileOperationNotice(locale: locale) ?? "")
             }
             // 新建文件夹：输入名称 → 业务层在当前目录创建（0755）。
-            .alert("新建文件夹", isPresented: $mkdirDialogActive) {
-                TextField("文件夹名称", text: $mkdirName)
-                Button("创建") {
+            .alert("sftp.new_folder", isPresented: $mkdirDialogActive) {
+                TextField("sftp.folder_name", text: $mkdirName)
+                Button("action.create") {
                     service.createDirectory(named: mkdirName)
                     mkdirName = ""
                 }
-                Button("取消", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     mkdirName = ""
                 }
             }
             // 重命名：预填当前名；同级重命名，目标名已存在由服务器拒绝。
-            .alert("重命名", isPresented: renameDialogBinding) {
-                TextField("新名称", text: $renameName)
-                Button("重命名") {
+            .alert("action.rename", isPresented: renameDialogBinding) {
+                TextField("sftp.new_name", text: $renameName)
+                Button("action.rename") {
                     if let entry = renameTarget {
                         service.renameEntry(entry, to: renameName)
                     }
                     renameTarget = nil
                 }
-                Button("取消", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     renameTarget = nil
                 }
             }
             // 删除确认：仅普通文件；删除后无法撤销。
             .alert(
-                "确定删除 “\(deleteTarget?.name ?? "")”？",
+                L10n.format(
+                    "sftp.delete_named_title",
+                    defaultValue: "Delete “%@”?",
+                    locale: locale,
+                    arguments: deleteTarget?.name ?? ""
+                ),
                 isPresented: deleteDialogBinding
             ) {
-                Button("删除", role: .destructive) {
+                Button("action.delete", role: .destructive) {
                     if let entry = deleteTarget {
                         service.deleteEntry(entry)
                     }
                     deleteTarget = nil
                 }
-                Button("取消", role: .cancel) {
+                Button("action.cancel", role: .cancel) {
                     deleteTarget = nil
                 }
             } message: {
-                Text("删除后无法撤销。")
+                Text("sftp.delete_message")
             }
         } else {
             unavailablePane
@@ -131,7 +137,7 @@ struct SFTPBrowserView: View {
             Button {
                 service.goParent()
             } label: {
-                Label("Parent", systemImage: "arrow.left")
+                Label("sftp.parent", systemImage: "arrow.left")
             }
             .disabled(service.phase != .loaded || service.isAtRoot)
             .accessibilityIdentifier("sftp.parent")
@@ -147,7 +153,7 @@ struct SFTPBrowserView: View {
             Button {
                 presentUploadPanel(service)
             } label: {
-                Label("上传", systemImage: "arrow.up.doc")
+                Label("action.upload", systemImage: "arrow.up.doc")
             }
             .disabled(service.phase != .loaded)
             .accessibilityIdentifier("sftp.upload")
@@ -155,7 +161,7 @@ struct SFTPBrowserView: View {
             Button {
                 presentDownloadPanel(service)
             } label: {
-                Label("下载", systemImage: "arrow.down.doc")
+                Label("action.download", systemImage: "arrow.down.doc")
             }
             .disabled(service.phase != .loaded || selectedDownloadableEntry(service) == nil)
             .accessibilityIdentifier("sftp.download")
@@ -164,7 +170,7 @@ struct SFTPBrowserView: View {
                 mkdirName = ""
                 mkdirDialogActive = true
             } label: {
-                Label("新建文件夹", systemImage: "folder.badge.plus")
+                Label("sftp.new_folder", systemImage: "folder.badge.plus")
             }
             .disabled(service.phase != .loaded || service.isFileOperationRunning)
             .accessibilityIdentifier("sftp.mkdir")
@@ -172,7 +178,7 @@ struct SFTPBrowserView: View {
             Button {
                 service.refresh()
             } label: {
-                Label("Refresh", systemImage: "arrow.clockwise")
+                Label("action.refresh", systemImage: "arrow.clockwise")
             }
             .disabled(service.phase == .loading)
             .accessibilityIdentifier("sftp.refresh")
@@ -187,7 +193,7 @@ struct SFTPBrowserView: View {
     private func content(_ service: SFTPService) -> some View {
         switch service.phase {
         case .idle, .loading:
-            loadingPane(session.statusText)
+            loadingPane(session.statusText(locale: locale))
         case .loaded:
             if service.entries.isEmpty {
                 emptyPane
@@ -213,9 +219,9 @@ struct SFTPBrowserView: View {
 
     private var emptyPane: some View {
         ContentUnavailableView {
-            Label("Empty Directory", systemImage: "folder")
+            Label("sftp.empty_folder", systemImage: "folder")
         } description: {
-            Text("This directory has no visible entries.")
+            Text("sftp.empty_message")
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .accessibilityIdentifier("sftp.empty")
@@ -226,7 +232,7 @@ struct SFTPBrowserView: View {
     /// 表格级右键保留 Refresh / Copy Path。
     private func entriesTable(_ service: SFTPService) -> some View {
         Table(service.entries, selection: $selection) {
-            TableColumn("Name") { entry in
+            TableColumn("sftp.column.name") { entry in
                 Label {
                     Text(entry.name)
                 } icon: {
@@ -234,13 +240,13 @@ struct SFTPBrowserView: View {
                         .foregroundStyle(iconColor(for: entry))
                 }
                 .contextMenu {
-                    Button("重命名…") {
+                    Button("sftp.rename_ellipsis") {
                         beginRename(entry)
                     }
                     .disabled(service.isFileOperationRunning)
                     .accessibilityIdentifier("sftp.rename")
 
-                    Button("删除", role: .destructive) {
+                    Button("action.delete", role: .destructive) {
                         beginDelete(entry)
                     }
                     .disabled(entry.kind != .regularFile || service.isFileOperationRunning)
@@ -249,7 +255,7 @@ struct SFTPBrowserView: View {
             }
             .width(min: 180)
 
-            TableColumn("Size") { entry in
+            TableColumn("sftp.column.size") { entry in
                 Text(entry.sizeDisplay)
                     .monospacedDigit()
                     .foregroundStyle(.secondary)
@@ -257,13 +263,13 @@ struct SFTPBrowserView: View {
             }
             .width(min: 70)
 
-            TableColumn("Modified") { entry in
+            TableColumn("sftp.column.modified") { entry in
                 Text(entry.modifiedDisplay)
                     .foregroundStyle(.secondary)
             }
             .width(min: 130)
 
-            TableColumn("Permissions") { entry in
+            TableColumn("sftp.column.permissions") { entry in
                 Text(entry.permissionsDisplay)
                     .font(.system(.body, design: .monospaced))
                     .foregroundStyle(.secondary)
@@ -274,11 +280,11 @@ struct SFTPBrowserView: View {
             openSelectedDirectory(service)
         }
         .contextMenu {
-            Button("Refresh") {
+            Button("action.refresh") {
                 service.refresh()
             }
 
-            Button("Copy Path") {
+            Button("sftp.copy_path") {
                 copyCurrentPath(service)
             }
         }
@@ -291,10 +297,10 @@ struct SFTPBrowserView: View {
                 .font(.title)
                 .foregroundStyle(Color.red)
 
-            Text(error == .connectionLost ? "Connection Lost" : "Unable to Load Directory")
+            Text(error == .connectionLost ? "sftp.connection_lost" : "sftp.unable_to_load")
                 .font(.headline)
 
-            Text(error.errorDescription ?? "An unknown error occurred.")
+            Text(verbatim: error.localizedDescription(locale: locale))
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -303,13 +309,13 @@ struct SFTPBrowserView: View {
             if error == .connectionLost {
                 // 绝不静默重连：复用 Phase 8 手动 Reconnect，
                 // 重连成功后由 runConnectFlow 重启 Files 面板。
-                Button("Reconnect") {
+                Button("action.reconnect") {
                     manager.reconnectSession(id: session.id)
                 }
                 .disabled(!session.canReconnect)
                 .accessibilityIdentifier("sftp.reconnect")
             } else {
-                Button("Retry") {
+                Button("action.retry") {
                     service.refresh()
                 }
                 .accessibilityIdentifier("sftp.retry")
@@ -325,7 +331,7 @@ struct SFTPBrowserView: View {
     /// 条目数 + 当前路径（跟随列表提交，导航失败不抖动）。
     private func footer(_ service: SFTPService) -> some View {
         HStack(spacing: AppTheme.Spacing.regular) {
-            Text("\(service.entries.count) items")
+            Text(verbatim: itemCountText(service.entries.count))
                 .foregroundStyle(.secondary)
 
             Spacer()
@@ -353,7 +359,7 @@ struct SFTPBrowserView: View {
                         .font(.title)
                         .foregroundStyle(.secondary)
 
-                    Text("Files are only available for SSH sessions.")
+                    Text("sftp.ssh_only")
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -367,11 +373,11 @@ struct SFTPBrowserView: View {
                             .font(.title)
                             .foregroundStyle(.secondary)
 
-                        Text("Connection is not active.")
+                        Text("sftp.connection_inactive")
                             .font(.callout)
                             .foregroundStyle(.secondary)
 
-                        Button("Reconnect") {
+                        Button("action.reconnect") {
                             manager.reconnectSession(id: session.id)
                         }
                         .disabled(!session.canReconnect)
@@ -380,7 +386,7 @@ struct SFTPBrowserView: View {
                     .accessibilityIdentifier("sftp.disconnected")
 
                 default:
-                    loadingPane(session.statusText)
+                    loadingPane(session.statusText(locale: locale))
                 }
             }
         }
@@ -487,7 +493,11 @@ struct SFTPBrowserView: View {
         panel.canChooseFiles = true
         panel.canChooseDirectories = false
         panel.allowsMultipleSelection = false
-        panel.prompt = "上传"
+        panel.prompt = L10n.string(
+            "action.upload",
+            defaultValue: "Upload",
+            locale: locale
+        )
 
         guard panel.runModal() == .OK, let url = panel.url else {
             return
@@ -509,7 +519,11 @@ struct SFTPBrowserView: View {
         let panel = NSSavePanel()
         panel.canCreateDirectories = true
         panel.nameFieldStringValue = entry.name
-        panel.prompt = "下载"
+        panel.prompt = L10n.string(
+            "action.download",
+            defaultValue: "Download",
+            locale: locale
+        )
         panel.directoryURL = FileManager.default.urls(
             for: .downloadsDirectory,
             in: .userDomainMask
@@ -553,5 +567,12 @@ struct SFTPBrowserView: View {
         case .regularFile, .other:
             return .secondary
         }
+    }
+
+    /// 英文按单复数选择资源；中文共用“个项目”的自然表达。
+    private func itemCountText(_ count: Int) -> String {
+        let key: StaticString = count == 1 ? "sftp.item_count.one" : "sftp.item_count.other"
+        let fallback: String.LocalizationValue = count == 1 ? "%lld item" : "%lld items"
+        return L10n.format(key, defaultValue: fallback, locale: locale, arguments: Int64(count))
     }
 }

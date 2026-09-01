@@ -6,6 +6,7 @@ import SwiftUI
 /// 绝不取消传输；行内仅活跃任务提供 Cancel。
 struct TransferListView: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.locale) private var locale
 
     private var manager: TransferManager {
         appState.transferManager
@@ -21,7 +22,7 @@ struct TransferListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        .navigationTitle("Transfers")
+        .navigationTitle("transfers.title")
         .accessibilityIdentifier("workspace.transfers")
     }
 
@@ -30,8 +31,8 @@ struct TransferListView: View {
     private var emptyState: some View {
         PlaceholderContentView(
             systemImage: "arrow.up.arrow.down",
-            title: "Transfers",
-            message: "上传 / 下载开始后，进度会显示在这里"
+            title: "transfers.title",
+            message: "transfers.empty_message"
         )
         .accessibilityIdentifier("transfers.empty")
     }
@@ -43,7 +44,7 @@ struct TransferListView: View {
             List {
                 // 最新任务在上；任务集合本身保持创建顺序（拆除屏障遍历用）。
                 ForEach(manager.tasks.reversed(), id: \.id) { task in
-                    TransferRowView(task: task) {
+                    TransferRowView(task: task, locale: locale) {
                         manager.cancel(task.id)
                     }
                 }
@@ -54,12 +55,12 @@ struct TransferListView: View {
             Divider()
 
             HStack {
-                Text("\(manager.tasks.count) 个任务")
+                Text(verbatim: itemCountText(manager.tasks.count))
                     .foregroundStyle(.secondary)
 
                 Spacer()
 
-                Button("清除已完成") {
+                Button("transfers.clear_finished") {
                     manager.clearFinished()
                 }
                 .disabled(!manager.tasks.contains(where: { $0.state.isTerminal }))
@@ -71,6 +72,13 @@ struct TransferListView: View {
             .accessibilityIdentifier("transfers.footer")
         }
     }
+
+    /// 英文按单复数选择资源；中文共用"个任务"的自然表达。
+    private func itemCountText(_ count: Int) -> String {
+        let key: StaticString = count == 1 ? "transfers.count.one" : "transfers.count.other"
+        let fallback: String.LocalizationValue = count == 1 ? "%lld task" : "%lld tasks"
+        return L10n.format(key, defaultValue: fallback, locale: locale, arguments: Int64(count))
+    }
 }
 
 /// 单条传输任务行：方向 + 文件名 + 会话、进度 / 字节 / 速度、
@@ -78,6 +86,7 @@ struct TransferListView: View {
 /// 在句柄关闭 + 发布 / 替换成功后写入）。
 private struct TransferRowView: View {
     let task: TransferTask
+    let locale: Locale
     let onCancel: () -> Void
 
     var body: some View {
@@ -90,7 +99,7 @@ private struct TransferRowView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
 
-                Text(task.sessionTitle)
+                Text(verbatim: sessionDisplayName)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
@@ -98,7 +107,7 @@ private struct TransferRowView: View {
                 Spacer()
 
                 if !task.state.isTerminal {
-                    Button("取消") {
+                    Button("action.cancel") {
                         onCancel()
                     }
                     .controlSize(.small)
@@ -127,7 +136,7 @@ private struct TransferRowView: View {
             }
 
             HStack(spacing: AppTheme.Spacing.compact) {
-                Text(task.stateDisplay)
+                Text(verbatim: task.stateDisplay(locale: locale))
                     .foregroundStyle(stateColor)
 
                 Text(task.progressDisplay)
@@ -167,5 +176,12 @@ private struct TransferRowView: View {
         case .pending:
             return Color.orange
         }
+    }
+
+    /// 会话显示名：所属 Session 仍在时按当前 Locale 动态本地化
+    /// （语言切换立即生效）；Session 已关闭（任务终态保留展示）时
+    /// 回退创建时冻结的技术名。传输任务本身绝不因语言切换重建。
+    private var sessionDisplayName: String {
+        task.sessionRef?.displayTitle(locale: locale) ?? task.sessionTitle
     }
 }

@@ -9,6 +9,8 @@
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* MacSSHApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MacSSHApp.swift */; };
 		A10000000000000000000002 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppState.swift */; };
+		T10000000000000000000001 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* AppLanguage.swift */; };
+		T10000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* Localizable.xcstrings */; };
 		A10000000000000000000003 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000003 /* RootView.swift */; };
 		A10000000000000000000004 /* AppTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000004 /* AppTheme.swift */; };
 		A10000000000000000000005 /* AppLogger.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000005 /* AppLogger.swift */; };
@@ -77,6 +79,8 @@
 		Q10000000000000000000001 /* TransferQueueRealTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = Q20000000000000000000001 /* TransferQueueRealTests.swift */; };
 		R10000000000000000000001 /* SFTPLargeFileTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = R20000000000000000000001 /* SFTPLargeFileTests.swift */; };
 		S10000000000000000000001 /* TransferResourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = S20000000000000000000001 /* TransferResourceTests.swift */; };
+		T30000000000000000000001 /* AppLanguageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T40000000000000000000001 /* AppLanguageTests.swift */; };
+		T30000000000000000000002 /* LocalizationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = T40000000000000000000002 /* LocalizationTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -98,6 +102,8 @@
 /* Begin PBXFileReference section */
 		A20000000000000000000001 /* MacSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSSHApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
+		T20000000000000000000001 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
+		T20000000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		A20000000000000000000003 /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RootView.swift; sourceTree = "<group>"; };
 		A20000000000000000000004 /* AppTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppTheme.swift; sourceTree = "<group>"; };
 		A20000000000000000000005 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
@@ -171,6 +177,8 @@
 		Q20000000000000000000001 /* TransferQueueRealTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferQueueRealTests.swift; sourceTree = "<group>"; };
 		R20000000000000000000001 /* SFTPLargeFileTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPLargeFileTests.swift; sourceTree = "<group>"; };
 		S20000000000000000000001 /* TransferResourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferResourceTests.swift; sourceTree = "<group>"; };
+		T40000000000000000000001 /* AppLanguageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguageTests.swift; sourceTree = "<group>"; };
+		T40000000000000000000002 /* LocalizationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalizationTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -237,6 +245,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000001 /* MacSSHApp.swift */,
+				T20000000000000000000001 /* AppLanguage.swift */,
 				A20000000000000000000002 /* AppState.swift */,
 				A20000000000000000000003 /* RootView.swift */,
 			);
@@ -306,7 +315,14 @@
 			sourceTree = "<group>";
 		};
 		A40000000000000000000008 /* Utilities */ = {isa = PBXGroup; path = Utilities; sourceTree = "<group>"; };
-		A40000000000000000000009 /* Resources */ = {isa = PBXGroup; path = Resources; sourceTree = "<group>"; };
+		A40000000000000000000009 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				T20000000000000000000002 /* Localizable.xcstrings */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
 		A4000000000000000000000A /* Tests */ = {
 			isa = PBXGroup;
 			children = (
@@ -334,6 +350,8 @@
 			Q20000000000000000000001 /* TransferQueueRealTests.swift */,
 			R20000000000000000000001 /* SFTPLargeFileTests.swift */,
 			S20000000000000000000001 /* TransferResourceTests.swift */,
+			T40000000000000000000001 /* AppLanguageTests.swift */,
+			T40000000000000000000002 /* LocalizationTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -585,6 +603,7 @@
 			hasScannedForEncodings = 0;
 			knownRegions = (
 				en,
+				"zh-Hans",
 				Base,
 			);
 			mainGroup = A40000000000000000000001;
@@ -606,6 +625,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				T10000000000000000000002 /* Localizable.xcstrings in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -624,6 +644,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				A10000000000000000000001 /* MacSSHApp.swift in Sources */,
+				T10000000000000000000001 /* AppLanguage.swift in Sources */,
 				A10000000000000000000002 /* AppState.swift in Sources */,
 				A10000000000000000000003 /* RootView.swift in Sources */,
 				A10000000000000000000004 /* AppTheme.swift in Sources */,
@@ -699,6 +720,8 @@
 				Q10000000000000000000001 /* TransferQueueRealTests.swift in Sources */,
 				R10000000000000000000001 /* SFTPLargeFileTests.swift in Sources */,
 				S10000000000000000000001 /* TransferResourceTests.swift in Sources */,
+				T30000000000000000000001 /* AppLanguageTests.swift in Sources */,
+				T30000000000000000000002 /* LocalizationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

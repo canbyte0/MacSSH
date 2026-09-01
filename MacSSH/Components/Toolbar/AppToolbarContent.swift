@@ -13,9 +13,9 @@ struct AppToolbarContent: ToolbarContent {
         if appState.selectedSection != .hosts {
             ToolbarItem(placement: .primaryAction) {
                 Button(action: newLocalSession) {
-                    Label("New Session", systemImage: "plus")
+                    Label("toolbar.new_session", systemImage: "plus")
                 }
-                .help("New Local Terminal (⌘T)")
+                .help("toolbar.new_local_terminal_help")
                 .accessibilityIdentifier("toolbar.newSession")
             }
         }

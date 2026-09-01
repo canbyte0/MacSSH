@@ -6,6 +6,7 @@ import SwiftUI
 ///（per-session 连接，由 SessionManager 管理）。
 struct HostListView: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.locale) private var locale
     @Environment(AppState.self) private var appState
     private let credentialService = CredentialService.shared
 
@@ -36,35 +37,35 @@ struct HostListView: View {
             hostContent
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("Hosts")
-        .searchable(text: $searchText, placement: .toolbar, prompt: "Search Hosts")
+        .navigationTitle("hosts.title")
+        .searchable(text: $searchText, placement: .toolbar, prompt: Text("hosts.search"))
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
                 Button {
                     editSelectedHost()
                 } label: {
-                    Label("Edit Host", systemImage: "pencil")
+                    Label("hosts.edit", systemImage: "pencil")
                 }
                 .disabled(selectedHost == nil)
-                .help("Edit selected Host")
+                .help("hosts.edit_selected_help")
                 .accessibilityIdentifier("hosts.edit")
 
                 Menu {
                     Button {
                         hostEditorRequest = HostEditorRequest(host: nil)
                     } label: {
-                        Label("New Host", systemImage: "server.rack")
+                        Label("hosts.new", systemImage: "server.rack")
                     }
 
                     Button {
                         groupEditorRequest = HostGroupEditorRequest(group: nil)
                     } label: {
-                        Label("New Group", systemImage: "folder.badge.plus")
+                        Label("groups.new", systemImage: "folder.badge.plus")
                     }
                 } label: {
-                    Label("Add", systemImage: "plus")
+                    Label("action.add", systemImage: "plus")
                 }
-                .help("Add a Host or Group")
+                .help("hosts.add_help")
                 .accessibilityIdentifier("hosts.add")
             }
         }
@@ -75,36 +76,40 @@ struct HostListView: View {
             HostGroupEditorView(group: request.group)
         }
         .alert(
-            "Delete Host?",
+            "hosts.delete_title",
             isPresented: hostDeleteAlertBinding,
             presenting: hostPendingDeletionID
         ) { hostID in
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
+            Button("action.cancel", role: .cancel) {}
+            Button("action.delete", role: .destructive) {
                 AppLogger.persistence.info("Host deletion confirmed")
                 deleteHost(withID: hostID)
             }
         } message: {
             _ in
-            Text("This removes the Host metadata and its saved Keychain credentials from this Mac.")
+            Text("hosts.delete_message")
         }
         .alert(
-            "Delete Group?",
+            "groups.delete_title",
             isPresented: groupDeleteAlertBinding,
             presenting: groupPendingDeletionID
         ) { groupID in
-            Button("Cancel", role: .cancel) {}
-            Button("Delete", role: .destructive) {
+            Button("action.cancel", role: .cancel) {}
+            Button("action.delete", role: .destructive) {
                 deleteGroup(withID: groupID)
             }
         } message: {
             _ in
-            Text("Hosts in this Group will be kept and moved to Ungrouped.")
+            Text("groups.delete_message")
         }
-        .alert("Host Manager Error", isPresented: operationErrorBinding) {
-            Button("OK", role: .cancel) {}
+        .alert("hosts.error_title", isPresented: operationErrorBinding) {
+            Button("action.ok", role: .cancel) {}
         } message: {
-            Text(operationErrorMessage ?? "The operation could not be completed.")
+            Text(verbatim: operationErrorMessage ?? L10n.string(
+                "error.operation_failed",
+                defaultValue: "The operation could not be completed.",
+                locale: locale
+            ))
         }
         .accessibilityIdentifier("workspace.hosts")
     }
@@ -112,23 +117,23 @@ struct HostListView: View {
     /// Host Manager 内部的分类 Sidebar，使用 SwiftData Group 作为真实数据源。
     private var filterSidebar: some View {
         List(selection: $selectedFilter) {
-            Section("Hosts") {
+            Section("hosts.title") {
                 filterRow(
-                    title: "Favorites",
+                    title: "hosts.favorites",
                     systemImage: "star.fill",
                     count: hosts.filter(\.favorite).count,
                     filter: .favorites
                 )
 
                 filterRow(
-                    title: "All Hosts",
+                    title: "hosts.all",
                     systemImage: "server.rack",
                     count: hosts.count,
                     filter: .all
                 )
             }
 
-            Section("Groups") {
+            Section("groups.title") {
                 ForEach(groups) { group in
                     HStack {
                         Label(group.name, systemImage: "folder")
@@ -139,13 +144,13 @@ struct HostListView: View {
                     }
                     .tag(HostListFilter.group(group.id))
                     .contextMenu {
-                        Button("Rename Group") {
+                        Button("groups.rename") {
                             groupEditorRequest = HostGroupEditorRequest(group: group)
                         }
 
                         Divider()
 
-                        Button("Delete Group", role: .destructive) {
+                        Button("groups.delete", role: .destructive) {
                             groupPendingDeletionID = group.id
                         }
                     }
@@ -154,14 +159,14 @@ struct HostListView: View {
                 Button {
                     groupEditorRequest = HostGroupEditorRequest(group: nil)
                 } label: {
-                    Label("New Group", systemImage: "plus")
+                    Label("groups.new", systemImage: "plus")
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("hosts.newGroup")
             }
         }
         .listStyle(.sidebar)
-        .accessibilityLabel("Hosts Sidebar")
+        .accessibilityLabel("accessibility.hosts_sidebar")
     }
 
     /// 右侧内容区显示当前筛选标题和 Host 列表。
@@ -169,10 +174,10 @@ struct HostListView: View {
         VStack(alignment: .leading, spacing: AppTheme.Spacing.none) {
             HStack {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(currentFilterTitle)
+                    Text(verbatim: currentFilterTitle)
                         .font(.title2.bold())
 
-                    Text(hostCountDescription)
+                    Text(verbatim: hostCountDescription)
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
@@ -185,11 +190,15 @@ struct HostListView: View {
 
             List(selection: $selectedHostID) {
                 if filteredHosts.isEmpty {
-                    ContentUnavailableView(
-                        emptyStateTitle,
-                        systemImage: searchText.isEmpty ? "server.rack" : "magnifyingglass",
-                        description: Text(emptyStateDescription)
-                    )
+                    ContentUnavailableView {
+                        Label {
+                            Text(emptyStateTitleKey)
+                        } icon: {
+                            Image(systemName: searchText.isEmpty ? "server.rack" : "magnifyingglass")
+                        }
+                    } description: {
+                        Text(emptyStateDescriptionKey)
+                    }
                     .frame(maxWidth: .infinity, minHeight: 260)
                     .listRowSeparator(.hidden)
                 } else {
@@ -223,30 +232,36 @@ struct HostListView: View {
                         )
                         .contextMenu {
                             if hasSessions(host.id) {
-                                Button("Open Terminal") {
+                                Button("hosts.open_terminal") {
                                     connect(host)
                                 }
 
-                                Button("Disconnect") {
+                                Button("action.disconnect") {
                                     disconnectHost(host)
                                 }
                             } else {
-                                Button("Connect") {
+                                Button("action.connect") {
                                     connect(host)
                                 }
                             }
 
-                            Button("Edit Host") {
+                            Button("hosts.edit") {
                                 hostEditorRequest = HostEditorRequest(host: host)
                             }
 
-                            Button(host.favorite ? "Remove from Favorites" : "Add to Favorites") {
+                            Button {
                                 toggleFavorite(host)
+                            } label: {
+                                Text(
+                                    host.favorite
+                                        ? LocalizedStringKey("hosts.remove_favorite")
+                                        : LocalizedStringKey("hosts.add_favorite")
+                                )
                             }
 
                             Divider()
 
-                            Button("Delete Host", role: .destructive) {
+                            Button("hosts.delete", role: .destructive) {
                                 hostPendingDeletionID = host.id
                             }
                         }
@@ -266,13 +281,17 @@ struct HostListView: View {
 
     /// 构造带数量的原生筛选行。
     private func filterRow(
-        title: String,
+        title: LocalizedStringKey,
         systemImage: String,
         count: Int,
         filter: HostListFilter
     ) -> some View {
         HStack {
-            Label(title, systemImage: systemImage)
+            Label {
+                Text(title)
+            } icon: {
+                Image(systemName: systemImage)
+            }
             Spacer()
             Text(String(count))
                 .font(.caption)
@@ -314,29 +333,37 @@ struct HostListView: View {
     private var currentFilterTitle: String {
         switch selectedFilter ?? .all {
         case .all:
-            "All Hosts"
+            L10n.string("hosts.all", defaultValue: "All Hosts", locale: locale)
         case .favorites:
-            "Favorites"
+            L10n.string("hosts.favorites", defaultValue: "Favorites", locale: locale)
         case let .group(groupID):
-            groups.first { $0.id == groupID }?.name ?? "Group"
+            groups.first { $0.id == groupID }?.name ?? L10n.string(
+                "groups.singular",
+                defaultValue: "Group",
+                locale: locale
+            )
         }
     }
 
     private var hostCountDescription: String {
         let count = filteredHosts.count
-        return count == 1 ? "1 Host" : "\(count) Hosts"
-    }
-
-    private var emptyStateTitle: String {
-        searchText.isEmpty ? "No Hosts" : "No Results"
-    }
-
-    private var emptyStateDescription: String {
-        if searchText.isEmpty {
-            "Add a Host to begin organizing connection metadata."
-        } else {
-            "No Host name or hostname matches your search."
+        if count == 1 {
+            return L10n.string("hosts.count.one", defaultValue: "1 Host", locale: locale)
         }
+        return L10n.format(
+            "hosts.count.other",
+            defaultValue: "%lld Hosts",
+            locale: locale,
+            arguments: Int64(count)
+        )
+    }
+
+    private var emptyStateTitleKey: LocalizedStringKey {
+        searchText.isEmpty ? "hosts.empty" : "search.no_results"
+    }
+
+    private var emptyStateDescriptionKey: LocalizedStringKey {
+        searchText.isEmpty ? "hosts.empty_message" : "hosts.search_empty_message"
     }
 
     private func editSelectedHost() {
@@ -367,7 +394,14 @@ struct HostListView: View {
     private func toggleFavorite(_ host: Host) {
         host.favorite.toggle()
         host.updatedAt = .now
-        saveOperation(successLog: "Host favorite updated", failureMessage: "Favorite could not be updated.")
+        saveOperation(
+            successLog: "Host favorite updated",
+            failureMessage: L10n.string(
+                "hosts.favorite_update_failed",
+                defaultValue: "Favorite could not be updated.",
+                locale: locale
+            )
+        )
     }
 
     /// 删除 Host 前先清理其 Password/Passphrase；SwiftData 失败时用内存备份补偿恢复。
@@ -427,7 +461,11 @@ struct HostListView: View {
             let restored = await restoreCredentials(from: backup)
             operationErrorMessage = restored
                 ? userFacingDeletionMessage(for: error)
-                : "The Host was not deleted and macOS Keychain restoration also failed. Please retry."
+                : L10n.string(
+                    "hosts.delete_keychain_restore_failed",
+                    defaultValue: "The Host was not deleted and macOS Keychain restoration also failed. Please retry.",
+                    locale: locale
+                )
             AppLogger.persistence.error("Failed to delete Host and associated credentials")
         }
 
@@ -477,9 +515,13 @@ struct HostListView: View {
 
     private func userFacingDeletionMessage(for error: Error) -> String {
         if let keychainError = error as? KeychainError {
-            return keychainError.localizedDescription
+            return keychainError.localizedDescription(locale: locale)
         }
-        return "The Host could not be deleted. Please try again."
+        return L10n.string(
+            "hosts.delete_failed",
+            defaultValue: "The Host could not be deleted. Please try again.",
+            locale: locale
+        )
     }
 
     private func deleteGroup(withID groupID: UUID) {
@@ -493,7 +535,14 @@ struct HostListView: View {
 
         modelContext.delete(group)
         groupPendingDeletionID = nil
-        saveOperation(successLog: "Host group deleted", failureMessage: "The Group could not be deleted.")
+        saveOperation(
+            successLog: "Host group deleted",
+            failureMessage: L10n.string(
+                "groups.delete_failed",
+                defaultValue: "The Group could not be deleted.",
+                locale: locale
+            )
+        )
     }
 
     /// 所有列表内的轻量修改共用同一保存路径，日志不包含 Host 数据。

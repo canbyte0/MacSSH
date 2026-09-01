@@ -369,7 +369,7 @@ final class SFTPServiceTests: XCTestCase {
             hostname: testHostname,
             port: Int(testPort),
             baseTitle: "Phase9PaneHost",
-            title: "Phase9PaneHost"
+            titleCounter: 1
         )
         session.attach(connection: connection, info: info)
 

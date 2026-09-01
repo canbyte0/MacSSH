@@ -15,25 +15,30 @@ enum KeychainError: Error, Equatable, LocalizedError, Sendable {
 
     /// UI 只展示安全的业务描述；底层状态码只保留在枚举关联值中供诊断使用。
     var errorDescription: String? {
+        localizedDescription(locale: Locale(identifier: "en"))
+    }
+
+    /// UI 显式传入 App Locale；不改变错误类型或底层安全行为。
+    func localizedDescription(locale: Locale) -> String {
         switch self {
         case .itemNotFound:
-            "The credential was not found in macOS Keychain."
+            L10n.string("error.keychain.item_not_found", defaultValue: "The credential was not found in macOS Keychain.", locale: locale)
         case .duplicateItem:
-            "A credential with this identifier already exists."
+            L10n.string("error.keychain.duplicate", defaultValue: "A credential with this identifier already exists.", locale: locale)
         case .invalidSecret:
-            "The credential cannot be empty."
+            L10n.string("error.keychain.empty", defaultValue: "The credential cannot be empty.", locale: locale)
         case .encodingFailed:
-            "The credential could not be prepared for secure storage."
+            L10n.string("error.keychain.encoding", defaultValue: "The credential could not be prepared for secure storage.", locale: locale)
         case .decodingFailed:
-            "The stored credential could not be decoded."
+            L10n.string("error.keychain.decoding", defaultValue: "The stored credential could not be decoded.", locale: locale)
         case .accessDenied:
-            "macOS Keychain denied access to the credential."
+            L10n.string("error.keychain.access_denied", defaultValue: "macOS Keychain denied access to the credential.", locale: locale)
         case .interactionNotAllowed:
-            "macOS Keychain interaction is not currently allowed."
+            L10n.string("error.keychain.interaction_not_allowed", defaultValue: "macOS Keychain interaction is not currently allowed.", locale: locale)
         case .keychainUnavailable:
-            "macOS Keychain is currently unavailable."
+            L10n.string("error.keychain.unavailable", defaultValue: "macOS Keychain is currently unavailable.", locale: locale)
         case .unexpectedStatus:
-            "The credential operation could not be completed."
+            L10n.string("error.keychain.unexpected", defaultValue: "The credential operation could not be completed.", locale: locale)
         }
     }
 

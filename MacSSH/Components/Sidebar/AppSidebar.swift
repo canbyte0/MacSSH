@@ -7,7 +7,11 @@ struct AppSidebar: View {
 
     var body: some View {
         List(AppSection.allCases, selection: $selection) { section in
-            Label(section.title, systemImage: section.systemImage)
+            Label {
+                Text(section.titleKey)
+            } icon: {
+                Image(systemName: section.systemImage)
+            }
                 .tag(section)
                 .accessibilityIdentifier("sidebar.\(section.rawValue)")
         }
@@ -18,6 +22,6 @@ struct AppSidebar: View {
             ideal: AppTheme.Layout.sidebarIdealWidth,
             max: AppTheme.Layout.sidebarMaximumWidth
         )
-        .accessibilityLabel("Main Sidebar")
+        .accessibilityLabel("accessibility.main_sidebar")
     }
 }
