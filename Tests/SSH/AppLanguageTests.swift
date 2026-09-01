@@ -160,7 +160,7 @@ final class AppLanguageTests: XCTestCase {
         XCTAssertEqual(session.title, "Local")
         XCTAssertEqual(
             session.displayTitle(locale: AppLanguage.simplifiedChinese.locale),
-            "本地终端"
+            "终端"
         )
         XCTAssertEqual(
             session.displayTitle(locale: AppLanguage.english.locale),

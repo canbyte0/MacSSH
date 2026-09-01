@@ -152,8 +152,11 @@ private struct TransferRowView: View {
             .font(.caption)
             .monospacedDigit()
 
-            if let message = task.failureMessage {
-                Text(message)
+            // 按**当前** Locale 即时解析（任务书七十三）：失败文案绝不读取
+            // 失败时刻缓存的字符串，语言切换后列表立即显示新语言。
+            // `verbatim:` —— 文案已本地化完成，不再做第二次 key 查找。
+            if let message = task.failureMessage(locale: locale) {
+                Text(verbatim: message)
                     .font(.caption)
                     .foregroundStyle(Color.red)
             }

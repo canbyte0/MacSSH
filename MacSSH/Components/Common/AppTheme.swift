@@ -32,5 +32,8 @@ enum AppTheme {
         static let hostSidebarMaximumWidth: CGFloat = 240
         static let tabBarHeight: CGFloat = 42
         static let statusBarHeight: CGFloat = 28
+
+        /// Terminal 内容与容器边缘之间的统一留白，单位为 macOS 逻辑点。
+        static let terminalContentInset: CGFloat = 6
     }
 }

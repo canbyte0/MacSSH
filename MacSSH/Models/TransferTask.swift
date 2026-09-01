@@ -20,7 +20,7 @@ enum TransferState: Equatable, Sendable {
     case cancelling
     /// 数据完成 + 句柄关闭 + 发布 / 替换成功（终态）。
     case completed
-    /// 失败终态；用户可见原因在 `TransferTask.failureMessage`。
+    /// 失败终态；用户可见原因在 `TransferTask.failureError`（语言无关枚举）。
     case failed
     /// 取消终态（清理已完成）。
     case cancelled
@@ -90,8 +90,19 @@ final class TransferTask: Identifiable {
 
     private(set) var state: TransferState = .pending
 
-    /// 失败时的用户可见原因（不含 Secret 与原始 libssh2 码）。
-    private(set) var failureMessage: String?
+    /// 失败原因（**语言无关**的枚举，不缓存任何具体语言文案）。
+    ///
+    /// MacSSH 1.1 Phase 1（任务书七十三）：原实现在此缓存"失败时刻按当时
+    /// App Locale 生成好的 String"，导致任务到达 failed 终态后，用户再切换
+    /// 语言（zh→en→zh）列表仍显示失败瞬间的旧语言文案，且该状态是终态、
+    /// 不会重算，属于不可恢复的展示错误。
+    ///
+    /// 现改为只缓存语言无关的 `TransferError`，展示时经
+    /// `failureMessage(locale:)` 按**当前** App Locale 即时解析；
+    /// 语言切换只更新文案，绝不重建 / 重置传输任务。
+    ///
+    /// 不携带 Secret；libssh2 / FX 原始码只进安全日志。
+    private(set) var failureError: TransferError?
 
     /// 入队时刻。
     let queuedAt = Date()
@@ -209,9 +220,12 @@ final class TransferTask: Identifiable {
         finishedAt = Date()
     }
 
-    /// 失败（终态）。
-    func markFailed(message: String) {
-        failureMessage = message
+    /// 失败（终态）：只记录语言无关的原因枚举。
+    ///
+    /// 绝不接收已本地化好的 String —— 那会把失败瞬间的 App 语言固化进
+    /// 终态记录，之后切换语言无法挽回（任务书七十三）。
+    func markFailed(error: TransferError) {
+        failureError = error
         state = .failed
         finishedAt = Date()
     }
@@ -258,6 +272,18 @@ final class TransferTask: Identifiable {
         case .cancelled:
             return L10n.string("transfer.state.cancelled", defaultValue: "Cancelled", locale: locale)
         }
+    }
+
+    /// 失败原因文案：按**当前** App Locale 即时解析（任务书七十三）。
+    ///
+    /// 这是失败文案的**唯一**展示入口——UI 绝不读取失败时刻缓存的字符串。
+    /// 未失败（无 `failureError`）时返回 nil。
+    ///
+    /// 注：`TransferError.generic` 携带的是底层诊断文案（如本地 I/O
+    /// 错误描述），本身不含可本地化的语义，因此该 case 在切换语言时
+    /// 文案不变；其余全部 case（含协议错误）均随 Locale 切换。
+    func failureMessage(locale: Locale) -> String? {
+        failureError?.message(locale: locale)
     }
 
     /// "12.3 MB / 64.0 MB"；未知大小时只显示已传输量。
@@ -314,6 +340,8 @@ enum TransferError: Error, Equatable {
     case connectionLost(remoteResidue: String? = nil)
     /// 远端已存在同名文件；Phase 10 默认不覆盖。
     case remoteFileExists
+    /// 所属 Session 已不存在（调度器防御路径：会话已关闭 / 已移除）。
+    case sessionMissing
     /// 远端权限不足。
     case permissionDenied
     /// 远端文件不存在（下载源消失）。
@@ -324,11 +352,16 @@ enum TransferError: Error, Equatable {
     case localWriteFailed
     /// 服务器写入异常（连接未断开但服务器拒绝接收数据）。
     case remoteWriteFailed
+    /// 服务器报告 SFTP 协议错误（连接未断开、非权限 / 路径类失败）。
+    /// 来源：`SFTPError.protocolFailure`（SFTPSession / SFTPFileOperations
+    /// 均可能真实抛出），必须走独立语言无关 case，禁止固化英文文案。
+    case remoteProtocolError
     /// 传输校验失败（远端字节数与已传输字节不一致）。
     case verificationFailed
     /// 发布 / 替换本地目标文件失败（替换操作被系统拒绝）。
     case publishFailed
-    /// 其他错误（含本地 I/O、校验、协议错误，保留底层文案用于诊断）。
+    /// 其他错误（本地 I/O 等底层**诊断**文案；协议错误已有独立 case，
+    /// 禁止把用户可见的英文句子放进本 case 固化语言）。
     case generic(String)
 
     /// UI 展示的用户可读信息；按当前 App Locale 生成。
@@ -349,6 +382,12 @@ enum TransferError: Error, Equatable {
             return L10n.string(
                 "error.transfer.connection_lost",
                 defaultValue: "The SSH connection was lost and the transfer failed.",
+                locale: locale
+            )
+        case .sessionMissing:
+            return L10n.string(
+                "error.transfer.session_missing",
+                defaultValue: "The session no longer exists.",
                 locale: locale
             )
         case .remoteFileExists:
@@ -387,6 +426,12 @@ enum TransferError: Error, Equatable {
                 defaultValue: "The server reported an error while writing data.",
                 locale: locale
             )
+        case .remoteProtocolError:
+            return L10n.string(
+                "error.transfer.remote_protocol_error",
+                defaultValue: "The server reported a protocol error during the transfer.",
+                locale: locale
+            )
         case .verificationFailed:
             return L10n.string(
                 "error.transfer.verification_failed",
@@ -421,7 +466,7 @@ enum TransferError: Error, Equatable {
         case .operationCancelled:
             self = .cancelled
         case .protocolFailure:
-            self = .generic("The server reported a transfer error.")
+            self = .remoteProtocolError
         }
     }
 }

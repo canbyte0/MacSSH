@@ -50,7 +50,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("common.on", "On", "开"),
 
     # ── 侧栏 / sidebar ──────────────────────────────────────────────
-    ("sidebar.local_terminal", "Local Terminal", "本地终端"),
+    ("sidebar.local_terminal", "Local Terminal", "终端"),
     ("sidebar.hosts", "Hosts", "主机"),
     ("sidebar.transfers", "Transfers", "传输"),
     ("sidebar.settings", "Settings", "设置"),
@@ -84,8 +84,8 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
 
     # ── 终端 / terminal ─────────────────────────────────────────────
     ("terminal.title", "Terminal", "终端"),
-    ("terminal.local_title", "Local Terminal", "本地终端"),
-    ("terminal.local", "Local Terminal", "本地终端"),
+    ("terminal.local_title", "Local Terminal", "终端"),
+    ("terminal.local", "Local Terminal", "终端"),
     ("terminal.remote", "Remote Terminal: %@", "远程终端：%@"),
     ("terminal.ssh_title", "SSH · %@", "SSH · %@"),
     ("terminal.pane", "Pane", "面板"),
@@ -371,6 +371,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("error.transfer.local_read_failed", "The local file could not be read.", "无法读取本地文件。"),
     ("error.transfer.local_write_failed", "The local temporary file could not be written.", "无法写入本地临时文件。"),
     ("error.transfer.remote_write_failed", "The server reported an error while writing data.", "服务器写入异常。"),
+    ("error.transfer.remote_protocol_error", "The server reported a protocol error during the transfer.", "服务器报告了协议错误，传输失败。"),
     ("error.transfer.verification_failed", "Transfer verification failed; the byte count does not match.", "传输校验失败，字节数不一致。"),
     ("error.transfer.publish_failed", "Replacing the destination file failed.", "替换目标文件失败。"),
     ("error.transfer.queue_full", "The transfer queue is full. Please wait for some tasks to finish.", "传输队列已满，请等待部分任务完成。"),

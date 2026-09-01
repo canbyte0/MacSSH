@@ -358,6 +358,137 @@ final class LocalizationTests: XCTestCase {
         XCTAssertFalse(en.isEmpty)
     }
 
+    // MARK: - Transfer 失败文案 P1 回归：失败后 zh→en→zh 动态切换
+
+    /// 任务书七十三（P1 回归）：传输任务失败文案**不得**在失败时刻缓存。
+    ///
+    /// 原实现把"失败瞬间按当时 App Locale 生成好的 String"写入终态任务，
+    /// 之后用户切换语言（zh→en→zh）列表仍显示旧语言；且 failed 是终态、
+    /// 不会重算，属于不可恢复的展示错误。
+    ///
+    /// 现实现只缓存语言无关的 `TransferError`，展示由
+    /// `failureMessage(locale:)` 按**当前** Locale 即时解析。
+    @MainActor
+    func testTransferFailureMessageFollowsLanguageSwitchZhEnZh() throws {
+        let appState = try makeAppState()
+        let task = TransferTask(
+            direction: .upload,
+            sessionID: UUID(),
+            sessionTitle: "Test",
+            remotePath: "/tmp/test.bin",
+            localName: "test.bin",
+            localURL: URL(fileURLWithPath: "/tmp/test.bin")
+        )
+        let taskID = task.id
+
+        // 在默认语言（zh-Hans）下到达失败终态。
+        task.markFailed(error: .permissionDenied)
+
+        // 缓存的是语言无关枚举，不是任何语言的具体文案。
+        XCTAssertEqual(task.failureError, .permissionDenied)
+
+        // 1) zh-Hans：中文文案。
+        appState.language = .simplifiedChinese
+        let zh = task.failureMessage(locale: appState.language.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertTrue(zh?.contains("权限") == true, "zh-Hans 失败文案必须是中文: \(zh ?? "")")
+
+        // 2) 切 English：同一任务、同一终态，文案必须跟着变英文。
+        appState.language = .english
+        let en = task.failureMessage(locale: appState.language.locale)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "切换 English 后失败文案必须变英文——仍读到旧文案说明在缓存 String")
+        XCTAssertTrue(
+            en?.lowercased().contains("permission") == true,
+            "en 失败文案必须含 'permission': \(en ?? "")"
+        )
+
+        // 3) 切回 zh-Hans：文案必须再变回中文，且与首次一致。
+        appState.language = .simplifiedChinese
+        let back = task.failureMessage(locale: appState.language.locale)
+        XCTAssertEqual(back, zh, "切回 zh-Hans 后失败文案必须回到中文")
+
+        // 语言切换绝不重建 / 重置传输任务（任务书十八）。
+        XCTAssertEqual(task.id, taskID)
+        XCTAssertEqual(task.state, .failed)
+        XCTAssertEqual(task.failureError, .permissionDenied)
+    }
+
+    /// 带插值的失败原因（连接丢失 + 远端残留文件名）同样必须随 Locale 切换：
+    /// format 的参数是数据（远端临时文件名），不能连文案一起被固化。
+    @MainActor
+    func testTransferFailureMessageWithInterpolationSwitchesWithLocale() {
+        let task = TransferTask(
+            direction: .upload,
+            sessionID: UUID(),
+            sessionTitle: "Test",
+            remotePath: "/tmp/test.bin",
+            localName: "test.bin",
+            localURL: URL(fileURLWithPath: "/tmp/test.bin")
+        )
+        task.markFailed(error: .connectionLost(remoteResidue: ".macssh-tmp-abc123"))
+
+        let zh = task.failureMessage(locale: AppLanguage.simplifiedChinese.locale)
+        let en = task.failureMessage(locale: AppLanguage.english.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "带插值的失败文案必须随 Locale 切换")
+
+        // 插值参数（远端残留文件名）在两种语言下都必须完整保留。
+        XCTAssertTrue(zh?.contains(".macssh-tmp-abc123") == true, "zh-Hans 必须保留残留文件名: \(zh ?? "")")
+        XCTAssertTrue(en?.contains(".macssh-tmp-abc123") == true, "en 必须保留残留文件名: \(en ?? "")")
+    }
+
+    /// 未失败的任务不展示任何失败文案（failureError 为 nil）。
+    @MainActor
+    func testTransferFailureMessageIsNilWhenNotFailed() {
+        let task = TransferTask(
+            direction: .download,
+            sessionID: UUID(),
+            sessionTitle: "Test",
+            remotePath: "/tmp/test.bin",
+            localName: "test.bin",
+            localURL: URL(fileURLWithPath: "/tmp/test.bin")
+        )
+        XCTAssertNil(task.failureError)
+        XCTAssertNil(task.failureMessage(locale: AppLanguage.simplifiedChinese.locale))
+    }
+
+    /// P1 回归（复验遗留）：`SFTPError.protocolFailure` 是真实可抛路径
+    /// （SFTPSession / SFTPFileOperations 均可能抛出），不得映射进
+    /// `.generic(英文句子)` 固化语言——必须映射到独立语言无关 case，
+    /// 失败文案随 Locale 切换。
+    @MainActor
+    func testTransferErrorMapsSftpProtocolFailureToLocalizableCase() {
+        let mapped = TransferError(sftpError: .protocolFailure(code: 4))
+        XCTAssertEqual(
+            mapped,
+            .remoteProtocolError,
+            "protocolFailure 必须映射到独立的语言无关 case，而非 .generic(英文)"
+        )
+
+        let task = TransferTask(
+            direction: .upload,
+            sessionID: UUID(),
+            sessionTitle: "Test",
+            remotePath: "/tmp/test.bin",
+            localName: "test.bin",
+            localURL: URL(fileURLWithPath: "/tmp/test.bin")
+        )
+        task.markFailed(error: mapped)
+
+        let zh = task.failureMessage(locale: AppLanguage.simplifiedChinese.locale)
+        let en = task.failureMessage(locale: AppLanguage.english.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "协议错误失败文案必须随 Locale 切换——不变说明在缓存 / 固化 String")
+        XCTAssertTrue(zh?.contains("协议") == true, "zh-Hans 失败文案必须提及协议错误: \(zh ?? "")")
+        XCTAssertTrue(
+            en?.lowercased().contains("protocol") == true,
+            "en 失败文案必须含 'protocol': \(en ?? "")"
+        )
+    }
+
     /// 认证方式显示名使用 localization key，不直接暴露 Swift enum rawValue
     /// （任务书二十七：rawValue 不应作为最终 UI 文案）。
     func testAuthenticationTypeUsesLocalizedDisplayLabels() {

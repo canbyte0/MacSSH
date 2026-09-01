@@ -181,7 +181,45 @@ final class TransferQueueTests: XCTestCase {
         session.markClosed()
         manager.scheduleNext()
         XCTAssertEqual(task.state, .failed, "孤儿任务必须安全到达失败终态")
-        XCTAssertEqual(task.failureMessage, "会话不存在。")
+        // 失败原因以语言无关枚举缓存（任务书七十三），文案按 Locale 即时解析。
+        XCTAssertEqual(task.failureError, .sessionMissing)
+        XCTAssertEqual(task.failureMessage(locale: AppLanguage.defaultLanguage.locale), "会话不存在。")
+    }
+
+    /// 任务书七十三（P1 回归）：调度器写入的失败同样是语言无关枚举。
+    ///
+    /// 任务到达 failed 终态**之后**再切换语言（zh→en→zh），失败文案必须跟着
+    /// 变——若仍相等，说明任务里缓存的是失败瞬间的 String，该状态不可恢复。
+    func testSchedulerFailureMessageSwitchesWithLocaleAfterFailure() async {
+        let manager = TransferManager()
+        let session = makeDisconnectedSession()
+        let result = manager.requestUpload(
+            session: session,
+            localURL: makeLocalFile(name: "ghost-l10n.bin")
+        )
+        guard let task = result.task else {
+            XCTFail("入队必须成功")
+            return
+        }
+
+        session.markClosed()
+        manager.scheduleNext()
+        XCTAssertEqual(task.state, .failed, "孤儿任务必须安全到达失败终态")
+        XCTAssertEqual(task.failureError, .sessionMissing)
+
+        // 失败后切换语言：文案必须跟随当前 Locale。
+        let zh = task.failureMessage(locale: AppLanguage.simplifiedChinese.locale)
+        let en = task.failureMessage(locale: AppLanguage.english.locale)
+        XCTAssertNotNil(zh)
+        XCTAssertNotNil(en)
+        XCTAssertNotEqual(zh, en, "失败后切换语言文案必须跟随——仍相等说明在缓存 String")
+        XCTAssertTrue(zh?.contains("会话") == true, "zh-Hans 必须为中文: \(zh ?? "")")
+        XCTAssertTrue(en?.lowercased().contains("session") == true, "en 必须含 'session': \(en ?? "")")
+
+        // 切回 zh-Hans 必须回到同一文案，且任务状态 / 原因绝不因语言切换改变。
+        XCTAssertEqual(task.failureMessage(locale: AppLanguage.simplifiedChinese.locale), zh)
+        XCTAssertEqual(task.state, .failed)
+        XCTAssertEqual(task.failureError, .sessionMissing)
     }
 
     /// 会话未连接：任务保持 pending + 等待连接，绝不启动、绝不失败。

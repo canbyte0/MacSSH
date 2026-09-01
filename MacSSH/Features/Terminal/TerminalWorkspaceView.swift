@@ -93,6 +93,9 @@ struct TerminalWorkspaceView: View {
                 TerminalRepresentable(service: service)
                     .id(session.id)
                     .accessibilityLabel("terminal.local")
+                    // 缩小 SwiftTerm 的真实 frame，使其自动按留白后的尺寸同步 PTY。
+                    .padding(AppTheme.Layout.terminalContentInset)
+                    .background(Color(nsColor: .textBackgroundColor))
             }
 
         case .remoteSSH:
@@ -102,6 +105,9 @@ struct TerminalWorkspaceView: View {
                     .accessibilityLabel(
                         Text("terminal.remote \(session.hostDisplayName ?? session.hostname ?? "")")
                     )
+                    // Local / Remote 共用统一留白，行列计算仍由 SwiftTerm 负责。
+                    .padding(AppTheme.Layout.terminalContentInset)
+                    .background(Color(nsColor: .textBackgroundColor))
             }
         }
     }

@@ -252,8 +252,9 @@ final class SFTPTransferTests: XCTestCase {
         try await waitForTerminal(repeated)
 
         XCTAssertEqual(repeated.state, .failed)
+        XCTAssertEqual(repeated.failureError, .remoteFileExists)
         XCTAssertEqual(
-            repeated.failureMessage,
+            repeated.failureMessage(locale: AppLanguage.defaultLanguage.locale),
             "远程文件已存在，不会自动覆盖该文件。"
         )
         let remoteData = try await connection.testReadWholeRemoteFile(uploadDir + "/exists.bin")
@@ -290,7 +291,8 @@ final class SFTPTransferTests: XCTestCase {
         let missing = try XCTUnwrap(missingTask)
         try await waitForTerminal(missing)
         XCTAssertEqual(missing.state, .failed, "下载不存在的文件必须失败")
-        XCTAssertEqual(missing.failureMessage, "远程文件不存在。")
+        XCTAssertEqual(missing.failureError, .remoteFileMissing)
+        XCTAssertEqual(missing.failureMessage(locale: AppLanguage.defaultLanguage.locale), "远程文件不存在。")
 
         // 目录与符号链接在请求层直接拒绝（绝不进入传输）。
         let dirEntry = SFTPFileEntry(
@@ -333,7 +335,8 @@ final class SFTPTransferTests: XCTestCase {
         try await waitForTerminal(upload)
 
         XCTAssertEqual(upload.state, .failed, "权限拒绝目录上传必须失败")
-        XCTAssertEqual(upload.failureMessage, "权限不足，无法完成传输。")
+        XCTAssertEqual(upload.failureError, .permissionDenied)
+        XCTAssertEqual(upload.failureMessage(locale: AppLanguage.defaultLanguage.locale), "权限不足，无法完成传输。")
 
         let alive = await connection.hasLiveSession
         XCTAssertTrue(alive, "业务错误绝不断开连接")
@@ -476,7 +479,7 @@ final class SFTPTransferTests: XCTestCase {
 
         try await waitForTerminal(upload)
         XCTAssertEqual(upload.state, .failed, "连接丢失必须以失败收尾")
-        let message = upload.failureMessage ?? ""
+        let message = upload.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? ""
         XCTAssertTrue(
             message.hasPrefix("SSH 连接已断开，传输失败。"),
             "连接丢失文案前缀必须如实：\(message)"

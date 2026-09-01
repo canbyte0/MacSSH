@@ -291,12 +291,11 @@ final class TransferManager {
             case .missing:
                 // Session 已被移除（关闭屏障会先取消任务；此为防御路径，
                 // 不 fatalError，安全收尾，任务书九十九）。
+                //
+                // 只写语言无关枚举，绝不在此按 schedulingLocale 生成文案——
+                // failed 是终态，缓存的字符串在之后切换语言时无法更新。
                 task.markStarted()
-                task.markFailed(message: L10n.string(
-                    "error.transfer.session_missing",
-                    defaultValue: "The session no longer exists.",
-                    locale: schedulingLocale
-                ))
+                task.markFailed(error: .sessionMissing)
                 AppLogger.app.error("Scheduler found a task without session")
                 continue
             case .disconnected:
@@ -392,7 +391,7 @@ final class TransferManager {
         else {
             // 调度与断开竞态：启动瞬间连接已不可用——如实失败（任务书十七：
             // 绝不自动续传 / 自动重试，Retry 属计划书 2.0 路线）。
-            task.markFailed(message: TransferError.connectionLost(remoteResidue: nil).message(locale: schedulingLocale))
+            task.markFailed(error: .connectionLost(remoteResidue: nil))
             AppLogger.app.error("Transfer start aborted: session unavailable")
             scheduleNext()
             return
@@ -432,9 +431,9 @@ final class TransferManager {
                 task.markCompleted()
                 AppLogger.app.info("File transfer completed")
             } catch let error as TransferError {
-                Self.finish(task, with: error, locale: self?.schedulingLocale ?? AppLanguage.defaultLanguage.locale)
+                Self.finish(task, with: error)
             } catch {
-                Self.finish(task, with: TransferError(sftpError: (error as? SFTPError) ?? .connectionLost), locale: self?.schedulingLocale ?? AppLanguage.defaultLanguage.locale)
+                Self.finish(task, with: TransferError(sftpError: (error as? SFTPError) ?? .connectionLost))
             }
 
             // 任务到达终态（槽位释放）→ 事件驱动补位（任务书二十~二十二）。
@@ -532,14 +531,20 @@ final class TransferManager {
     }
 
     /// 终态写入：区分取消 / 失败（取消是用户语义，不写失败文案）。
-    /// 失败消息按当前 App Locale 生成，不缓存英文 — 语言切换后立即生效。
-    private static func finish(_ task: TransferTask, with error: TransferError, locale: Locale) {
+    ///
+    /// 失败只写入**语言无关**的 `TransferError`，绝不写入按当时 Locale 生成
+    /// 好的字符串——failed 是终态，缓存的文案在之后切换语言时无法更新
+    /// （任务书七十三）。展示由 `TransferTask.failureMessage(locale:)` 即时解析。
+    ///
+    /// 日志走 `errorDescription`（英文 fallback）：日志是诊断通道，不参与 UI，
+    /// 不受语言切换影响。
+    private static func finish(_ task: TransferTask, with error: TransferError) {
         if error == .cancelled {
             task.markCancelled()
             AppLogger.app.info("File transfer cancelled")
         } else {
-            task.markFailed(message: error.message(locale: locale))
-            AppLogger.app.error("File transfer failed: \(error.message(locale: locale))")
+            task.markFailed(error: error)
+            AppLogger.app.error("File transfer failed: \(error.errorDescription ?? "", privacy: .public)")
         }
     }
 

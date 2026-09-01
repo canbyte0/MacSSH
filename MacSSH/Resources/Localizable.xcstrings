@@ -336,7 +336,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地终端"
+            "value": "终端"
           }
         }
       }
@@ -812,7 +812,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地终端"
+            "value": "终端"
           }
         }
       }
@@ -829,7 +829,7 @@
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "本地终端"
+            "value": "终端"
           }
         }
       }
@@ -5063,6 +5063,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "服务器写入异常。"
+          }
+        }
+      }
+    },
+    "error.transfer.remote_protocol_error": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The server reported a protocol error during the transfer."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "服务器报告了协议错误，传输失败。"
           }
         }
       }

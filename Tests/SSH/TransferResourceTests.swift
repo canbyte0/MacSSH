@@ -93,7 +93,7 @@ final class TransferResourceTests: XCTestCase {
         }
         XCTAssertTrue(drained, "16 个传输必须全部到达终态")
         for task in tasks {
-            XCTAssertEqual(task.state, .completed, "资源测试传输必须完成（\(task.failureMessage ?? "")）")
+            XCTAssertEqual(task.state, .completed, "资源测试传输必须完成（\(task.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
         }
 
         // ── 峰值采样（会话仍持有：socket / FD 应高于基线）──

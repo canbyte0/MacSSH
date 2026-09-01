@@ -90,7 +90,7 @@ final class TransferQueueRealTests: XCTestCase {
             "全局活跃传输绝不超过上限"
         )
         for (index, task) in tasks.enumerated() {
-            XCTAssertEqual(task.state, .completed, "任务 \(index + 1) 必须完成（\(task.failureMessage ?? "")）")
+            XCTAssertEqual(task.state, .completed, "任务 \(index + 1) 必须完成（\(task.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
         }
         XCTAssertNil(transferManager.queueSummary(locale: AppLanguage.defaultLanguage.locale), "全部终态后汇总必须为空")
         XCTAssertFalse(hasResidualUploadTempFiles(in: uploadDir))
@@ -164,12 +164,16 @@ final class TransferQueueRealTests: XCTestCase {
         XCTAssertTrue(drained)
 
         XCTAssertEqual(ok1.state, .completed, "失败任务绝不阻塞首个正常任务")
+        let locale = AppLanguage.defaultLanguage.locale
         XCTAssertEqual(missing.state, .failed)
-        XCTAssertEqual(missing.failureMessage, "远程文件不存在。")
+        XCTAssertEqual(missing.failureError, .remoteFileMissing)
+        XCTAssertEqual(missing.failureMessage(locale: locale), "远程文件不存在。")
         XCTAssertEqual(exists.state, .failed)
-        XCTAssertEqual(exists.failureMessage, "远程文件已存在，不会自动覆盖该文件。")
+        XCTAssertEqual(exists.failureError, .remoteFileExists)
+        XCTAssertEqual(exists.failureMessage(locale: locale), "远程文件已存在，不会自动覆盖该文件。")
         XCTAssertEqual(denied.state, .failed)
-        XCTAssertEqual(denied.failureMessage, "权限不足，无法完成传输。")
+        XCTAssertEqual(denied.failureError, .permissionDenied)
+        XCTAssertEqual(denied.failureMessage(locale: locale), "权限不足，无法完成传输。")
         XCTAssertEqual(ok2.state, .completed, "失败任务绝不阻塞尾部正常任务")
         XCTAssertFalse(hasResidualUploadTempFiles(in: uploadDir))
     }

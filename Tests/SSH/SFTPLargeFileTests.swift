@@ -78,7 +78,7 @@ final class SFTPLargeFileTests: XCTestCase {
         XCTAssertNil(rejection)
         let upload = try XCTUnwrap(uploadTask)
         try await waitForTerminal(upload, timeout: 600)
-        XCTAssertEqual(upload.state, .completed, "1GB 上传必须完成（\(upload.failureMessage ?? "")）")
+        XCTAssertEqual(upload.state, .completed, "1GB 上传必须完成（\(upload.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
         XCTAssertEqual(upload.transferredBytes, 1_073_741_824)
 
         // 远端哈希（流式读回计算，证明数据确实在服务器端）。
@@ -136,7 +136,7 @@ final class SFTPLargeFileTests: XCTestCase {
             let (uploadTask, _) = manager.requestUpload(session: session, localURL: renamed)
             let upload = try XCTUnwrap(uploadTask)
             try await waitForTerminal(upload, timeout: 600)
-            XCTAssertEqual(upload.state, .completed, "循环 \(cycle) 上传必须完成（\(upload.failureMessage ?? "")）")
+            XCTAssertEqual(upload.state, .completed, "循环 \(cycle) 上传必须完成（\(upload.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
 
             let backURL = largeFileDirectory().appendingPathComponent("cycle-1gb-back-\(cycle).bin")
             let entry = SFTPFileEntry(
@@ -148,7 +148,7 @@ final class SFTPLargeFileTests: XCTestCase {
             )
             let download = try XCTUnwrap(downloadTask)
             try await waitForTerminal(download, timeout: 600)
-            XCTAssertEqual(download.state, .completed, "循环 \(cycle) 下载必须完成（\(download.failureMessage ?? "")）")
+            XCTAssertEqual(download.state, .completed, "循环 \(cycle) 下载必须完成（\(download.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
 
             let backHash = try sha256(ofFileAt: backURL)
             XCTAssertEqual(backHash, sourceHash, "循环 \(cycle) 字节必须完整")
@@ -238,7 +238,7 @@ final class SFTPLargeFileTests: XCTestCase {
         let upload = try XCTUnwrap(uploadTask)
         try await waitForTerminal(upload, timeout: 3_600)
         let uploadPeakRSS = await uploadSampler.stop()
-        XCTAssertEqual(upload.state, .completed, "10GB 上传必须完成（\(upload.failureMessage ?? "")）")
+        XCTAssertEqual(upload.state, .completed, "10GB 上传必须完成（\(upload.failureMessage(locale: AppLanguage.defaultLanguage.locale) ?? "")）")
         XCTAssertEqual(upload.transferredBytes, 10 * 1_073_741_824)
         if rssBeforeUpload > 0, uploadPeakRSS > 0 {
             XCTAssertLessThan(
