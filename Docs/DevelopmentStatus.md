@@ -3864,3 +3864,234 @@ Terminal 标题使用显式 Locale 解析，因此可正常即时刷新；对比
 - 未创建 Git commit，未 merge，未进入其他 Phase。
 
 停止开发，等待用户复验。
+
+---
+
+## MacSSH 1.1 Phase 3：Native Login Shell Behavior
+
+### 状态
+
+**实现完成，等待用户验收**
+
+完成日期：2026-09-02
+分支：`feature/macssh-1.1-native-login-shell`（基于 Phase 2 已提交的干净 main）
+
+### 目标与原则
+
+让 Local Terminal 的登录 Shell 行为与 Terminal.app
+"Shells open with: Default login shell" 保持一致。重点不是显示
+`Last login:`，而是正确的登录启动链；严禁手工伪造 `Last login`、
+严禁修改任何用户 dotfile（含 `~/.hushlogin`）、严禁 `chsh` /
+`dscl` 写账户配置、无私有 API。
+
+### 调查证据（先于代码修改）
+
+**Terminal.app baseline（本机实测进程树）：**
+
+```text
+Terminal (pid 58863, msl)
+└─ login -pf msl (pid 58865, root, ttys008, Ss ← session leader)
+   └─ -zsh (pid 58866, msl, ttys008, S+)
+```
+
+- `/usr/bin/login` 为 setuid root（`-r-sr-xr-x root wheel`）；
+- `login(1)` man page 明确：`-f` "may only be used by the super-user or
+  when an already logged in user is logging in as themselves"——普通 GUI
+  App 以已登录用户身份调用完全合法，无需 sudo / root / setuid hack；
+- `-l` 会禁用 login shell 语义（去掉 argv[0] 的 `-` 前缀），绝不使用。
+
+**MacSSH 修改前 baseline：**
+
+```text
+MacSSH (pid 55236, msl)
+└─ -zsh (pid 55238, msl, ttys000, Ss)
+```
+
+直接 spawn `-zsh`：有 shell login 模式，但缺少 OS 登录链（无系统
+`Last login`、无 utmpx 记录、SHELL/PATH 由 SwiftTerm 默认环境缺省）。
+
+**普通用户调用 `/usr/bin/login -pf msl` 实证（script 提供 PTY）：**
+`LOGIN_SHELL=YES`、`INTERACTIVE=YES`、`SHELL=/bin/zsh`、`argv0=-zsh`、
+`tty=/dev/ttys011`、`pwd=/Users/msl`、系统打印 `Last login: ... on
+ttys010`、PATH 由 login + `/etc/zprofile`(path_helper) + 用户
+dotfiles 自然建立；`TERM` / `COLORTERM` 由 `-p` 正确传递。
+
+**terminate 实证（Python pty.fork + login）：** 关闭 PTY master 后
+kernel 向会话发送 SIGHUP / EIO，login 与 shell 均退出；login 变僵尸
+等待父进程 waitpid。SwiftTerm `terminate()` 会取消自身退出监视且对
+setuid root 的 login 发 SIGTERM 因 EPERM 无效——故由
+`LocalTerminalService` 层负责 `waitpid` 回收与状态推进（见下）。
+
+### 最终实现
+
+**启动链（与 Terminal.app 同构）：**
+
+```text
+MacSSH
+└─ /usr/bin/login -p -f <user> (forkpty 子进程, session leader)
+   └─ -<shell> (账户默认 login shell, interactive)
+```
+
+- `LocalShellLauncher.makeConfiguration()` 决策启动策略：
+  账户 `pw_shell` 可用且 `/usr/bin/login` 在场 → `.systemLogin`；
+  账户 Shell 异常 → `.directShell(.accountShellUnusable)` 回退
+  （login 使用同一 pw_shell 必然同样失败）；
+  login 缺失 → `.directShell(.systemLoginUnavailable)`。
+  回退只发生策略切换并 OSLog 记录，绝不静默替换 Shell。
+- 环境最小集合（完整替换，不继承 GUI App 环境）：
+  `TERM=xterm-256color`、`COLORTERM=truecolor`、`LANG=en_US.UTF-8`、
+  `HOME`、`USER`、`LOGNAME`；`SHELL` / `PATH` 由 login 与
+  login-shell startup files 建立，MacSSH 不硬编码。
+- `LoginShellResolver` 扩展：`AccountContext(name/home/shell)` +
+  `currentAccount()`（getpwuid_r）；`resolve()` 逻辑保持不变。
+- `LocalTerminalService.startIfNeeded()` 使用 launcher 配置调用
+  SwiftTerm `startProcess(executable:args:environment:execName:
+  currentDirectory:)`；`terminate()` 增加 waitpid 回收循环（僵尸
+  login 即时回收、10 秒兜底、与自然退出回调竞态安全）。
+
+### 行为对照
+
+| 项目 | Terminal.app | MacSSH(修改前) | MacSSH(修改后) |
+|---|---|---|---|
+| shell | /bin/zsh | /bin/zsh | /bin/zsh |
+| login shell | YES | YES | YES |
+| argv[0] | -zsh | -zsh | -zsh |
+| 父进程 | login -pf msl | MacSSH | /usr/bin/login -p -f msl |
+| /usr/bin/login | 是 | 否 | 是 |
+| PTY | ttys008 | ttys000 | ttysXXX 正常 |
+| HOME/USER/LOGNAME | 正确 | 正确 | 正确 |
+| SHELL | /bin/zsh | 未设置 | /bin/zsh（login 设置） |
+| PATH | login+startup files | GUI 缺省+startup files | login+startup files |
+| TERM | xterm-256color | xterm-256color | xterm-256color |
+| COLORTERM | truecolor | truecolor | truecolor |
+| cwd | /Users/msl | /Users/msl | /Users/msl |
+| Last login | 系统 login 打印 | 无 | 系统 login 打印 |
+| ~/.hushlogin | 系统机制 | 无 | 系统机制（MacSSH 不干预） |
+
+### 测试
+
+新增 `Tests/SSH/LocalShellLauncherTests.swift`（15 用例全过）：
+
+- testA~H 纯决策：登录链 argv、环境最小集合、回退矩阵
+  （账户 Shell 不可用 / login 缺失 / 最终回退 / 无账户记录）、
+  生产配置在本机选择 systemLogin、getpwuid_r 与 Foundation 一致；
+- testI 真实集成：forkpty + login 链下 `[[ -o login ]]`=YES、
+  `[[ -o interactive ]]`=YES、SHELL/argv[0]/TTY/HOME/USER/LOGNAME/
+  TERM/COLORTERM/cwd 全部正确、shell 父进程为 login；
+- testJ：PATH 含系统路径（shell 内元素判断，避免折行）；
+- testK：cd 后 cwd 保持、screen buffer 保留；
+- testL：用户 exit 后 login 进程被回收（无僵尸/孤儿）；
+- testM：terminate 后整链退出并收敛到 exited；
+- testN：50× 创建/启动/关闭，每轮子进程回收、FD 不增长；
+- testO：exec 失败（可执行文件不存在）安全收敛不挂死。
+
+断言只测稳定语义（login 标志、TTY 前缀、账户路径、进程链），
+绝不硬编码日期文本 / ttys 编号 / 具体 PATH 字符串。
+
+### 验证结果
+
+- 新增测试：15/15 通过（含 50 轮生命周期 7.1s）。
+- 全量测试：258 tests，0 failures，114 skipped
+  （SSH/SFTP 真实集成因缺 `/tmp/macssh_phase6_ed25519` 测试私钥 skip，
+  需 `Scripts/run-ssh-tests.sh`（会请求 Keychain 密码并临时修改
+  `~/.ssh/authorized_keys`），未自动执行）。
+- Debug arm64 clean build：BUILD SUCCEEDED，0 warning。
+- Release arm64 clean build：BUILD SUCCEEDED，0 warning。
+- Standalone Release .app（`/tmp/MacSSH-P3-Release/`）启动实证：
+  `MacSSH(7401) → /usr/bin/login -p -f msl(7413, root, ttys002) →
+  -zsh(7414)`，与 Terminal.app 完全同构；该实例保持运行供人工验收。
+- 等待人工回归：Last login 显示、Ctrl+C / Ctrl+Z / jobs / fg / bg /
+  Ctrl+D、nano / less / top、resize（stty size）、50 轮切换保 cwd、
+  Unicode/字体（English 中文 😀）回归。
+
+### 不修改（遵守边界）
+
+- Remote SSH / SFTP / Transfer：零改动。
+- 用户 dotfiles / `~/.hushlogin` / 账户配置：零改动。
+- SwiftTerm / libssh2 / OpenSSL：版本不变（1.19.0 / 1.11.2_DEV / 3.5.8）。
+- `MacSSH-1.0.0.dmg`：不重新生成。
+- entitlements / Hardened Runtime / Keychain / KnownHost：不变。
+
+### 修改的文件
+
+- `MacSSH/Services/Terminal/LoginShellResolver.swift`
+- `MacSSH/Services/Terminal/LocalTerminalService.swift`
+- `MacSSH.xcodeproj/project.pbxproj`
+- `Docs/DevelopmentStatus.md`
+
+### 新增的文件
+
+- `MacSSH/Services/Terminal/LocalShellLauncher.swift`
+- `Tests/SSH/LocalShellLauncherTests.swift`
+
+### 已知问题
+
+- SSH/SFTP 真实集成测试需 `Scripts/run-ssh-tests.sh` 环境（测试私钥 +
+  Keychain 交互），本机当前 skip。
+- 独立 Release 实例 `/tmp/MacSSH-P3-Release/MacSSH.app` 保持运行中，
+  供人工验收后手动退出。
+
+停止开发，等待用户验收。
+
+---
+
+## MacSSH 1.1 Phase 3 P3 整改：LANG 硬编码移除
+
+### 问题
+
+独立验收发现 `LocalShellLauncher` 硬编码 `LANG=en_US.UTF-8`，
+与 Terminal.app 原生行为不一致（本机系统 locale 为 zh_CN，
+Terminal.app login shell 实测 `LANG=zh_CN.UTF-8`）。
+
+### 根因调查（实测，非猜测）
+
+- Terminal.app 新窗口实测：环境仅 `LANG=zh_CN.UTF-8`，
+  无任何 `LC_*` 导出（`LC_ALL` 为空）；`locale` 各分类均继承 LANG。
+- 探针（pty.fork + `/usr/bin/login -p -f <user>`，环境不含 LANG）实测：
+  `/usr/bin/login` 本身不设置 LANG；macOS `/etc/zprofile` 对空 LANG
+  统一兜底 `export LANG=C.UTF-8`——即"不设置 LANG 交给系统机制"
+  只会得到 `C.UTF-8`，不会得到系统 locale。Terminal.app 因此主动
+  设置 LANG（"Set locale environment variables on startup"）。
+- 结论：设置 LANG 属于终端模拟器职责，但值必须来自系统 locale，
+  不得硬编码。
+
+### 最终 locale policy
+
+- LANG 来源：`NSGlobalDomain AppleLocale`（系统"语言与地区"设置，
+  不受 App 域偏好影响）→ 回退 `Locale.current.identifier` →
+  均失败则不设置 LANG（系统 /etc/zprofile 机制兜底），
+  绝不硬编码任何具体 locale。
+- POSIX 规范化（`posixLANG(from:)`）：`@modifier` 截断、`-`→`_`、
+  script 段移除（`zh_Hans_CN`→`zh_CN`）、数字 territory 保留
+  （`es_419`）；分段前整串字符集校验（仅字母/数字/下划线），
+  非法输入返回 nil（宁可不设置也不猜）。
+- 绝不设置任何 `LC_*` 变量（尤其 `LC_ALL` 会覆盖用户 locale 设置）。
+- 与 MacSSH UI 语言（`AppLanguage`，仅读写自有 `appLanguage` key，
+  不碰 AppleLanguages）完全解耦：切换 App UI 语言不改变 shell LANG。
+
+### 修改
+
+- `LocalShellLauncher.swift`：删除硬编码 `LANG=en_US.UTF-8`；
+  `resolve` 增加 `lang: String?` 注入参数；新增
+  `systemLocaleLANG()` / `posixLANG(from:)`。TERM / COLORTERM /
+  HOME / USER / LOGNAME / SHELL / PATH 行为不变。
+- `LocalShellLauncherTests.swift`：15 → 19 用例。testB 改为注入
+  fr_FR.UTF-8 验证透传（非 en_US / 非本机 locale）并断言无 LC_*；
+  新增 testB2（lang=nil 不编造 LANG）、testP（POSIX 规范化与
+  注入拒绝）、testQ（AppLanguage 切换不改变 shell locale policy）、
+  testR（本机派生值格式良好，不绑定具体地区）；testG/testI 增加
+  生产与真实 login 链 LANG / LC_ALL 断言（断言等于系统派生值，
+  不断言具体地区字符串）。
+
+### 验证
+
+- LocalShellLauncherTests：19/19 通过（含真实 login 链内
+  `LANG=[zh_CN.UTF-8]`、`LC_ALL=[]` 实测断言）。
+- 回归 / 全量 / 构建结果见本轮验收报告。
+
+### 已知问题
+
+- 无新增。GUI 交互项（Ctrl+C / Ctrl+Z / jobs / fg / bg / Ctrl+D /
+  nano / less / top / resize / Last login 目视）仍待用户人工验收。
+
+停止开发，等待用户验收。
