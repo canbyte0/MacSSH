@@ -103,7 +103,12 @@ struct TerminalWorkspaceView: View {
                 RemoteTerminalRepresentable(service: service)
                     .id(session.id)
                     .accessibilityLabel(
-                        Text("terminal.remote \(session.hostDisplayName ?? session.hostname ?? "")")
+                        Text(
+                            verbatim: TerminalAccessibilityText.remoteTerminal(
+                                hostName: session.hostDisplayName ?? session.hostname ?? "",
+                                locale: locale
+                            )
+                        )
                     )
                     // Local / Remote 共用统一留白，行列计算仍由 SwiftTerm 负责。
                     .padding(AppTheme.Layout.terminalContentInset)
@@ -238,7 +243,12 @@ struct TerminalWorkspaceView: View {
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .accessibilityLabel(
-                Text("terminal.connecting_to \(session.hostDisplayName ?? "")")
+                Text(
+                    verbatim: TerminalAccessibilityText.connectingTo(
+                        hostName: session.hostDisplayName ?? "",
+                        locale: locale
+                    )
+                )
             )
         }
     }

@@ -22,7 +22,10 @@ struct TransferListView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(nsColor: .windowBackgroundColor))
-        .navigationTitle("transfers.title")
+        // 显式按当前 Locale 解析标题，避免 NavigationSplitView 缓存旧语言。
+        .navigationTitle(
+            L10n.string("transfers.title", defaultValue: "Transfers", locale: locale)
+        )
         .accessibilityIdentifier("workspace.transfers")
     }
 

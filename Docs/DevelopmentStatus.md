@@ -3557,3 +3557,310 @@ App 日志报告 Regular 注册失败且只注册了 3 个文件，但原 15 个
 - 不依赖系统安装 JetBrains Mono：损坏测试证明任一 TTF 损坏即整体失败。
 
 停止开发，等待二次验收。不得自行 Git Commit，不得 merge main。
+
+---
+
+## MacSSH 1.1 Phase 3：AppIcon / 应用图标
+
+### 状态
+
+**实现完成，等待用户验收**
+
+完成日期：2026-09-01
+
+### 授权与范围
+
+本阶段由用户明确要求为项目设计图标，并在两轮预览后确认简化版方案。遵守
+`AGENTS.md` 的 UI 规则：确认前只生成预览，不修改项目；收到“确认”后才接入
+Xcode 工程。
+
+本阶段只增加 MacSSH 应用图标及其构建配置，不修改 Terminal、SSH、SFTP、
+Transfer、Localization、字体或安全逻辑；不进入 Deferred 的 Phase 12B，也不生成
+或覆盖 `MacSSH-1.0.0.dmg`。
+
+### 图标设计
+
+- 深蓝色圆角方形：对应原生 macOS 开发工具的克制、稳定视觉。
+- 白色 `>`：代表 Terminal 命令提示符。
+- 青绿色光标、连接线与端点：对应项目现有 teal 强调色，并轻度表达 SSH 远程连接。
+- 删除上一版金属框、双端点盒、环绕线和立体高光，保证 16×16 / 32×32
+  小尺寸下仍有清晰主轮廓。
+- 圆角图标外侧使用真实透明 Alpha，无纯黑外框、白边或水印。
+
+最终 1024×1024 主资源：
+
+`MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`
+
+### Asset Catalog
+
+新增 `MacSSH/Resources/Assets.xcassets`，其中 `AppIcon.appiconset` 提供 macOS
+标准 10 个槽位：
+
+- 16×16：1x / 2x
+- 32×32：1x / 2x
+- 128×128：1x / 2x
+- 256×256：1x / 2x
+- 512×512：1x / 2x（最大实际像素 1024×1024）
+
+全部 PNG 的像素尺寸与 `Contents.json` 声明一致，并保留透明通道。
+
+### Xcode 接入
+
+`MacSSH.xcodeproj/project.pbxproj` 完成以下配置：
+
+- `Assets.xcassets` 加入 Resources Group 与 App Target Resources Build Phase。
+- Debug / Release 均设置
+  `ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon`。
+- 生成的 Info.plist 同时包含 `CFBundleIconFile = AppIcon` 与
+  `CFBundleIconName = AppIcon`。
+
+### 验证结果
+
+- Asset Catalog 两个 `Contents.json`：标准 JSON 解析通过。
+- Xcode 工程文件：`plutil -lint` 通过。
+- `git diff --check`：通过。
+- Debug arm64 clean build：**BUILD SUCCEEDED**，0 warning。
+- Release arm64 clean build：**BUILD SUCCEEDED**，0 warning。
+- Debug / Release App 均生成 `Contents/Resources/AppIcon.icns` 与 `Assets.car`。
+- `AppIcon.icns` 文件类型验证通过，并成功转换为 PNG 进行视觉核对。
+- Debug App 实际启动成功，进程来自本轮 `/tmp/macssh-dd` 构建产物。
+
+### 修改的文件
+
+- `MacSSH.xcodeproj/project.pbxproj`
+- `Docs/DevelopmentStatus.md`
+
+### 新增的文件
+
+- `MacSSH/Resources/Assets.xcassets/Contents.json`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-16.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-16@2x.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-32.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-32@2x.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-128@2x.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-256@2x.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512.png`
+- `MacSSH/Resources/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png`
+
+### 已知问题与下一步
+
+- 本阶段未重新生成 DMG；现有 `MacSSH-1.0.0.dmg` 仍是 1.0.0 历史产物。
+- Developer ID / Notarization 仍按既定计划 Deferred，未伪造或绕过。
+- 下一步只等待用户验收图标；不得自行 Git Commit、打包 DMG 或继续其他功能。
+
+停止开发，等待验收。
+
+---
+
+## MacSSH 1.1 Phase 1 Localization：Accessibility raw key 修复
+
+### 状态
+
+**修复完成，等待用户复验**
+
+完成日期：2026-09-02
+
+### 问题与根因
+
+真实 Release Accessibility tree 曾把以下动态文案朗读为 raw key：
+
+- `terminal.local_tab_accessibility`（本地终端标签页）
+- `terminal.ssh_tab_accessibility`（SSH 终端标签页）
+- `terminal.close_named_tab`（关闭标签页按钮）
+- `terminal.remote`（远程终端内容区）
+- `terminal.connecting_to`（连接中状态浮层）
+
+这些 String Catalog 条目采用“稳定基础 key + `%@` value”设计；原 View 使用
+`Text("key \(value)")` 后，SwiftUI 会把整段插值表达式作为另一个
+`LocalizedStringKey`，与 Catalog 的基础 key 不匹配，因此 VoiceOver 读出了
+`terminal.*`。
+
+### 修复实现
+
+- 新增内部集中入口 `TerminalAccessibilityText`，5 条动态文案全部通过
+  `L10n.format(..., locale:, arguments:)` 按当前 Locale 格式化。
+- SwiftUI 使用 `Text(verbatim:)` 接收已经完成本地化的字符串，避免二次 key
+  解析。
+- 只修改 Accessibility 元数据，不改变 Tab、Terminal、Overlay 的可见布局、
+  样式、交互或 Session 生命周期。
+- String Catalog 与生成脚本保持 315 key，未增加重复或 obsolete key。
+
+### 新增回归测试
+
+- `testTerminalAccessibilityTextFormatsInBothLocalesWithoutRawKeys`：精确断言 5 条
+  动态文案的 zh-Hans / en 结果。
+- `testDynamicLocalizedTextDoesNotUseImplicitSwiftUIInterpolation`：扫描生产 Swift
+  源码，禁止再次引入 `Text("some.localization_key \(value)")` 同型写法。
+
+### 验证结果
+
+- AppLanguageTests + LocalizationTests：31 项通过，0 失败
+  （AppLanguageTests 11，LocalizationTests 20）。
+- 全量 XCTest：242 项；128 项通过，114 项因外部 SSH / 凭据环境条件性跳过，
+  0 失败，0 runtime warning。
+- Debug arm64 clean build：成功，0 warning。
+- Release arm64 clean build：成功，0 warning。
+- Release ad-hoc 验证：10 PASS / 0 FAIL；Hardened Runtime、空
+  `get-task-allow`、arm64、静态依赖边界与启动 smoke 均通过。
+- 真实 Release Accessibility tree：
+  - zh-Hans：`本地终端标签页：终端`、`关闭标签页：终端`
+  - en：`Local terminal tab: Local Terminal`、`Close tab: Local Terminal`
+  - 两种语言均未出现 `terminal.*` raw key。
+- `git diff --check`：通过。
+
+### 修改的文件
+
+- `MacSSH/Features/Terminal/TerminalTabBar.swift`
+- `MacSSH/Features/Terminal/TerminalWorkspaceView.swift`
+- `Tests/SSH/LocalizationTests.swift`
+- `Docs/DevelopmentStatus.md`
+
+### 边界
+
+- 未修改、重置或提交当前工作区已有的 App Icon、Asset Catalog 与
+  `project.pbxproj` 改动。
+- 未创建 Git commit，未 merge，未进入其他 Phase。
+
+停止开发，等待用户复验。
+
+## MacSSH 1.1 Phase 1 Localization：Settings Accessibility 即时刷新整改
+
+### 状态
+
+**整改完成，等待用户复验**
+
+完成日期：2026-09-02
+
+### 问题与根因
+
+Settings 内切换语言后，可见文案会立即更新，但 SwiftUI `LabeledContent`
+聚合出的 Accessibility Value 曾继续缓存旧语言，例如中文界面下仍朗读
+`Open main window On`、`10000 lines`、`System` 与 `15 seconds On`；离开并
+重新进入 Settings 后才刷新。
+
+此外，干净测试编译在 `TerminalFontProviderTests` 捕获到一条 Optional
+字符串插值 warning。
+
+### 修复实现
+
+- Settings `Form` 以 `appState.language` 作为展示身份；语言切换时只重建
+  Settings 展示 / Accessibility 子树，使 VoiceOver Value 与可见文案同步。
+- `AppState`、`SessionManager`、`TransferManager`、Terminal / SSH / SFTP
+  Runtime 均不重建，不影响会话、Shell、路径或传输状态。
+- `TerminalFontProviderTests` 对 Optional `familyName` 提供显式 `<nil>`
+  fallback，只修正断言失败信息并消除编译 warning，不改变字体逻辑。
+
+### 验证结果
+
+- 全新 DerivedData 专项测试：50 项通过，0 skip、0 失败、0 runtime warning；
+  不再出现 Optional 插值编译 warning。
+- 首次全量回归命中既有性能 flaky：
+  `SessionManagerTests.testV_FiveIdleLocalSessionsNoBusyLoop` 在 30 秒窗口内
+  实测 CPU 2.033 秒、超过 1.0 秒阈值；随后 Xcode 27 worker 收尾卡住，主动
+  中止该轮并读取 `.xcresult` 定位，未把中断误报为通过。
+- `testV` 单独复跑：1/1 通过。
+- 排除已单独通过的 `testV` 后，其余完整回归：241 项；127 通过、114 条件性
+  skip、0 失败、0 runtime warning。
+- 合并口径：242 项；128 通过、114 条件性 skip、0 失败。
+- Debug arm64 clean build：成功，0 warning。
+- Release arm64 clean build：成功，0 warning。
+- Release ad-hoc 验证：10 PASS / 0 FAIL；签名、Hardened Runtime、空
+  `get-task-allow`、arm64、静态依赖边界与启动 smoke 均通过。
+- 真实 Debug 与 Release UI 均完成双向即时切换：
+  - zh-Hans → en：Settings 可见文案与 Accessibility Value 同步变英文；
+  - en → zh-Hans：同步恢复中文，无需离开页面或重启 App；
+  - 最终语言偏好恢复为简体中文。
+- `git diff --check`：通过。
+
+### 修改的文件
+
+- `MacSSH/Features/Settings/SettingsView.swift`
+- `Tests/SSH/TerminalFontProviderTests.swift`
+- `Docs/DevelopmentStatus.md`
+
+### 边界
+
+- 未修改当前工作区已有 App Icon / Asset Catalog / `project.pbxproj` 内容。
+- 未创建 Git commit，未 merge，未进入其他 Phase。
+
+停止开发，等待用户复验。
+
+---
+
+## MacSSH 1.1 Phase 1 Localization：Navigation Title 动态刷新修复
+
+### 状态
+
+**修复完成，等待用户复验**
+
+完成日期：2026-09-02
+
+### 问题与根因
+
+Settings 内切换语言后，正文、Sidebar、Toolbar、状态栏及 Accessibility Value
+均会立即刷新，但 `NavigationSplitView` 会缓存以隐式 `LocalizedStringKey`
+传入的页面标题。切换到 English 后，以下窗口级可见标题与 Accessibility 标题
+仍停留在中文：
+
+- Settings：`设置`
+- Hosts：`主机`
+- Transfers：`传输`
+
+Terminal 标题使用显式 Locale 解析，因此可正常即时刷新；对比确认问题仅存在于
+上述三个 `.navigationTitle("domain.key")` 调用。
+
+### 修复实现
+
+- Settings、Hosts、Transfers 页面标题统一通过
+  `L10n.string(..., locale:)` 显式按当前 App Locale 解析为 `String`。
+- 保留 String Catalog 的稳定 key，不增加重复 key，不使用中文句子作为 key。
+- 只更新标题的 Locale 解析与刷新行为，不改变布局、尺寸、颜色、交互或页面结构。
+- `AppState`、`SessionManager`、`TransferManager`、Terminal / SSH / SFTP Runtime
+  均不重建，会话、Shell、路径和传输状态不受影响。
+
+### 新增回归测试
+
+- `testNavigationTitlesDoNotUseImplicitLocalizedStringKeys`：扫描生产 Swift 源码，
+  禁止再次引入 `.navigationTitle("domain.key")` 同型写法，避免标题回退到
+  SwiftUI 缓存路径。
+
+### 验证结果
+
+- AppLanguageTests + LocalizationTests + TerminalFontProviderTests：51 项通过，
+  0 skip、0 失败、0 runtime warning。
+- 已知空闲 CPU 性能测试首次运行时，Xcode 27 测试宿主卡在
+  `waiting for workers to materialize`，未执行到测试断言；中止该无结果运行后，
+  复用已完成编译的 DerivedData 独立重试，33.298 秒完成且 1/1 通过。
+- 排除已单独通过的性能项后，其余完整回归：242 项；128 通过、114 条件性
+  skip、0 失败、0 runtime warning。
+- 合并口径：243 项；129 通过、114 条件性 skip、0 失败。
+- Debug arm64 clean build：成功，0 warning。
+- Release arm64 clean build：成功，0 warning。
+- Release ad-hoc 验证：10 PASS / 0 FAIL；签名、Hardened Runtime、空
+  `get-task-allow`、arm64、静态依赖边界与启动 smoke 均通过。
+- 真实 Release UI / Accessibility 双向即时切换：
+  - en → zh-Hans：Settings 窗口及页面标题立即变为 `设置`；
+  - zh-Hans → en：Settings 立即变为 `Settings`；
+  - English 下进入 Hosts / Transfers，窗口与页面标题分别为 `Hosts` /
+    `Transfers`，不再残留 `主机` / `传输`；
+  - 最终语言偏好恢复为简体中文。
+- `git diff --check`：通过。
+
+### 修改的文件
+
+- `MacSSH/Features/Settings/SettingsView.swift`
+- `MacSSH/Features/Hosts/HostListView.swift`
+- `MacSSH/Features/Transfers/TransferListView.swift`
+- `Tests/SSH/LocalizationTests.swift`
+- `Docs/DevelopmentStatus.md`
+
+### 边界
+
+- 未修改、重置或提交当前工作区已有 App Icon / Asset Catalog /
+  `project.pbxproj` 内容。
+- 未创建 Git commit，未 merge，未进入其他 Phase。
+
+停止开发，等待用户复验。

@@ -70,7 +70,7 @@ final class TerminalFontProviderTests: XCTestCase {
         XCTAssertTrue(font.fontName.contains("JetBrainsMono"),
                      "Regular font PostScript name must belong to JetBrains Mono, got \(font.fontName)")
         XCTAssertEqual(font.familyName, "JetBrains Mono",
-                       "Regular font family must be JetBrains Mono, got \(font.familyName)")
+                       "Regular font family must be JetBrains Mono, got \(font.familyName ?? "<nil>")")
     }
 
     func testBoldFontIdentityIsJetBrainsMono() {

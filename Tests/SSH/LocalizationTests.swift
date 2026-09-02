@@ -126,6 +126,124 @@ final class LocalizationTests: XCTestCase {
         XCTAssertNotEqual(zh, en, "delete confirmation not localized between zh-Hans and en")
     }
 
+    // MARK: - Terminal Accessibility 动态文案
+
+    /// P1 回归：动态 Accessibility 文案必须通过稳定 key + format 参数解析，
+    /// 不能把 `Text("key \(value)")` 形成的新 key 暴露给 VoiceOver。
+    func testTerminalAccessibilityTextFormatsInBothLocalesWithoutRawKeys() {
+        let zhLocale = AppLanguage.simplifiedChinese.locale
+        let enLocale = AppLanguage.english.locale
+
+        XCTAssertEqual(
+            TerminalAccessibilityText.localTab(title: "Local Terminal", locale: zhLocale),
+            "本地终端标签页：Local Terminal"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.localTab(title: "Local Terminal", locale: enLocale),
+            "Local terminal tab: Local Terminal"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.sshTab(title: "Server A", locale: zhLocale),
+            "SSH 终端标签页：Server A"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.sshTab(title: "Server A", locale: enLocale),
+            "SSH terminal tab: Server A"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.closeTab(title: "Local Terminal", locale: zhLocale),
+            "关闭标签页：Local Terminal"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.closeTab(title: "Local Terminal", locale: enLocale),
+            "Close tab: Local Terminal"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.remoteTerminal(hostName: "Server A", locale: zhLocale),
+            "远程终端：Server A"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.remoteTerminal(hostName: "Server A", locale: enLocale),
+            "Remote Terminal: Server A"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.connectingTo(hostName: "Server A", locale: zhLocale),
+            "正在连接到 Server A"
+        )
+        XCTAssertEqual(
+            TerminalAccessibilityText.connectingTo(hostName: "Server A", locale: enLocale),
+            "Connecting to Server A"
+        )
+    }
+
+    /// 源码守卫：禁止再次引入 `Text("some.localization_key \(value)")`。
+    /// 该写法会绕过本项目的基础 key + `%@` Catalog 约定并造成 raw key 泄漏。
+    func testDynamicLocalizedTextDoesNotUseImplicitSwiftUIInterpolation() throws {
+        let root = try repositoryRoot()
+        let sourceDirectory = root.appendingPathComponent("MacSSH", isDirectory: true)
+        let pattern = try NSRegularExpression(
+            pattern: #"Text\(\s*"([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)\s+\\\("#
+        )
+        var violations: [String] = []
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourceDirectory,
+            includingPropertiesForKeys: nil
+        ) else {
+            XCTFail("无法遍历 MacSSH 源码目录")
+            return
+        }
+
+        while let url = enumerator.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let content = try String(contentsOf: url, encoding: .utf8)
+            let range = NSRange(content.startIndex..., in: content)
+            for match in pattern.matches(in: content, range: range) {
+                guard let keyRange = Range(match.range(at: 1), in: content) else { continue }
+                violations.append("\(url.lastPathComponent): \(content[keyRange])")
+            }
+        }
+
+        XCTAssertTrue(
+            violations.isEmpty,
+            "发现可能泄漏 raw key 的 SwiftUI 动态插值：\(violations.sorted().joined(separator: ", "))"
+        )
+    }
+
+    /// P1 回归：NavigationSplitView 会缓存 LocalizedStringKey 形式的页面标题。
+    /// 页面标题必须显式按当前 Locale 解析，禁止恢复 `.navigationTitle("domain.key")`。
+    func testNavigationTitlesDoNotUseImplicitLocalizedStringKeys() throws {
+        let root = try repositoryRoot()
+        let sourceDirectory = root.appendingPathComponent("MacSSH", isDirectory: true)
+        let pattern = try NSRegularExpression(
+            pattern: #"\.navigationTitle\(\s*\"([a-z][a-z0-9_]*(?:\.[a-z0-9_]+)+)\"\s*\)"#
+        )
+        var violations: [String] = []
+
+        guard let enumerator = FileManager.default.enumerator(
+            at: sourceDirectory,
+            includingPropertiesForKeys: nil
+        ) else {
+            XCTFail("无法遍历 MacSSH 源码目录")
+            return
+        }
+
+        while let url = enumerator.nextObject() as? URL {
+            guard url.pathExtension == "swift" else { continue }
+            let content = try String(contentsOf: url, encoding: .utf8)
+            let range = NSRange(content.startIndex..., in: content)
+            for match in pattern.matches(in: content, range: range) {
+                guard let keyRange = Range(match.range(at: 1), in: content) else { continue }
+                violations.append("\(url.lastPathComponent): \(content[keyRange])")
+            }
+        }
+
+        XCTAssertTrue(
+            violations.isEmpty,
+            "页面标题必须显式按当前 Locale 解析：\(violations.sorted().joined(separator: ", "))"
+        )
+    }
+
     // MARK: - 错误文案本地化
 
     /// 任务书三十 / 六十二：错误信息必须本地化，zh-Hans / en 都非空且不同。

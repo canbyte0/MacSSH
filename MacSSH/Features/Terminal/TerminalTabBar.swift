@@ -78,7 +78,12 @@ private struct TerminalTabItemView: View {
                 .buttonStyle(.plain)
                 .help("terminal.close_tab")
                 .accessibilityLabel(
-                    Text("terminal.close_named_tab \(session.displayTitle(locale: locale))")
+                    Text(
+                        verbatim: TerminalAccessibilityText.closeTab(
+                            title: session.displayTitle(locale: locale),
+                            locale: locale
+                        )
+                    )
                 )
                 .accessibilityIdentifier("tabBar.close")
             }
@@ -148,9 +153,71 @@ private struct TerminalTabItemView: View {
     private var accessibilityLabel: Text {
         switch session.kind {
         case .local:
-            Text("terminal.local_tab_accessibility \(session.displayTitle(locale: locale))")
+            Text(
+                verbatim: TerminalAccessibilityText.localTab(
+                    title: session.displayTitle(locale: locale),
+                    locale: locale
+                )
+            )
         case .remoteSSH:
-            Text("terminal.ssh_tab_accessibility \(session.displayTitle(locale: locale))")
+            Text(
+                verbatim: TerminalAccessibilityText.sshTab(
+                    title: session.displayTitle(locale: locale),
+                    locale: locale
+                )
+            )
         }
+    }
+}
+
+/// Terminal 动态 Accessibility 文案的唯一格式化入口。
+///
+/// String Catalog 使用稳定的基础 key（例如 `terminal.close_named_tab`）并在
+/// value 中声明 `%@`。不能写成 `Text("key \(value)")`，否则 SwiftUI 会把
+/// 整段插值表达式当成另一个 key，最终让 VoiceOver 读出 `terminal.*`。
+enum TerminalAccessibilityText {
+    static func localTab(title: String, locale: Locale) -> String {
+        L10n.format(
+            "terminal.local_tab_accessibility",
+            defaultValue: "Local terminal tab: %@",
+            locale: locale,
+            arguments: title
+        )
+    }
+
+    static func sshTab(title: String, locale: Locale) -> String {
+        L10n.format(
+            "terminal.ssh_tab_accessibility",
+            defaultValue: "SSH terminal tab: %@",
+            locale: locale,
+            arguments: title
+        )
+    }
+
+    static func closeTab(title: String, locale: Locale) -> String {
+        L10n.format(
+            "terminal.close_named_tab",
+            defaultValue: "Close tab: %@",
+            locale: locale,
+            arguments: title
+        )
+    }
+
+    static func remoteTerminal(hostName: String, locale: Locale) -> String {
+        L10n.format(
+            "terminal.remote",
+            defaultValue: "Remote Terminal: %@",
+            locale: locale,
+            arguments: hostName
+        )
+    }
+
+    static func connectingTo(hostName: String, locale: Locale) -> String {
+        L10n.format(
+            "terminal.connecting_to",
+            defaultValue: "Connecting to %@",
+            locale: locale,
+            arguments: hostName
+        )
     }
 }

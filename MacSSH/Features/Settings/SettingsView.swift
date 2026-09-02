@@ -94,7 +94,15 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .navigationTitle("settings.title")
+        // SwiftUI 的 LabeledContent 会缓存聚合后的 Accessibility Value。
+        // 语言变化时只重建 Settings 展示子树，确保 VoiceOver 与可见文案同步；
+        // AppState 持有的 Session / Transfer / Shell Runtime 不会因此重建。
+        .id(appState.language)
+        // NavigationSplitView 会缓存 LocalizedStringKey 形式的页面标题；显式使用
+        // 当前 Locale 解析成 String，确保可见标题与 VoiceOver 在切换语言时同步刷新。
+        .navigationTitle(
+            L10n.string("settings.title", defaultValue: "Settings", locale: locale)
+        )
         .accessibilityIdentifier("workspace.settings")
         .alert("known_hosts.forget_title", isPresented: forgetBinding, presenting: pendingForgetID) { _ in
             Button("action.cancel", role: .cancel) {}

@@ -37,7 +37,10 @@ struct HostListView: View {
             hostContent
                 .frame(minWidth: 420, maxWidth: .infinity, maxHeight: .infinity)
         }
-        .navigationTitle("hosts.title")
+        // 显式按当前 Locale 解析标题，避免 NavigationSplitView 缓存旧语言。
+        .navigationTitle(
+            L10n.string("hosts.title", defaultValue: "Hosts", locale: locale)
+        )
         .searchable(text: $searchText, placement: .toolbar, prompt: Text("hosts.search"))
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
