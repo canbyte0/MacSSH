@@ -93,6 +93,7 @@
 		J71000000000000000000001 /* TerminalFontProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = J72000000000000000000001 /* TerminalFontProviderTests.swift */; };
 		J71000000000000000000002 /* TerminalAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = J72000000000000000000002 /* TerminalAppearanceTests.swift */; };
 		U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U72000000000000000000001 /* LocalShellLauncherTests.swift */; };
+		V71000000000000000000001 /* TerminalVS16WidthPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -203,6 +204,7 @@
 		J72000000000000000000001 /* TerminalFontProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontProviderTests.swift; sourceTree = "<group>"; };
 		J72000000000000000000002 /* TerminalAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppearanceTests.swift; sourceTree = "<group>"; };
 		U72000000000000000000001 /* LocalShellLauncherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellLauncherTests.swift; sourceTree = "<group>"; };
+		V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalVS16WidthPolicyTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -380,6 +382,7 @@
 			J72000000000000000000001 /* TerminalFontProviderTests.swift */,
 			J72000000000000000000002 /* TerminalAppearanceTests.swift */,
 			U72000000000000000000001 /* LocalShellLauncherTests.swift */,
+			V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -766,6 +769,7 @@
 				J71000000000000000000001 /* TerminalFontProviderTests.swift in Sources */,
 				J71000000000000000000002 /* TerminalAppearanceTests.swift in Sources */,
 				U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */,
+				V71000000000000000000001 /* TerminalVS16WidthPolicyTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -782,10 +786,10 @@
 /* Begin XCRemoteSwiftPackageReference section */
 		AA0000000000000000000001 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
 			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm.git";
+			repositoryURL = "https://github.com/canbyte0/SwiftTerm.git";
 			requirement = {
-				kind = exactVersion;
-				version = 1.19.0;
+				kind = revision;
+				revision = 8a5187fe8182bac3a01f2b82d2621993de5886be;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

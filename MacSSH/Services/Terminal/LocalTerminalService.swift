@@ -18,11 +18,21 @@ final class LocalTerminalService: NSObject {
         self.session = session
 
         // 计划书要求默认限制为 10,000 行，并使用 xterm-256color 能力。
+        //
+        // MacSSH 1.1 Phase 5：本地 Terminal 启用 VS16 preserve-base-width 兼容
+        // 策略。macOS zsh 使用系统 wcwidth()，把 ⚠ (U+26A0)、❤ (U+2764) 等
+        // emoji-VS16 基字符按 width 1 处理、VS16 (U+FE0F) 按 width 0 处理；而
+        // SwiftTerm 默认会把这类基字符 + VS16 扩展为 width 2。两侧 width 不一致
+        // 会导致 bracketed paste 重绘时光标列分叉，历史行漂移成 `eecho ...`。
+        // 本策略保留基字符 width 1（与 zsh 一致），VS16 仍留在 grapheme cluster
+        // 中（emoji presentation 不变），只改变 cell 列宽。详见
+        // Docs/SwiftTermFork.md。Remote Terminal 不启用本策略（保持默认）。
         let options = TerminalOptions(
             cols: session.columns,
             rows: session.rows,
             termName: "xterm-256color",
-            scrollback: 10_000
+            scrollback: 10_000,
+            variationSelector16WidthPolicy: .preserveBaseWidth
         )
         terminalView = LocalProcessTerminalView(
             frame: .zero,

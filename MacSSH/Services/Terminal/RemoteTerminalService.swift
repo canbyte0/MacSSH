@@ -65,6 +65,13 @@ final class RemoteTerminalService: NSObject {
 
         // 与 Local Terminal 相同的显示设置来源：同字体、xterm-256color、
         // 10,000 行 scrollback（计划书第 21 节）。
+        //
+        // MacSSH 1.1 Phase 5：Remote Terminal **不**启用 Local Terminal 的
+        // VS16 preserve-base-width 兼容策略，保持 SwiftTerm 默认的
+        // `.widenToEmojiWidth`。这是有意产品决策：远端 Linux / BSD / macOS
+        // 的 wcwidth / glibc / musl / libc / locale / Unicode tables 可能与本机
+        // macOS 不同，Remote 的正确宽度策略不能由本机 macOS wcwidth 决定。
+        // 详见 Docs/SwiftTermFork.md。
         let options = TerminalOptions(
             cols: session.columns,
             rows: session.rows,

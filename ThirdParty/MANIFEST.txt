@@ -62,3 +62,31 @@ Artifacts
   -rw-r--r--@ 1 msl  staff  1603824 Aug 28 16:12 libssl.a
   drwxr-xr-x@ 2 msl  staff       64 Aug 28 16:12 ossl-modules
   drwxr-xr-x@ 5 msl  staff      160 Aug 28 16:12 pkgconfig
+
+SwiftTerm (SwiftPM dependency)
+  Project           : SwiftTerm
+  Upstream          : https://github.com/migueldeicaza/SwiftTerm
+  Upstream base     : 464df5207fc2432e16c9a23abe538187196daf5f
+                      (tag v1.19.0; SwiftTerm 1.19.0)
+  MacSSH-maintained fork : https://github.com/canbyte0/SwiftTerm
+  Patch branch      : macssh-vs16-preserve-base-width
+  Production revision: 8a5187fe8182bac3a01f2b82d2621993de5886be
+  Production dependency: remote SwiftPM source-control (exact immutable
+                      revision; NOT branch/floating/version-range)
+  Patch diff file   : Docs/swiftterm-vs16-patch.diff
+  Purpose           : Opt-in VS16 preserve-base-width compatibility for the
+                      local macOS shell. Adds TerminalOptions
+                      variationSelector16WidthPolicy (.widenToEmojiWidth
+                      default; .preserveBaseWidth for Local Terminal only).
+                      Default SwiftTerm behavior is unchanged; the patch does
+                      not strip VS16, does not rewrite PTY/CSI bytes, and does
+                      not hardcode characters.
+  Local Terminal    : variationSelector16WidthPolicy = .preserveBaseWidth
+  Remote Terminal   : variationSelector16WidthPolicy = .widenToEmojiWidth
+                      (SwiftTerm default; intentionally not enabled for remote
+                      hosts whose wcwidth/locale may differ)
+  Local dev checkout: ThirdParty/SwiftTerm-fork (optional local development
+                      checkout; gitignored; NOT the production dependency)
+  Package.resolved  : MacSSH.xcodeproj/project.xcworkspace/xcshareddata/
+                      swiftpm/Package.resolved (locks exact patch revision,
+                      remoteSourceControl pointing to canbyte0/SwiftTerm)

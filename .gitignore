@@ -26,6 +26,9 @@ build/
 # JetBrains IDE
 .idea/
 
+# CodeBuddy 本地工作记忆（仅限本机调查上下文，不属于项目源码）
+.codebuddy/memory/
+
 # Third-party dependency build intermediates and unused install metadata
 # (ThirdParty/openssl 与 ThirdParty/libssh2 仅保留编译所需的头文件和静态库；
 #  源码压缩包、编译目录、文档、本机配置与构建系统元数据不入库)
@@ -44,8 +47,14 @@ ThirdParty/openssl/openssl.cnf
 ThirdParty/openssl/ct_log_list.cnf
 ThirdParty/openssl/*.dist
 
+# MacSSH 维护的 SwiftTerm fork 本地开发 checkout（MacSSH 1.1 Phase 5 VS16 兼容补丁）。
+# 生产依赖已切换为远端 SwiftPM remoteSourceControl（https://github.com/canbyte0/SwiftTerm.git），
+# 不再引用此本地路径。该目录仅作为可选本地 fork 开发 checkout，不进入版本控制。
+ThirdParty/SwiftTerm-fork/
+
 # LLVM profiling output (build/test artifacts, not source)
 *.profraw
+*.profdata
 
 # Phase 12 release distribution artifacts (signed .app / .dmg / .xcarchive
 # never enter source control; only source, scripts, and docs are tracked).
