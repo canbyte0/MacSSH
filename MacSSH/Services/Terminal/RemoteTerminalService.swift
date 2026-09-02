@@ -80,7 +80,11 @@ final class RemoteTerminalService: NSObject {
         super.init()
 
         terminalView.terminalDelegate = self
-        terminalView.configureNativeColors()
+        // MacSSH 1.1 Phase 4：与 Local Terminal 同源的终端外观来源
+        // （任务书第二节：Local / Remote 共用同一套外观配置）。
+        // 替换 `configureNativeColors()` 以避免动态色被一次性冻结为固定 RGB；
+        // 运行中外观变化由 `TerminalAppearanceCoordinator` 统一协调。
+        TerminalAppearanceProvider.applyCurrentAppAppearance(to: terminalView)
         terminalView.setAccessibilityIdentifier("terminal.remote")
         terminalView.setAccessibilityLabel("Remote Terminal \(hostname)")
     }

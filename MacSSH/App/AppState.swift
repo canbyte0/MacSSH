@@ -28,6 +28,12 @@ final class AppState {
     /// 对象持有：切换 Sidebar / 页面不会销毁任何 Session。
     let sessionManager: SessionManager
 
+    /// MacSSH 1.1 Phase 4：终端外观运行时协调器，由本 App 层稳定对象持有。
+    /// 跟随 macOS Appearance 变化，把对应调色板应用到全部已注册的
+    /// SwiftTerm `TerminalView`（Local / Remote、激活 / 非激活 Tab 一并覆盖）；
+    /// 不重建任何 Runtime Session / Shell / SSH。
+    let terminalAppearanceCoordinator: TerminalAppearanceCoordinator
+
     /// 传输运行时（Phase 10）：由本 App 层稳定对象持有——切换页面 /
     /// 切换会话 / 关闭 Transfers 面板都不取消传输；关闭传输所属会话时
     /// 经 `cancelAndAwaitTransfers` 屏障先取消并等待清理。
@@ -42,11 +48,19 @@ final class AppState {
 
         let sshService = SSHService(modelContainer: modelContainer)
         self.sshService = sshService
+
+        // MacSSH 1.1 Phase 4：协调器须在 SessionManager 之前创建——
+        // SessionManager 构造时即创建首个 Local Session，由 AppState 在装配
+        // 完成后回填注册其 terminalView（与 localeProvider 回填模式一致）。
+        let terminalAppearanceCoordinator = TerminalAppearanceCoordinator()
+        self.terminalAppearanceCoordinator = terminalAppearanceCoordinator
+
         let sessionManager = SessionManager(sshService: sshService)
         let transferManager = TransferManager()
         // 双向弱引用装配（两者均由本对象强持有，绝不形成引用环）。
         transferManager.sessionManager = sessionManager
         sessionManager.transferManager = transferManager
+        sessionManager.terminalAppearanceCoordinator = terminalAppearanceCoordinator
         self.sessionManager = sessionManager
         self.transferManager = transferManager
         // Phase 1（1.1 Localization）：调度器 / 拒绝路径按当前 App Locale
@@ -60,6 +74,12 @@ final class AppState {
         // 启动时 SessionManager.init 已创建初始 Local Session；回填 provider。
         for session in sessionManager.sessions {
             session.localeProvider = sessionManager.localeProvider
+            // MacSSH 1.1 Phase 4：回填注册初始 Local Session 的 terminalView，
+            // 立即应用当前 App Effective Appearance；之后外观变化由协调器 KVO
+            // 统一推进到全部 Session（含后续新建 / Reconnect 的 Remote Tab）。
+            if let terminalView = session.localService?.terminalView {
+                terminalAppearanceCoordinator.register(terminalView)
+            }
         }
 
         // Phase 11：SFTPService 的 Rename / Delete 经本闸查询传输冲突。

@@ -4035,6 +4035,192 @@ MacSSH
 
 ---
 
+## MacSSH 1.1 Phase 4：Terminal Appearance（2026-09-02）
+
+### 目标
+
+修复 Terminal viewport 不跟随 macOS Light / Dark Appearance 的问题：
+App 进入 Dark 后 Sidebar / Toolbar / Tabs 都变暗，但 Local / Remote
+Terminal 命令行渲染区域仍为白色。本 Phase 只处理 Terminal Appearance，
+不增加 Theme Picker、不增加用户自定义颜色、不开始其他功能。
+
+### 原白色 Terminal 根因（任务书第四十四节）
+
+证据链（固定版本 SwiftTerm 1.19.0 源码取证）：
+
+1. `LocalTerminalService` / `RemoteTerminalService` 在 init 中调用
+   `TerminalView.configureNativeColors()`（`Mac/MacTerminalView.swift`）。
+2. `configureNativeColors()` 设置：
+   - `nativeForegroundColor = NSColor.textColor`（动态语义色）
+   - `nativeBackgroundColor = NSColor.textBackgroundColor`（动态语义色）
+3. `nativeBackgroundColor` 的 setter（`Mac/MacTerminalView.swift`）立即执行：
+   `terminal.backgroundColor = nativeBackgroundColor.getTerminalColor()`
+4. `getTerminalColor()`（`Mac/MacExtensions.swift`）把动态 `NSColor` **一次性
+   解析成固定 RGB `Color`**（UInt16 分量），冻结在 `Terminal` 实例中。
+5. `Terminal.backgroundColor` / `foregroundColor` 是固定 RGB 值，**不会**
+   在外观变化时重新解析。
+6. SwiftTerm 的 `TerminalView` 不覆盖
+   `viewDidChangeEffectiveAppearance`。
+7. MacSSH 既有代码从未在外观变化时重新应用颜色。
+
+→ 颜色在 Service init 时被解析一次后永远冻结；系统进入 Dark 后
+`Terminal.backgroundColor` 仍是 Light 解析的白色 RGB。
+
+### Appearance 来源（任务书第五节）
+
+跟随 `NSApp.effectiveAppearance`（App 级信号，覆盖全部 Session 含非激活
+Tab），经 `TerminalAppearanceCoordinator` 用 KVO 观察
+`\.effectiveAppearance`。`@Environment(\.colorScheme)` 只覆盖当前视图层级
+中的激活 Tab，无法覆盖非激活 Tab 的 `TerminalView`（它们由各 Service
+持有、不在 SwiftUI 视图层级中），故不采用。
+
+### Light / Dark 调色板（集中管理，任务书第八节）
+
+等价于 `NSColor.textColor` / `NSColor.textBackgroundColor` 在对应 Appearance
+下的解析值，与 macOS 原生 Terminal 协调、清晰可读：
+
+- Light：background `#FFFFFF`、foreground `#000000`、
+  selection bg `#B3D7FF`（macOS 标准浅蓝）、selection fg `#000000`
+- Dark：background `#1E1E1E`（macOS Dark 窗口表面）、foreground `#FFFFFF`、
+  selection bg `#264F78`（macOS 标准深蓝）、selection fg `#FFFFFF`
+
+### 是否使用 semantic dynamic color（任务书第七节）
+
+不直接使用 `NSColor.textColor` 等动态色。根因正是动态色被
+`getTerminalColor()` 一次性冻结为固定 RGB，从源头消除冻结问题。改用按
+模式确定的**不透明 sRGB 固定值**，集中管理于 `TerminalAppearanceProvider`，
+不散落 magic color。
+
+### 使用的 SwiftTerm API（任务书第四十二节）
+
+公开 API，未 fork、未改 SwiftTerm dependency：
+
+- `nativeForegroundColor`（setter）：更新 `_nativeFg`，经
+  `Terminal.foregroundColor.didSet` 回调 view 的
+  `setForegroundColor(source:color:)` delegate → `colorsChanged()`
+  （清空 `attributes` / `urlAttributes` 缓存、`clearCGColorCache()`、
+  `layer.backgroundColor` 同步、`terminal.updateFullScreen()`、
+  `queuePendingDisplay()`）
+- `nativeBackgroundColor`（setter）：同上路径，并更新
+  `terminal.backgroundColor`（覆盖 erase / clear / alternate screen 底色）
+  与 `layer.backgroundColor`（覆盖外框 margin）；Metal renderer 关闭时
+  layer 即负责底色，开启时其 `clearColor` 实时读取
+  `effectiveNativeBackgroundColor`
+- `selectedTextBackgroundColor` / `selectedTextForegroundColor`（setter）：
+  触发 `updateFullScreen` + `queuePendingDisplay`
+
+不调用 `installColors`：保留 SwiftTerm 自带 ANSI 16/256 palette（任务书
+第二十四 / 四十三节，仅调整默认 fg/bg）。不触碰 `caretColor` /
+`caretTextColor`：`cursorColorIsDefault` /
+`cursorTextColorIsDefault` 维持初始 `true`，`effectiveCaretColor` /
+caret 文本色实时读取 `effectiveNativeForegroundColor` /
+`effectiveNativeBackgroundColor`，光标随默认前景 / 背景自动在明暗模式下
+保持可见（任务书第十八节）。
+
+### 动态 appearance update 路径（任务书第三十九 / 四十节，P2 整改）
+
+1. `TerminalAppearanceCoordinator`（`@MainActor`）**不在 `init` 安装 KVO**（P2-1：
+   SwiftUI `App.init` 阶段 `NSApp` 可能仍为 nil，得到 nil observation 后永不
+   重试）。改为在 `register(_:)` 中调用幂等的 `ensureObservationInstalled()`：
+   TerminalView 真正创建时 AppKit 已要求 `NSApplication` 进入有效生命周期；
+   若此刻仍为 nil，保持 nil 并由下次 `register` 重试。
+2. 外观变化 → KVO 回调切回 MainActor（与视图操作同一线程边界）→
+   `palette(for: NSApp.effectiveAppearance)` 解析新调色板，**无条件**遍历全部
+   live 已注册视图 apply（P2-2：移除 `lastAppliedMode` 全局 mode 去重，避免
+   register 期间新视图插入时排队广播被误跳过）。
+3. `TerminalAppearanceProvider.apply(_:to:)` 调用上述四个 setter。
+4. SwiftTerm 内部经 `colorsChanged()` 清缓存（`attributes` / `urlAttributes` /
+   `clearCGColorCache()`）+ `updateFullScreen()` 重绘**当前可见 viewport**。
+   历史 scrollback 行在再次进入可视区域时按当前默认 terminal colors 绘制
+   （主题切换瞬间不 eager 重绘全部 off-screen scrollback，而是按需重绘）。
+   alternate screen 与 `ESC[0m` reset 后的默认色随当前
+   `terminal.foreground/background` 立即生效。
+
+### 是否重建 Terminal View / Runtime Session（任务书第十四 ~ 十六 / 四十节）
+
+否。只调用 `apply(_:to:)`，仅作用 Presentation 颜色：
+
+- 不重建 `TerminalView`（`ObjectIdentifier` 不变，测试断言）
+- 不重建 Runtime Session / Shell / SSH / PTY
+- 不重启 `/usr/bin/login` / `zsh`，PID / cwd / scrollback 保持
+- 不重连 SSH / 不重发 shell request / 不重建 PTY
+- 不重建 SFTP / 不取消 transfer / 不改变 transfer progress
+
+### 新增文件
+
+- `MacSSH/Services/Terminal/TerminalAppearanceProvider.swift`：纯枚举，
+  Light / Dark 调色板、`mode(for:)` / `palette(for:)` / `apply(_:to:)` /
+  `appliedBackgroundRGB` / `appliedForegroundRGB` / `relativeLuminance` /
+  `contrastRatio`。`@MainActor` 标注触碰 `TerminalView` / `NSApp` 的方法。
+- `MacSSH/Services/Terminal/TerminalAppearanceCoordinator.swift`：
+  `@MainActor` final class，`NSHashTable<TerminalView>` 弱引用持有全部已注册视图。
+  `register(_:)` 调用幂等的 `ensureObservationInstalled()` 安装
+  `NSApp.effectiveAppearance` KVO（P2-1：移至 register，nil 时可重试）并立即
+  apply 当前外观；外观变化回调无条件遍历全部视图 apply（P2-2：移除
+  `lastAppliedMode`）。`appearanceResolver` / `observationInstaller` 为可注入
+  接缝；`applyModeForTesting` / `registeredViewCountForTesting` /
+  `isObservationInstalledForTesting` / `compactRegistryForTesting` 为测试 seam。
+- `Tests/SSH/TerminalAppearanceTests.swift`：28 项确定性测试（含 P2 回归：
+  observation 延迟安装 / 幂等 / 重试、注册竞态不跳过已有视图、多视图广播、新视图立即
+  apply、registry 不 retain（CFGetRetainCount 前后相等）、50 次 churn 无无限增长、
+  compact 不丢失 live、真实 NSApp.effectiveAppearance KVO 广播路径）。
+
+### 修改文件
+
+- `MacSSH/Services/Terminal/LocalTerminalService.swift`：`configureNativeColors()`
+  → `TerminalAppearanceProvider.applyCurrentAppAppearance(to:)`。
+- `MacSSH/Services/Terminal/RemoteTerminalService.swift`：同上。
+- `MacSSH/App/AppState.swift`：新增 `terminalAppearanceCoordinator` 强持有；
+  init 中创建协调器、回填 `SessionManager.terminalAppearanceCoordinator`、
+  为初始 Local Session 注册 terminalView。
+- `MacSSH/Services/Terminal/SessionManager.swift`：新增
+  `weak terminalAppearanceCoordinator`；新建 Local / Remote Service 后
+  `register(_:)` 其 terminalView。
+- `MacSSH.xcodeproj/project.pbxproj`：注册 3 个新文件（BuildFile /
+  FileReference / Group / Sources BuildPhase）。
+
+### 测试结果（任务书第四十六 / 四十七 / 四十八 / 五十一 ~ 五十四节）
+
+- `TerminalAppearanceTests`：28/28 通过（含 Light / Dark 默认色、
+  对比度 ≥ 7.0 AAA、mode 解析、Local / Remote 共用同一配置、apply 不改字体、
+  Coordinator 多视图动态更新不重建运行时、register 幂等；P2 回归：observation
+  延迟安装 / 幂等 / 重试、注册竞态不跳过已有视图、多视图广播、新视图立即
+  apply、registry 不 retain（CFGetRetainCount 前后相等）、50 次 churn 无无限增长、
+  真实 NSApp.effectiveAppearance KVO 广播路径）。
+- `TerminalFontProviderTests`：19/19 通过（字体不变性回归）。
+- `LocalShellLauncherTests`：19/19 通过（Phase 3 login-shell 不变）。
+- `AppLanguageTests`：11/11 通过（语言回归）。
+- `LocalizationTests`：21/21 通过（本地化回归）。
+- `DependencyIdentityTests`：6/6 通过（SwiftTerm 1.19.0 / libssh2 1.11.2_DEV
+  / OpenSSL 3.5.8 基线保持）。
+- `SessionManagerTests`：28 项（11 环境跳过 / 17 通过 / 0 fail）隔离运行
+  无重启。
+- 全量运行：所有用例 0 failures；环境依赖 skip（缺 ed25519 私钥）保持
+  既有 baseline；偶发 "Restarting after unexpected exit" 为既有框架行为
+  （DevelopmentStatus.md 第 2651–2654 行已记载），非 Phase 4 引入。
+
+### 构建结果（任务书第五十五节）
+
+- Debug arm64 clean build：**BUILD SUCCEEDED**，0 warnings
+- Release arm64 clean build：**BUILD SUCCEEDED**，0 warnings
+
+### Release 安全基线（任务书第五十六节）
+
+- `MacSSH/MacSSH.entitlements` 未改动。
+- `get-task-allow` / Hardened Runtime / KnownHost / Keychain / SSH 安全
+  配置保持。
+
+### 已知问题（任务书第五十一节）
+
+- 无新增产品缺陷。
+- GUI 交互项（Light ↔ Dark 实时切换、clear、less / top / nano alternate
+  screen、scrollback 重绘、cursor、selection、中文 / Emoji、ANSI 16 /
+  256 / TrueColor、ls --color、git status、新建 Tab 无白闪、多 Tab
+  一致性）仍待用户在 standalone Release `.app` 中人工验收。
+
+停止开发，等待用户验收。
+---
+
 ## MacSSH 1.1 Phase 3 P3 整改：LANG 硬编码移除
 
 ### 问题

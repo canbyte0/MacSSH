@@ -46,6 +46,13 @@ final class SessionManager {
     @ObservationIgnored
     var localeProvider: (@MainActor () -> Locale)?
 
+    /// MacSSH 1.1 Phase 4：由 AppState 装配的终端外观协调器（弱引用：
+    /// 协调器由 AppState 强持有，本 Manager 仅持有弱引用，无引用环）。
+    /// 新建 Local / Remote Service 后立即注册其 terminalView，使其跟随
+    /// macOS Appearance 动态更新；不重建任何 Runtime Session。
+    @ObservationIgnored
+    weak var terminalAppearanceCoordinator: TerminalAppearanceCoordinator?
+
     init(sshService: SSHService) {
         self.sshService = sshService
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
@@ -113,6 +120,9 @@ final class SessionManager {
         session.localeProvider = localeProvider
         sessions.append(session)
         activeSessionID = session.id
+        // MacSSH 1.1 Phase 4：注册新 Local Terminal 视图，立即应用当前外观
+        // 并纳入 macOS Appearance 动态更新（不重启 Shell / 不改变 PID / cwd）。
+        terminalAppearanceCoordinator?.register(service.terminalView)
         AppLogger.app.info("Local terminal session created")
         return session
     }
@@ -425,6 +435,9 @@ final class SessionManager {
                         port: host.port
                     )
                     session.attachRemoteService(service)
+                    // MacSSH 1.1 Phase 4：注册新 Remote Terminal 视图
+                    // （与 Local 同源外观配置；不重连 / 不重建连接）。
+                    terminalAppearanceCoordinator?.register(service.terminalView)
                     service.startIfNeeded()
                 }
 

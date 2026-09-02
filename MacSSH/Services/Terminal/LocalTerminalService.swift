@@ -33,7 +33,13 @@ final class LocalTerminalService: NSObject {
         super.init()
 
         terminalView.processDelegate = self
-        terminalView.configureNativeColors()
+        // MacSSH 1.1 Phase 4：用 TerminalAppearanceProvider 替换 SwiftTerm 的
+        // `configureNativeColors()`。后者把动态 `NSColor.textBackgroundColor`
+        // 经 `getTerminalColor()` 一次性解析成固定 RGB 冻结进 `Terminal`，
+        // 且外观变化时永不重新解析——这是「App 进入 Dark 但 Terminal 仍白」
+        // 的根因。此处只做初始应用；运行中外观变化由
+        // `TerminalAppearanceCoordinator` 统一协调。
+        TerminalAppearanceProvider.applyCurrentAppAppearance(to: terminalView)
         terminalView.setAccessibilityIdentifier("terminal.local")
         terminalView.setAccessibilityLabel("Local Terminal")
     }
