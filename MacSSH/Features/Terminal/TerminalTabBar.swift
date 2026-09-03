@@ -32,7 +32,13 @@ struct TerminalTabBar: View {
                     Image(systemName: "plus")
                         .frame(width: AppTheme.Layout.tabBarHeight, height: AppTheme.Layout.tabBarHeight)
                 }
-                .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
+                .buttonStyle(
+                    AppInteractiveButtonStyle(
+                        baseStyle: PlainButtonStyle(),
+                        // 点击区域仍为完整 Tab Bar 高度，仅收紧可见悬停底色。
+                        compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+                    )
+                )
                 .help("terminal.new_local")
                 .accessibilityLabel("terminal.new_local")
                 .accessibilityIdentifier("tabBar.newSession")

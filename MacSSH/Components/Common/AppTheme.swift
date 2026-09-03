@@ -44,6 +44,8 @@ enum AppTheme {
         static let hoverBackgroundOpacity = 0.07
         static let pressedBackgroundOpacity = 0.12
         static let backgroundOutset: CGFloat = 3
+        /// 紧凑型图标按钮的可见悬停底色直径；不改变按钮点击区域。
+        static let compactIconBackgroundDiameter: CGFloat = 28
         static let hoverDuration = 0.12
         static let pressDuration = 0.08
     }
@@ -55,6 +57,13 @@ enum AppTheme {
 /// 或 `.bordered` 样式，因此按钮角色、键盘操作、颜色和边框语义保持不变。
 struct AppInteractiveButtonStyle<BaseStyle: PrimitiveButtonStyle>: PrimitiveButtonStyle {
     let baseStyle: BaseStyle
+    /// nil 时底色跟随按钮内容；指定值时使用居中的固定直径圆形底色。
+    var compactBackgroundDiameter: CGFloat?
+
+    init(baseStyle: BaseStyle, compactBackgroundDiameter: CGFloat? = nil) {
+        self.baseStyle = baseStyle
+        self.compactBackgroundDiameter = compactBackgroundDiameter
+    }
 
     func makeBody(configuration: Configuration) -> some View {
         Button(role: configuration.role) {
@@ -63,7 +72,11 @@ struct AppInteractiveButtonStyle<BaseStyle: PrimitiveButtonStyle>: PrimitiveButt
             configuration.label
         }
         .buttonStyle(baseStyle)
-        .modifier(AppButtonInteractionModifier())
+        .modifier(
+            AppButtonInteractionModifier(
+                compactBackgroundDiameter: compactBackgroundDiameter
+            )
+        )
     }
 }
 
@@ -71,6 +84,8 @@ struct AppInteractiveButtonStyle<BaseStyle: PrimitiveButtonStyle>: PrimitiveButt
 private struct AppButtonInteractionModifier: ViewModifier {
     @Environment(\.isEnabled) private var isEnabled
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    let compactBackgroundDiameter: CGFloat?
 
     @State private var isHovering = false
     @GestureState private var isPressing = false
@@ -87,10 +102,7 @@ private struct AppButtonInteractionModifier: ViewModifier {
         content
             .scaleEffect(scale)
             .background {
-                Capsule(style: .continuous)
-                    .fill(Color.primary.opacity(backgroundOpacity))
-                    // 负 padding 只扩大可见底色，不改变按钮原有布局尺寸。
-                    .padding(-AppTheme.ButtonInteraction.backgroundOutset)
+                interactionBackground(opacity: backgroundOpacity)
             }
             .animation(
                 reduceMotion
@@ -118,6 +130,24 @@ private struct AppButtonInteractionModifier: ViewModifier {
                         state = isEnabled
                     }
             )
+    }
+
+    /// 固定圆形仅收紧可见底色；Button 自身 frame 与点击命中范围保持原样。
+    @ViewBuilder
+    private func interactionBackground(opacity: Double) -> some View {
+        if let compactBackgroundDiameter {
+            Circle()
+                .fill(Color.primary.opacity(opacity))
+                .frame(
+                    width: compactBackgroundDiameter,
+                    height: compactBackgroundDiameter
+                )
+        } else {
+            Capsule(style: .continuous)
+                .fill(Color.primary.opacity(opacity))
+                // 负 padding 只扩大可见底色，不改变按钮原有布局尺寸。
+                .padding(-AppTheme.ButtonInteraction.backgroundOutset)
+        }
     }
 
     /// Reduce Motion 开启时保留状态底色，但不执行缩放动画。
