@@ -54,6 +54,11 @@ struct SettingsView: View {
                 LabeledContent("settings.scrollback") {
                     Text("settings.scrollback_value")
                 }
+                // MacSSH 1.1 Phase 6：终端字符串高亮子区块（与现有只读占位
+                // 共存于同一 Section；规则 CRUD 经 Store 触发 Coordinator
+                // 广播重绘，不重建任何 Runtime Session）。
+                HighlightRulesEditor(store: appState.terminalHighlightCoordinator.highlightStore)
+                    .padding(.top, 4)
             }
 
             Section("settings.section.appearance") {

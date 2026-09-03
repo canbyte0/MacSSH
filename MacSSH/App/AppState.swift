@@ -34,6 +34,13 @@ final class AppState {
     /// 不重建任何 Runtime Session / Shell / SSH。
     let terminalAppearanceCoordinator: TerminalAppearanceCoordinator
 
+    /// MacSSH 1.1 Phase 6：终端字符串高亮运行时协调器，由本 App 层稳定对象
+    /// 持有。规则变更（add/edit/delete/enable/全局开关）经 Store 触发回调，
+    /// 协调器无条件广播全部 live TerminalView 重绘（`terminal.updateFullScreen`
+    /// + `needsDisplay`），不重建任何 Runtime Session / Shell / SSH / PTY /
+    /// TerminalView；规则持久化在 UserDefaults（与 `language` 同类偏好）。
+    let terminalHighlightCoordinator: TerminalHighlightCoordinator
+
     /// 传输运行时（Phase 10）：由本 App 层稳定对象持有——切换页面 /
     /// 切换会话 / 关闭 Transfers 面板都不取消传输；关闭传输所属会话时
     /// 经 `cancelAndAwaitTransfers` 屏障先取消并等待清理。
@@ -55,12 +62,19 @@ final class AppState {
         let terminalAppearanceCoordinator = TerminalAppearanceCoordinator()
         self.terminalAppearanceCoordinator = terminalAppearanceCoordinator
 
+        // MacSSH 1.1 Phase 6：高亮协调器须同样在 SessionManager 之前创建，
+        // 初始 Local Session 的 terminalView 由本装配末尾回填注册（与外观
+        // 协调器同一模式，避免只注册后来新建 Tab 的遗漏）。
+        let terminalHighlightCoordinator = TerminalHighlightCoordinator(userDefaults: userDefaults)
+        self.terminalHighlightCoordinator = terminalHighlightCoordinator
+
         let sessionManager = SessionManager(sshService: sshService)
         let transferManager = TransferManager()
         // 双向弱引用装配（两者均由本对象强持有，绝不形成引用环）。
         transferManager.sessionManager = sessionManager
         sessionManager.transferManager = transferManager
         sessionManager.terminalAppearanceCoordinator = terminalAppearanceCoordinator
+        sessionManager.terminalHighlightCoordinator = terminalHighlightCoordinator
         self.sessionManager = sessionManager
         self.transferManager = transferManager
         // Phase 1（1.1 Localization）：调度器 / 拒绝路径按当前 App Locale
@@ -79,6 +93,9 @@ final class AppState {
             // 统一推进到全部 Session（含后续新建 / Reconnect 的 Remote Tab）。
             if let terminalView = session.localService?.terminalView {
                 terminalAppearanceCoordinator.register(terminalView)
+                // MacSSH 1.1 Phase 6：同一回填点注册高亮 provider——初始
+                // Local Session 的高亮立即生效，不等首次 draw。
+                terminalHighlightCoordinator.register(terminalView)
             }
         }
 

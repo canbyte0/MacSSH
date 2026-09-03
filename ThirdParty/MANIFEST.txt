@@ -69,22 +69,44 @@ SwiftTerm (SwiftPM dependency)
   Upstream base     : 464df5207fc2432e16c9a23abe538187196daf5f
                       (tag v1.19.0; SwiftTerm 1.19.0)
   MacSSH-maintained fork : https://github.com/canbyte0/SwiftTerm
-  Patch branch      : macssh-vs16-preserve-base-width
-  Production revision: 8a5187fe8182bac3a01f2b82d2621993de5886be
+
+  Phase 5 patch (parent = upstream base):
+    Patch branch      : macssh-vs16-preserve-base-width
+    Patch revision    : 8a5187fe8182bac3a01f2b82d2621993de5886be
+    Patch diff file   : Docs/swiftterm-vs16-patch.diff
+    Purpose           : Opt-in VS16 preserve-base-width compatibility for the
+                        local macOS shell. Adds TerminalOptions
+                        variationSelector16WidthPolicy (.widenToEmojiWidth
+                        default; .preserveBaseWidth for Local Terminal only).
+                        Default SwiftTerm behavior is unchanged; the patch does
+                        not strip VS16, does not rewrite PTY/CSI bytes, and does
+                        not hardcode characters.
+    Local Terminal    : variationSelector16WidthPolicy = .preserveBaseWidth
+    Remote Terminal   : variationSelector16WidthPolicy = .widenToEmojiWidth
+                        (SwiftTerm default; intentionally not enabled for remote
+                        hosts whose wcwidth/locale may differ)
+
+  Phase 6 patch (parent = Phase 5 patch; current production revision):
+    Patch branch      : macssh-terminal-highlight-provider
+    Patch revision    : 6e56e32e16eba0c3a5f534136da272679085f44c
+    Patch diff file   : Docs/swiftterm-highlight-patch.diff
+    Purpose           : Generic presentation-only cell background decoration hook.
+                        Adds TerminalHighlightProvider protocol +
+                        TerminalCellHighlight value type + weak
+                        TerminalView.highlightProvider property (default nil =
+                        no-op). buildAttributedString (shared by CoreGraphics
+                        and Metal renderers) queries the provider once per
+                        visible row and paints returned column ranges through
+                        the existing SwiftTerm_selectionBackgroundColor attribute
+                        channel, below selection and cursor, without touching
+                        the foreground color, buffer, parser, or copied text.
+                        TTColor typealias promoted to public (TTImage already
+                        was). No MacSSH names / UserDefaults / Rule model in
+                        SwiftTerm.
+
+  Production revision: 6e56e32e16eba0c3a5f534136da272679085f44c (Phase 6)
   Production dependency: remote SwiftPM source-control (exact immutable
-                      revision; NOT branch/floating/version-range)
-  Patch diff file   : Docs/swiftterm-vs16-patch.diff
-  Purpose           : Opt-in VS16 preserve-base-width compatibility for the
-                      local macOS shell. Adds TerminalOptions
-                      variationSelector16WidthPolicy (.widenToEmojiWidth
-                      default; .preserveBaseWidth for Local Terminal only).
-                      Default SwiftTerm behavior is unchanged; the patch does
-                      not strip VS16, does not rewrite PTY/CSI bytes, and does
-                      not hardcode characters.
-  Local Terminal    : variationSelector16WidthPolicy = .preserveBaseWidth
-  Remote Terminal   : variationSelector16WidthPolicy = .widenToEmojiWidth
-                      (SwiftTerm default; intentionally not enabled for remote
-                      hosts whose wcwidth/locale may differ)
+                        revision; NOT branch/floating/version-range)
   Local dev checkout: ThirdParty/SwiftTerm-fork (optional local development
                       checkout; gitignored; NOT the production dependency)
   Package.resolved  : MacSSH.xcodeproj/project.xcworkspace/xcshareddata/

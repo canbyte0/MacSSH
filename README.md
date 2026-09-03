@@ -121,11 +121,7 @@ git clone https://github.com/canbyte0/MacSSH.git
 cd MacSSH
 ```
 
-命令含义：
 
-- `git clone`：下载 Git 仓库及其提交历史。
-- `https://github.com/canbyte0/MacSSH.git`：项目远程仓库地址。
-- `cd MacSSH`：把当前工作目录切换到项目根目录。
 
 ### 2. 使用 Xcode 打开工程
 
@@ -134,10 +130,6 @@ cd MacSSH
 open MacSSH.xcodeproj
 ```
 
-命令含义：
-
-- `open`：调用 macOS Launch Services 打开文件。
-- `MacSSH.xcodeproj`：MacSSH 的 Xcode Project。
 
 在 Xcode 中选择共享 Scheme `MacSSH` 和 `My Mac` 目标，然后运行。首次解析 Swift Package 时需要能够访问 GitHub。
 
@@ -152,11 +144,6 @@ open MacSSH.xcodeproj
 bash Scripts/build-app.sh
 ```
 
-命令含义：
-
-- `bash`：使用 Bash 解释并运行脚本。
-- `Scripts/build-app.sh`：清理独立 DerivedData，构建 Debug / Release，并检查两个 `.app` 产物。
-- 构建日志写入 `/tmp/macssh-build-debug.log` 与 `/tmp/macssh-build-release.log`。
 
 ### 不依赖真实 SSH 凭据的测试
 
@@ -165,16 +152,6 @@ bash Scripts/build-app.sh
 xcodebuild test -project MacSSH.xcodeproj -scheme MacSSH -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /tmp/macssh-readme-tests -skipPackagePluginValidation -skipMacroValidation
 ```
 
-命令含义：
-
-- `xcodebuild test`：构建 App 和测试 Target 后运行 XCTest。
-- `-project MacSSH.xcodeproj`：指定 Xcode 工程。
-- `-scheme MacSSH`：使用仓库提交的共享 Scheme。
-- `-configuration Debug`：采用 Debug 构建配置。
-- `-destination 'platform=macOS,arch=arm64'`：在本机 macOS 的 arm64 目标上测试。
-- `-derivedDataPath /tmp/macssh-readme-tests`：把本次构建缓存隔离到 `/tmp`。
-- `-skipPackagePluginValidation`：跳过命令行环境中的重复插件确认；只应对已审阅并固定 revision 的依赖使用。
-- `-skipMacroValidation`：跳过命令行环境中的宏重复确认；本项目依赖身份仍由锁文件与测试校验。
 
 ### 真实 SSH / SFTP 集成测试
 
@@ -186,11 +163,6 @@ xcodebuild test -project MacSSH.xcodeproj -scheme MacSSH -configuration Debug -d
 bash Scripts/run-ssh-tests.sh
 ```
 
-命令含义：
-
-- `Scripts/run-ssh-tests.sh`：以本机 `127.0.0.1:22` 的 sshd 为测试服务器，创建临时凭据与文件夹具并运行集成测试。
-- 测试密码不会作为命令行参数、环境变量或日志内容保存；脚本通过 Keychain 流程提供测试凭据。
-- 完整日志写入 `/tmp/macssh-ssh-tests.log`，清理逻辑由脚本的 `EXIT` trap 执行。
 
 ### 重建原生静态依赖
 
@@ -201,10 +173,6 @@ bash Scripts/run-ssh-tests.sh
 bash Scripts/build-dependencies.sh
 ```
 
-命令含义：
-
-- `Scripts/build-dependencies.sh`：校验下载文件 SHA256 与安全修复标记，再将静态库安装到 `ThirdParty/openssl` 和 `ThirdParty/libssh2`。
-- 脚本需要 `cmake`、Xcode Command Line Tools 与网络；生成的 App 运行时不依赖 `cmake` 或 Homebrew。
 
 ## 项目结构
 

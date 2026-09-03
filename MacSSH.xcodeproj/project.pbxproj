@@ -35,6 +35,13 @@
 		J61000000000000000000001 /* TerminalFontProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = J62000000000000000000001 /* TerminalFontProvider.swift */; };
 		J61000000000000000000002 /* TerminalAppearanceProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = J62000000000000000000002 /* TerminalAppearanceProvider.swift */; };
 		J61000000000000000000003 /* TerminalAppearanceCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = J62000000000000000000003 /* TerminalAppearanceCoordinator.swift */; };
+		H61000000000000000000001 /* TerminalHighlightRule.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000001 /* TerminalHighlightRule.swift */; };
+		H61000000000000000000002 /* TerminalHighlightMatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000002 /* TerminalHighlightMatcher.swift */; };
+		H61000000000000000000003 /* TerminalHighlightPalette.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000003 /* TerminalHighlightPalette.swift */; };
+		H61000000000000000000004 /* TerminalHighlightProviderImpl.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000004 /* TerminalHighlightProviderImpl.swift */; };
+		H61000000000000000000005 /* TerminalHighlightCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000005 /* TerminalHighlightCoordinator.swift */; };
+		H61000000000000000000006 /* HighlightRulesEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000006 /* HighlightRulesEditor.swift */; };
+		H61000000000000000000007 /* TerminalHighlightStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = H62000000000000000000007 /* TerminalHighlightStore.swift */; };
 		U51000000000000000000001 /* LocalShellLauncher.swift in Sources */ = {isa = PBXBuildFile; fileRef = U52000000000000000000001 /* LocalShellLauncher.swift */; };
 		A10000000000000000000014 /* TerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000015 /* TerminalRepresentable.swift */; };
 		A10000000000000000000015 /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = AB0000000000000000000001 /* SwiftTerm */; };
@@ -94,6 +101,9 @@
 		J71000000000000000000002 /* TerminalAppearanceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = J72000000000000000000002 /* TerminalAppearanceTests.swift */; };
 		U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = U72000000000000000000001 /* LocalShellLauncherTests.swift */; };
 		V71000000000000000000001 /* TerminalVS16WidthPolicyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */; };
+		H71000000000000000000001 /* TerminalHighlightMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */; };
+		H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000002 /* TerminalHighlightStoreTests.swift */; };
+		H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -142,6 +152,13 @@
 		J62000000000000000000001 /* TerminalFontProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontProvider.swift; sourceTree = "<group>"; };
 		J62000000000000000000002 /* TerminalAppearanceProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppearanceProvider.swift; sourceTree = "<group>"; };
 		J62000000000000000000003 /* TerminalAppearanceCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppearanceCoordinator.swift; sourceTree = "<group>"; };
+		H62000000000000000000001 /* TerminalHighlightRule.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightRule.swift; sourceTree = "<group>"; };
+		H62000000000000000000002 /* TerminalHighlightMatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightMatcher.swift; sourceTree = "<group>"; };
+		H62000000000000000000003 /* TerminalHighlightPalette.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightPalette.swift; sourceTree = "<group>"; };
+		H62000000000000000000004 /* TerminalHighlightProviderImpl.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightProviderImpl.swift; sourceTree = "<group>"; };
+		H62000000000000000000005 /* TerminalHighlightCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightCoordinator.swift; sourceTree = "<group>"; };
+		H62000000000000000000006 /* HighlightRulesEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HighlightRulesEditor.swift; sourceTree = "<group>"; };
+		H62000000000000000000007 /* TerminalHighlightStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightStore.swift; sourceTree = "<group>"; };
 		U52000000000000000000001 /* LocalShellLauncher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellLauncher.swift; sourceTree = "<group>"; };
 		A20000000000000000000015 /* TerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRepresentable.swift; sourceTree = "<group>"; };
 		A20000000000000000000016 /* AuthenticationType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationType.swift; sourceTree = "<group>"; };
@@ -205,6 +222,9 @@
 		J72000000000000000000002 /* TerminalAppearanceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppearanceTests.swift; sourceTree = "<group>"; };
 		U72000000000000000000001 /* LocalShellLauncherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellLauncherTests.swift; sourceTree = "<group>"; };
 		V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalVS16WidthPolicyTests.swift; sourceTree = "<group>"; };
+		H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightMatcherTests.swift; sourceTree = "<group>"; };
+		H72000000000000000000002 /* TerminalHighlightStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightStoreTests.swift; sourceTree = "<group>"; };
+		H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightCoordinatorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -286,6 +306,7 @@
 				A20000000000000000000017 /* Host.swift */,
 				A20000000000000000000018 /* HostGroup.swift */,
 				A2000000000000000000001C /* KnownHost.swift */,
+				H62000000000000000000001 /* TerminalHighlightRule.swift */,
 				A20000000000000000000012 /* TerminalSession.swift */,
 				E20000000000000000000003 /* RemoteTerminalSession.swift */,
 				F20000000000000000000001 /* ManagedTerminalSession.swift */,
@@ -383,6 +404,9 @@
 			J72000000000000000000002 /* TerminalAppearanceTests.swift */,
 			U72000000000000000000001 /* LocalShellLauncherTests.swift */,
 			V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */,
+			H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */,
+			H72000000000000000000002 /* TerminalHighlightStoreTests.swift */,
+			H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -446,6 +470,7 @@
 			isa = PBXGroup;
 			children = (
 				A20000000000000000000011 /* SettingsView.swift */,
+				H62000000000000000000006 /* HighlightRulesEditor.swift */,
 			);
 			path = Settings;
 			sourceTree = "<group>";
@@ -486,6 +511,11 @@
 				J62000000000000000000001 /* TerminalFontProvider.swift */,
 				J62000000000000000000002 /* TerminalAppearanceProvider.swift */,
 				J62000000000000000000003 /* TerminalAppearanceCoordinator.swift */,
+				H62000000000000000000002 /* TerminalHighlightMatcher.swift */,
+				H62000000000000000000003 /* TerminalHighlightPalette.swift */,
+				H62000000000000000000004 /* TerminalHighlightProviderImpl.swift */,
+				H62000000000000000000005 /* TerminalHighlightCoordinator.swift */,
+				H62000000000000000000007 /* TerminalHighlightStore.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
 			);
@@ -705,6 +735,13 @@
 				J61000000000000000000001 /* TerminalFontProvider.swift in Sources */,
 				J61000000000000000000002 /* TerminalAppearanceProvider.swift in Sources */,
 				J61000000000000000000003 /* TerminalAppearanceCoordinator.swift in Sources */,
+				H61000000000000000000001 /* TerminalHighlightRule.swift in Sources */,
+				H61000000000000000000002 /* TerminalHighlightMatcher.swift in Sources */,
+				H61000000000000000000003 /* TerminalHighlightPalette.swift in Sources */,
+				H61000000000000000000004 /* TerminalHighlightProviderImpl.swift in Sources */,
+				H61000000000000000000005 /* TerminalHighlightCoordinator.swift in Sources */,
+				H61000000000000000000006 /* HighlightRulesEditor.swift in Sources */,
+				H61000000000000000000007 /* TerminalHighlightStore.swift in Sources */,
 				U51000000000000000000001 /* LocalShellLauncher.swift in Sources */,
 				A10000000000000000000014 /* TerminalRepresentable.swift in Sources */,
 				A10000000000000000000016 /* AuthenticationType.swift in Sources */,
@@ -770,6 +807,9 @@
 				J71000000000000000000002 /* TerminalAppearanceTests.swift in Sources */,
 				U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */,
 				V71000000000000000000001 /* TerminalVS16WidthPolicyTests.swift in Sources */,
+				H71000000000000000000001 /* TerminalHighlightMatcherTests.swift in Sources */,
+				H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */,
+				H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -789,7 +829,7 @@
 			repositoryURL = "https://github.com/canbyte0/SwiftTerm.git";
 			requirement = {
 				kind = revision;
-				revision = 8a5187fe8182bac3a01f2b82d2621993de5886be;
+				revision = 6e56e32e16eba0c3a5f534136da272679085f44c;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

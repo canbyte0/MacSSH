@@ -53,6 +53,11 @@ final class SessionManager {
     @ObservationIgnored
     weak var terminalAppearanceCoordinator: TerminalAppearanceCoordinator?
 
+    /// MacSSH 1.1 Phase 6：终端字符串高亮协调器，由 AppState 装配注入。
+    /// Local / Remote 创建 / Reconnect 路径在此调用 `register`，
+    /// 与 `terminalAppearanceCoordinator` 同位置（避免遗漏初始 Tab）。
+    weak var terminalHighlightCoordinator: TerminalHighlightCoordinator?
+
     init(sshService: SSHService) {
         self.sshService = sshService
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
@@ -123,6 +128,8 @@ final class SessionManager {
         // MacSSH 1.1 Phase 4：注册新 Local Terminal 视图，立即应用当前外观
         // 并纳入 macOS Appearance 动态更新（不重启 Shell / 不改变 PID / cwd）。
         terminalAppearanceCoordinator?.register(service.terminalView)
+        // MacSSH 1.1 Phase 6：同一注册点挂接高亮 provider，新 Tab 立即生效。
+        terminalHighlightCoordinator?.register(service.terminalView)
         AppLogger.app.info("Local terminal session created")
         return session
     }
@@ -438,6 +445,9 @@ final class SessionManager {
                     // MacSSH 1.1 Phase 4：注册新 Remote Terminal 视图
                     // （与 Local 同源外观配置；不重连 / 不重建连接）。
                     terminalAppearanceCoordinator?.register(service.terminalView)
+                    // MacSSH 1.1 Phase 6：Remote 同样启用高亮——matcher 只看
+                    // BufferLine 文本，与连接类型无关（Phase 6A 已证）。
+                    terminalHighlightCoordinator?.register(service.terminalView)
                     service.startIfNeeded()
                 }
 
