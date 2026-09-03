@@ -21,7 +21,7 @@ struct HostRowView: View {
                     .foregroundStyle(host.favorite ? .yellow : .secondary)
                     .frame(width: 20)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(AppInteractiveButtonStyle(baseStyle: BorderlessButtonStyle()))
             .help(host.favorite ? Text("hosts.remove_favorite") : Text("hosts.add_favorite"))
             .accessibilityLabel(
                 host.favorite ? Text("hosts.remove_favorite") : Text("hosts.add_favorite")
@@ -112,7 +112,7 @@ struct HostRowView: View {
             Text("action.connect")
         }
         .controlSize(.small)
-        .buttonStyle(.bordered)
+        .buttonStyle(AppInteractiveButtonStyle(baseStyle: BorderedButtonStyle()))
         .help("hosts.open_new_terminal_help")
         .accessibilityIdentifier("hostRow.connect")
     }
@@ -122,7 +122,7 @@ struct HostRowView: View {
             Text("action.disconnect")
         }
         .controlSize(.small)
-        .buttonStyle(.bordered)
+        .buttonStyle(AppInteractiveButtonStyle(baseStyle: BorderedButtonStyle()))
         .help("hosts.disconnect_all_help")
         .accessibilityIdentifier("hostRow.disconnect")
     }
@@ -133,7 +133,7 @@ struct HostRowView: View {
             Image(systemName: "chevron.left.forwardslash.chevron.right")
         }
         .controlSize(.small)
-        .buttonStyle(.borderless)
+        .buttonStyle(AppInteractiveButtonStyle(baseStyle: BorderlessButtonStyle()))
         .help("hosts.open_remote_terminal")
         .accessibilityLabel("hosts.open_remote_terminal")
         .accessibilityIdentifier("hostRow.openTerminal")

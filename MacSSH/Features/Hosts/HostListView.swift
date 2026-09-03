@@ -164,7 +164,7 @@ struct HostListView: View {
                 } label: {
                     Label("groups.new", systemImage: "plus")
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
                 .accessibilityIdentifier("hosts.newGroup")
             }
         }

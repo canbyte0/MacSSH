@@ -187,7 +187,7 @@ private struct KnownHostRow: View {
                 Button("known_hosts.forget", role: .destructive) {
                     onForget()
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(AppInteractiveButtonStyle(baseStyle: BorderlessButtonStyle()))
                 .accessibilityIdentifier("knownHosts.forget")
             }
 

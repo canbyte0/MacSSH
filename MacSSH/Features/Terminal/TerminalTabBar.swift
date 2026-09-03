@@ -32,7 +32,7 @@ struct TerminalTabBar: View {
                     Image(systemName: "plus")
                         .frame(width: AppTheme.Layout.tabBarHeight, height: AppTheme.Layout.tabBarHeight)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
                 .help("terminal.new_local")
                 .accessibilityLabel("terminal.new_local")
                 .accessibilityIdentifier("tabBar.newSession")
@@ -75,7 +75,7 @@ private struct TerminalTabItemView: View {
                         .frame(width: 14, height: 14)
                         .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
                 .help("terminal.close_tab")
                 .accessibilityLabel(
                     Text(

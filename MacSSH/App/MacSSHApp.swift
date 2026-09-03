@@ -62,6 +62,8 @@ struct MacSSHApp: App {
                 .environment(appState)
                 .modelContainer(modelContainer)
                 .tint(AppTheme.accentColor)
+                // 在 WindowGroup 根部统一覆盖默认 Button，确保 Toolbar 与 Sheet 也继承动画。
+                .buttonStyle(AppInteractiveButtonStyle(baseStyle: DefaultButtonStyle()))
         }
         .defaultSize(
             width: AppTheme.Window.defaultWidth,
