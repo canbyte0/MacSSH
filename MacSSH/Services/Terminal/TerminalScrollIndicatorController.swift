@@ -5,8 +5,8 @@ import SwiftTerm
 ///
 /// SwiftTerm 的 `NSScroller` 会覆盖终端全部高度。即使滚动数据正确，某些
 /// macOS 外观下仍会绘制整条浅色轨道，看起来像“滑块始终占满一页”。本控制器
-/// 仅把原生滚动器设为透明，原生滚轮、点击和拖拽命中区域仍然保留；可见部分
-/// 由一个不接收鼠标事件的轻量覆盖层绘制。
+/// 仅把原生滚动器设为透明，并用轻量覆盖层绘制可见部分；覆盖层保持事件穿透，
+/// 局部事件监听在原生滚动区域内恢复系统箭头。
 @MainActor
 final class TerminalScrollIndicatorController {
     /// 测试与辅助功能检查使用的稳定标识。
@@ -15,6 +15,8 @@ final class TerminalScrollIndicatorController {
     private weak var terminalView: TerminalView?
     private weak var nativeScroller: NSScroller?
     private let indicatorView = TerminalScrollIndicatorView()
+    private var cursorEventMonitor: Any?
+    private var cursorState = TerminalScrollCursorState()
 
     init(terminalView: TerminalView) {
         self.terminalView = terminalView
@@ -41,7 +43,14 @@ final class TerminalScrollIndicatorController {
             indicatorView.widthAnchor.constraint(equalToConstant: TerminalScrollIndicatorView.overlayWidth)
         ])
 
+        installCursorEventMonitor()
         update()
+    }
+
+    isolated deinit {
+        if let cursorEventMonitor {
+            NSEvent.removeMonitor(cursorEventMonitor)
+        }
     }
 
     /// 在输出、用户滚动或视图尺寸变化后同步短滑块的位置和长度。
@@ -59,6 +68,106 @@ final class TerminalScrollIndicatorController {
             proportion: terminalView.scrollThumbsize,
             position: terminalView.scrollPosition
         )
+    }
+
+    private func installCursorEventMonitor() {
+        cursorEventMonitor = NSEvent.addLocalMonitorForEvents(
+            matching: [.mouseMoved, .cursorUpdate, .leftMouseDragged, .leftMouseUp]
+        ) { [weak self] event in
+            self?.updateCursor(for: event)
+            return event
+        }
+    }
+
+    private func updateCursor(for event: NSEvent) {
+        guard
+            let nativeScroller,
+            let terminalView,
+            event.window === nativeScroller.window
+        else {
+            cursorState.reset()
+            return
+        }
+
+        let scrollerRectInWindow = nativeScroller.convert(nativeScroller.bounds, to: nil)
+        let terminalRectInWindow = terminalView.convert(terminalView.bounds, to: nil)
+        let region = TerminalScrollCursorRegion.region(
+            windowPoint: event.locationInWindow,
+            scrollerRectInWindow: scrollerRectInWindow,
+            terminalRectInWindow: terminalRectInWindow,
+            isScrollerVisible: !indicatorView.isHidden
+        )
+
+        switch cursorState.transition(to: region) {
+        case .showArrow:
+            // SwiftTerm 会在 cursorUpdate 中无条件设置 I-beam，因此必须等
+            // 当前事件分发结束后再恢复箭头。
+            DispatchQueue.main.async {
+                NSCursor.arrow.set()
+            }
+        case .showIBeam:
+            // 滚动条与终端正文属于 SwiftTerm 的同一个 cursor rect，离开滚动条时
+            // AppKit 不一定再次触发 cursorUpdate；显式恢复终端原本的 I-beam。
+            DispatchQueue.main.async {
+                NSCursor.iBeam.set()
+            }
+        case nil:
+            break
+        }
+    }
+}
+
+/// 纯命中计算：区分滚动条、终端正文和其他界面区域。
+struct TerminalScrollCursorRegion {
+    enum Region: Equatable {
+        case scroller
+        case terminalContent
+        case outside
+    }
+
+    static func region(
+        windowPoint: NSPoint,
+        scrollerRectInWindow: NSRect,
+        terminalRectInWindow: NSRect,
+        isScrollerVisible: Bool
+    ) -> Region {
+        if isScrollerVisible, scrollerRectInWindow.contains(windowPoint) {
+            return .scroller
+        }
+        if terminalRectInWindow.contains(windowPoint) {
+            return .terminalContent
+        }
+        return .outside
+    }
+}
+
+/// 记录上一次是否位于滚动条，使同一 cursor rect 内的离开动作也能恢复 I-beam。
+struct TerminalScrollCursorState {
+    enum Action: Equatable {
+        case showArrow
+        case showIBeam
+    }
+
+    private(set) var isPointerOverScroller = false
+
+    mutating func transition(to region: TerminalScrollCursorRegion.Region) -> Action? {
+        switch region {
+        case .scroller:
+            isPointerOverScroller = true
+            return .showArrow
+        case .terminalContent:
+            let shouldRestoreIBeam = isPointerOverScroller
+            isPointerOverScroller = false
+            return shouldRestoreIBeam ? .showIBeam : nil
+        case .outside:
+            // 进入其他界面区域后，光标样式由对应控件和 AppKit 接管。
+            isPointerOverScroller = false
+            return nil
+        }
+    }
+
+    mutating func reset() {
+        isPointerOverScroller = false
     }
 }
 
@@ -137,6 +246,12 @@ private final class TerminalScrollIndicatorView: NSView {
         updateColor()
     }
 
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // 局部事件监听只接收本 App 的 mouseMoved；允许窗口发送该事件。
+        window?.acceptsMouseMovedEvents = true
+    }
+
     func update(canScroll: Bool, proportion: Double, position: Double) {
         self.canScroll = canScroll
         self.proportion = proportion
@@ -147,6 +262,7 @@ private final class TerminalScrollIndicatorView: NSView {
 
     private func updateThumbFrame() {
         guard canScroll else {
+            thumbLayer.frame = .zero
             return
         }
 

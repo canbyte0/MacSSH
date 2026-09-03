@@ -59,4 +59,72 @@ final class TerminalScrollIndicatorTests: XCTestCase {
         )
         withExtendedLifetime(controller) {}
     }
+
+    /// 光标命中计算必须区分滚动条、终端正文和终端外部。
+    func testCursorRegionDistinguishesScrollerTerminalAndOutside() {
+        let scrollerRect = NSRect(x: 783, y: 0, width: 17, height: 600)
+        let terminalRect = NSRect(x: 0, y: 0, width: 800, height: 600)
+
+        XCTAssertEqual(
+            TerminalScrollCursorRegion.region(
+                windowPoint: NSPoint(x: 794, y: 300),
+                scrollerRectInWindow: scrollerRect,
+                terminalRectInWindow: terminalRect,
+                isScrollerVisible: true
+            ),
+            .scroller
+        )
+        XCTAssertEqual(
+            TerminalScrollCursorRegion.region(
+                windowPoint: NSPoint(x: 782, y: 300),
+                scrollerRectInWindow: scrollerRect,
+                terminalRectInWindow: terminalRect,
+                isScrollerVisible: true
+            ),
+            .terminalContent
+        )
+        XCTAssertEqual(
+            TerminalScrollCursorRegion.region(
+                windowPoint: NSPoint(x: 900, y: 300),
+                scrollerRectInWindow: scrollerRect,
+                terminalRectInWindow: terminalRect,
+                isScrollerVisible: true
+            ),
+            .outside
+        )
+    }
+
+    /// 不可滚动时，原生滚动器区域应按终端正文处理，避免残留箭头。
+    func testHiddenScrollerRegionUsesTerminalCursor() {
+        XCTAssertEqual(
+            TerminalScrollCursorRegion.region(
+                windowPoint: NSPoint(x: 794, y: 300),
+                scrollerRectInWindow: NSRect(x: 783, y: 0, width: 17, height: 600),
+                terminalRectInWindow: NSRect(x: 0, y: 0, width: 800, height: 600),
+                isScrollerVisible: false
+            ),
+            .terminalContent
+        )
+    }
+
+    /// 从滚动条进入终端正文时必须恢复 I-beam，后续正文移动不重复覆盖光标。
+    func testCursorStateRestoresIBeamWhenLeavingScrollerForTerminal() {
+        var state = TerminalScrollCursorState()
+
+        XCTAssertEqual(state.transition(to: .scroller), .showArrow)
+        XCTAssertTrue(state.isPointerOverScroller)
+        XCTAssertEqual(state.transition(to: .terminalContent), .showIBeam)
+        XCTAssertFalse(state.isPointerOverScroller)
+        XCTAssertNil(state.transition(to: .terminalContent))
+    }
+
+    /// 从滚动条进入其他界面区域时交还给 AppKit，不强制设置终端光标。
+    func testCursorStateDoesNotForceIBeamOutsideTerminal() {
+        var state = TerminalScrollCursorState()
+
+        XCTAssertEqual(state.transition(to: .scroller), .showArrow)
+        XCTAssertNil(state.transition(to: .outside))
+        XCTAssertFalse(state.isPointerOverScroller)
+    }
+
 }
