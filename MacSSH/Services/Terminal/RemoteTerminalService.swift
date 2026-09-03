@@ -24,6 +24,9 @@ final class RemoteTerminalService: NSObject {
     /// 与 Local Terminal 同源。
     let terminalView: TerminalView
 
+    /// 隐藏 SwiftTerm 整条滚动轨道，只显示与内容比例一致的短滑块。
+    private let scrollIndicatorController: TerminalScrollIndicatorController
+
     /// 已认证的 SSH 连接（actor 引用）；Channel 操作全部经由它串行执行。
     ///
     /// Reconnect（Phase 8）时通过 `reattach(connection:)` 替换为新连接；
@@ -78,11 +81,13 @@ final class RemoteTerminalService: NSObject {
             termName: "xterm-256color",
             scrollback: 10_000
         )
-        terminalView = TerminalView(
+        let terminalView = TerminalView(
             frame: .zero,
             font: TerminalFontProvider.regularFont(),
             options: options
         )
+        self.terminalView = terminalView
+        scrollIndicatorController = TerminalScrollIndicatorController(terminalView: terminalView)
 
         super.init()
 
@@ -447,6 +452,7 @@ extension RemoteTerminalService: TerminalViewDelegate {
             let sizeChanged = self.session.columns != newCols || self.session.rows != newRows
             self.session.columns = newCols
             self.session.rows = newRows
+            self.scrollIndicatorController.update()
 
             guard sizeChanged else {
                 return
@@ -475,7 +481,11 @@ extension RemoteTerminalService: TerminalViewDelegate {
         }
     }
 
-    nonisolated func scrolled(source: TerminalView, position: Double) {}
+    nonisolated func scrolled(source: TerminalView, position: Double) {
+        Task { @MainActor [weak self] in
+            self?.scrollIndicatorController.update()
+        }
+    }
 
     nonisolated func rangeChanged(source: TerminalView, startY: Int, endY: Int) {}
 

@@ -104,6 +104,8 @@
 		H71000000000000000000001 /* TerminalHighlightMatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */; };
 		H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000002 /* TerminalHighlightStoreTests.swift */; };
 		H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */; };
+		W61000000000000000000001 /* TerminalScrollIndicatorController.swift in Sources */ = {isa = PBXBuildFile; fileRef = W62000000000000000000001 /* TerminalScrollIndicatorController.swift */; };
+		W71000000000000000000001 /* TerminalScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -225,6 +227,8 @@
 		H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightMatcherTests.swift; sourceTree = "<group>"; };
 		H72000000000000000000002 /* TerminalHighlightStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightStoreTests.swift; sourceTree = "<group>"; };
 		H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightCoordinatorTests.swift; sourceTree = "<group>"; };
+		W62000000000000000000001 /* TerminalScrollIndicatorController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollIndicatorController.swift; sourceTree = "<group>"; };
+		W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollIndicatorTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -407,6 +411,7 @@
 			H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */,
 			H72000000000000000000002 /* TerminalHighlightStoreTests.swift */,
 			H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */,
+			W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -516,6 +521,7 @@
 				H62000000000000000000004 /* TerminalHighlightProviderImpl.swift */,
 				H62000000000000000000005 /* TerminalHighlightCoordinator.swift */,
 				H62000000000000000000007 /* TerminalHighlightStore.swift */,
+				W62000000000000000000001 /* TerminalScrollIndicatorController.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
 			);
@@ -742,6 +748,7 @@
 				H61000000000000000000005 /* TerminalHighlightCoordinator.swift in Sources */,
 				H61000000000000000000006 /* HighlightRulesEditor.swift in Sources */,
 				H61000000000000000000007 /* TerminalHighlightStore.swift in Sources */,
+				W61000000000000000000001 /* TerminalScrollIndicatorController.swift in Sources */,
 				U51000000000000000000001 /* LocalShellLauncher.swift in Sources */,
 				A10000000000000000000014 /* TerminalRepresentable.swift in Sources */,
 				A10000000000000000000016 /* AuthenticationType.swift in Sources */,
@@ -810,6 +817,7 @@
 				H71000000000000000000001 /* TerminalHighlightMatcherTests.swift in Sources */,
 				H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */,
 				H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */,
+				W71000000000000000000001 /* TerminalScrollIndicatorTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

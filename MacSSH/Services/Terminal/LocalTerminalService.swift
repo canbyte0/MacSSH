@@ -11,6 +11,9 @@ final class LocalTerminalService: NSObject {
     /// SwiftTerm 官方提供的 AppKit 本地进程终端，内部使用 PTY 和异步 I/O。
     let terminalView: LocalProcessTerminalView
 
+    /// 隐藏 SwiftTerm 整条滚动轨道，只显示与内容比例一致的短滑块。
+    private let scrollIndicatorController: TerminalScrollIndicatorController
+
     /// 防止 SwiftUI 重建包装层时重复启动 Shell。
     private var hasStarted = false
 
@@ -34,15 +37,20 @@ final class LocalTerminalService: NSObject {
             scrollback: 10_000,
             variationSelector16WidthPolicy: .preserveBaseWidth
         )
-        terminalView = LocalProcessTerminalView(
+        let terminalView = ScrollTrackingLocalProcessTerminalView(
             frame: .zero,
             font: TerminalFontProvider.regularFont(),
             options: options
         )
+        self.terminalView = terminalView
+        scrollIndicatorController = TerminalScrollIndicatorController(terminalView: terminalView)
 
         super.init()
 
         terminalView.processDelegate = self
+        terminalView.scrollIndicatorNeedsUpdate = { [weak self] in
+            self?.scrollIndicatorController.update()
+        }
         // MacSSH 1.1 Phase 4：用 TerminalAppearanceProvider 替换 SwiftTerm 的
         // `configureNativeColors()`。后者把动态 `NSColor.textBackgroundColor`
         // 经 `getTerminalColor()` 一次性解析成固定 RGB 冻结进 `Terminal`，
@@ -182,6 +190,7 @@ extension LocalTerminalService: LocalProcessTerminalViewDelegate {
         Task { @MainActor [weak self] in
             self?.session.columns = newCols
             self?.session.rows = newRows
+            self?.scrollIndicatorController.update()
         }
     }
 
