@@ -313,7 +313,7 @@ struct TerminalWorkspaceView: View {
         case .local:
             return L10n.string(
                 "terminal.local_title",
-                defaultValue: "Local Terminal",
+                defaultValue: "Terminal",
                 locale: locale
             )
         case .remoteSSH:

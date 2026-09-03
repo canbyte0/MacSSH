@@ -164,11 +164,26 @@ final class AppLanguageTests: XCTestCase {
         )
         XCTAssertEqual(
             session.displayTitle(locale: AppLanguage.english.locale),
-            "Local Terminal"
+            "Terminal"
         )
         // 技术名不随语言变化。
         appState.language = .english
         XCTAssertEqual(session.title, "Local")
+    }
+
+    /// 英文界面的 Sidebar、页面标题与 Local Tab 均省略“Local”前缀。
+    @MainActor
+    func testEnglishTerminalDisplayNamesOmitLocalQualifier() throws {
+        let locale = AppLanguage.english.locale
+        let appState = try makeAppState()
+        let session = try XCTUnwrap(appState.sessionManager.activeSession)
+
+        XCTAssertEqual(AppSection.terminal.localizedTitle(locale: locale), "Terminal")
+        XCTAssertEqual(
+            L10n.string("terminal.local_title", defaultValue: "Terminal", locale: locale),
+            "Terminal"
+        )
+        XCTAssertEqual(session.displayTitle(locale: locale), "Terminal")
     }
 
     // MARK: - 工具

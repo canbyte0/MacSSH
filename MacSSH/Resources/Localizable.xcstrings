@@ -330,7 +330,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local Terminal"
+            "value": "Terminal"
           }
         },
         "zh-Hans": {
@@ -806,7 +806,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local Terminal"
+            "value": "Terminal"
           }
         },
         "zh-Hans": {
@@ -823,7 +823,7 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Local Terminal"
+            "value": "Terminal"
           }
         },
         "zh-Hans": {

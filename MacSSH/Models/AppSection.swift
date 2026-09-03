@@ -29,7 +29,8 @@ enum AppSection: String, CaseIterable, Identifiable, Hashable, Sendable {
     func localizedTitle(locale: Locale) -> String {
         switch self {
         case .terminal:
-            L10n.string("sidebar.local_terminal", defaultValue: "Local Terminal", locale: locale)
+            // 英文导航统一使用简洁的“Terminal”；技术层仍保留 Local 语义。
+            L10n.string("sidebar.local_terminal", defaultValue: "Terminal", locale: locale)
         case .hosts:
             L10n.string("sidebar.hosts", defaultValue: "Hosts", locale: locale)
         case .transfers:

@@ -62,7 +62,7 @@ final class ManagedTerminalSession: Identifiable {
     }
 
     /// Tab 与 Transfers 展示的用户可读标题：Local 按 Locale 本地化
-    /// （"本地终端" / "Local"），Remote 保持 Host 显示名（用户数据不翻译）。
+    /// （"终端" / "Terminal"），Remote 保持 Host 显示名（用户数据不翻译）。
     /// 第 2 个会话起附加语言无关的编号后缀。语言切换只更新文案，
     /// 不重建 Session / Shell / 连接（任务书十八）。
     func displayTitle(locale: Locale) -> String {
@@ -71,7 +71,7 @@ final class ManagedTerminalSession: Identifiable {
         case .local:
             base = L10n.string(
                 "terminal.local",
-                defaultValue: "Local",
+                defaultValue: "Terminal",
                 locale: locale
             )
         case .remoteSSH:
@@ -361,7 +361,7 @@ final class ManagedTerminalSession: Identifiable {
             guard let local = localService else {
                 return L10n.string(
                     "terminal.local",
-                    defaultValue: "Local",
+                    defaultValue: "Terminal",
                     locale: locale
                 )
             }
