@@ -90,7 +90,8 @@ struct SavedCommandsSidebarView: View {
                 addButton
             }
             .padding(.horizontal, AppTheme.Spacing.regular)
-            .padding(.vertical, AppTheme.Spacing.compact / 2)
+            // 与主面板 Pane 选择器、历史记录标题使用同一个二级栏高度。
+            .frame(height: AppTheme.Layout.terminalSecondaryBarHeight)
         )
     }
 

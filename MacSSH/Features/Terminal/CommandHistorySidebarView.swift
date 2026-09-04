@@ -68,7 +68,9 @@ struct CommandHistorySidebarView: View {
             }
         }
         .padding(.horizontal, AppTheme.Spacing.regular)
-        .padding(.vertical, AppTheme.Spacing.compact / 2)
+        // 普通图标按钮的原生高度小于 Menu；固定为与主面板 Pane 选择器相同的高度，
+        // 避免历史记录标题下方的 Divider 上移。
+        .frame(height: AppTheme.Layout.terminalSecondaryBarHeight)
         .alert(
             L10n.string("sidebar_right.clear_history_confirm", defaultValue: "Clear all command history?", locale: locale),
             isPresented: $pendingClear

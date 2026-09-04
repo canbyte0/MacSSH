@@ -121,6 +121,9 @@ struct TerminalWorkspaceView: View {
             Rectangle()
                 .fill(Color(nsColor: .separatorColor))
                 .frame(width: 1)
+                // 顶部图标栏不绘制竖线；从第一条横向 Divider 开始显示侧栏边界。
+                // 仅缩短可见线条，完整的 7 pt 拖动热区保持不变。
+                .padding(.top, AppTheme.Layout.tabBarHeight)
                 .allowsHitTesting(false)
         }
         .accessibilityElement(children: .ignore)
@@ -174,7 +177,8 @@ struct TerminalWorkspaceView: View {
         .labelsHidden()
         .fixedSize()
         .padding(.horizontal, AppTheme.Spacing.regular)
-        .padding(.vertical, AppTheme.Spacing.compact / 2)
+        // 与右侧栏内容标题共用固定高度，保证第二条 Divider 横向对齐。
+        .frame(height: AppTheme.Layout.terminalSecondaryBarHeight)
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityIdentifier("workspace.paneSelector")
     }

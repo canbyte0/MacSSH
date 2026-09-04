@@ -31,6 +31,12 @@ enum AppTheme {
         static let hostSidebarIdealWidth: CGFloat = 190
         static let hostSidebarMaximumWidth: CGFloat = 240
         static let tabBarHeight: CGFloat = 42
+        /// Terminal 标签在 42 pt 栏内保留上下间距，让四个圆角完整可见。
+        static let terminalTabHeight: CGFloat = 34
+        /// 已确认的明显圆角；小于高度的一半，保持圆角矩形而不是胶囊形。
+        static let terminalTabCornerRadius: CGFloat = 12
+        /// 主面板 Pane 选择器与右侧栏内容标题共用高度，确保两侧分隔线位于同一水平线。
+        static let terminalSecondaryBarHeight: CGFloat = 28
         static let statusBarHeight: CGFloat = 28
 
         /// Terminal 内容与容器边缘之间的统一留白，单位为 macOS 逻辑点。

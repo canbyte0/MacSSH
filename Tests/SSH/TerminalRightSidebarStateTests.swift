@@ -55,6 +55,22 @@ final class TerminalRightSidebarStateTests: XCTestCase {
         XCTAssertEqual(AppTheme.Layout.rightSidebarResizeHandleWidth, 7)
     }
 
+    /// 主面板和右侧两种内容页必须使用相同的二级栏高度，防止横线错位回归。
+    func testTerminalSecondaryBarHeight() {
+        XCTAssertEqual(AppTheme.Layout.terminalSecondaryBarHeight, 28)
+    }
+
+    /// Terminal 标签必须在栏内留出四边间距，并保持圆角矩形而不是胶囊形。
+    func testTerminalTabRoundedRectangleMetrics() {
+        XCTAssertEqual(AppTheme.Layout.tabBarHeight, 42)
+        XCTAssertEqual(AppTheme.Layout.terminalTabHeight, 34)
+        XCTAssertEqual(AppTheme.Layout.terminalTabCornerRadius, 12)
+        XCTAssertLessThan(
+            AppTheme.Layout.terminalTabCornerRadius,
+            AppTheme.Layout.terminalTabHeight / 2
+        )
+    }
+
     /// 宽窗口下建议值应稳定限制在 240...520 pt。
     func testRightSidebarWidthPolicyClampsToStaticBounds() {
         XCTAssertEqual(RightSidebarWidthPolicy.clamp(100, availableWidth: 1_200), 240)

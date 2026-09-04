@@ -2,8 +2,8 @@ import SwiftUI
 
 /// Terminal Tab Bar（Phase 8）：多 Session Tab、状态指示、关闭与新建。
 ///
-/// 扩展自 Phase 2 的单 Tab 实现（沿用 accent 下划线 + 淡色背景的样式
-/// 语言，不引入第二套 Tab Bar）；Tab 只是 Session 的展示（任务书 4/14），
+/// Tab 使用 macOS 原生动态色圆角矩形表达选中与未选中状态；
+/// Tab 只是 Session 的展示（任务书 4/14），
 /// 点击仅切换 activeSessionID，绝不重建 Session。
 struct TerminalTabBar: View {
     @Environment(AppState.self) private var appState
@@ -14,7 +14,7 @@ struct TerminalTabBar: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: AppTheme.Spacing.none) {
+            HStack(spacing: AppTheme.Spacing.compact) {
                 ForEach(manager.sessions) { session in
                     TerminalTabItemView(
                         session: session,
@@ -43,6 +43,8 @@ struct TerminalTabBar: View {
                 .accessibilityLabel("terminal.new_local")
                 .accessibilityIdentifier("tabBar.newSession")
             }
+            // 为首尾标签留出与标签间距一致的边距，避免圆角紧贴容器边缘。
+            .padding(.horizontal, AppTheme.Spacing.compact)
         }
         .frame(height: AppTheme.Layout.tabBarHeight)
         .background(.bar)
@@ -59,6 +61,7 @@ struct TerminalTabBar: View {
 /// 单个 Tab：标题 + 连接状态指示（Remote）+ 关闭按钮。
 private struct TerminalTabItemView: View {
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     let session: ManagedTerminalSession
     let isActive: Bool
@@ -66,50 +69,65 @@ private struct TerminalTabItemView: View {
     let close: () -> Void
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.none) {
-            HStack(spacing: AppTheme.Spacing.compact) {
-                statusIndicator
+        HStack(spacing: AppTheme.Spacing.compact) {
+            statusIndicator
 
-                Text(verbatim: session.displayTitle(locale: locale))
-                    .lineLimit(1)
-                    .truncationMode(.tail)
+            Text(verbatim: session.displayTitle(locale: locale))
+                .lineLimit(1)
+                .truncationMode(.tail)
 
-                Button(action: close) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 8, weight: .bold))
-                        .foregroundStyle(isActive ? AppTheme.accentColor : .secondary)
-                        .frame(width: 14, height: 14)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
-                .help("terminal.close_tab")
-                .accessibilityLabel(
-                    Text(
-                        verbatim: TerminalAccessibilityText.closeTab(
-                            title: session.displayTitle(locale: locale),
-                            locale: locale
-                        )
+            Button(action: close) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundStyle(isActive ? AppTheme.accentColor : .secondary)
+                    .frame(width: 14, height: 14)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(AppInteractiveButtonStyle(baseStyle: PlainButtonStyle()))
+            .help("terminal.close_tab")
+            .accessibilityLabel(
+                Text(
+                    verbatim: TerminalAccessibilityText.closeTab(
+                        title: session.displayTitle(locale: locale),
+                        locale: locale
                     )
                 )
-                .accessibilityIdentifier("tabBar.close")
-            }
-            .padding(.horizontal, AppTheme.Spacing.regular)
-            .frame(maxHeight: .infinity)
-
-            Rectangle()
-                .fill(isActive ? AppTheme.accentColor : Color.clear)
-                .frame(height: 2)
+            )
+            .accessibilityIdentifier("tabBar.close")
         }
+        .padding(.horizontal, AppTheme.Spacing.regular)
+        .frame(height: AppTheme.Layout.terminalTabHeight)
         .foregroundStyle(isActive ? AppTheme.accentColor : Color.primary)
-        .background(
-            isActive
-                ? AppTheme.accentColor.opacity(0.10)
-                : Color.clear,
-            // 活动底纹只能覆盖 Tab 自身，不能延伸到窗口标题栏安全区。
-            ignoresSafeAreaEdges: []
+        .background {
+            RoundedRectangle(
+                cornerRadius: AppTheme.Layout.terminalTabCornerRadius,
+                style: .continuous
+            )
+            .fill(isActive ? AppTheme.accentColor.opacity(0.12) : Color.clear)
+        }
+        .overlay {
+            RoundedRectangle(
+                cornerRadius: AppTheme.Layout.terminalTabCornerRadius,
+                style: .continuous
+            )
+            // 未选中标签使用轻量动态描边；选中标签仅保留浅青填充。
+            .strokeBorder(isActive ? Color.clear : Color.primary.opacity(0.12), lineWidth: 1)
+        }
+        // 42 - 34 = 8 pt，上下各 4 pt，确保四个圆角不被 Tab Bar 边缘裁切。
+        .padding(.vertical, (AppTheme.Layout.tabBarHeight - AppTheme.Layout.terminalTabHeight) / 2)
+        .contentShape(
+            RoundedRectangle(
+                cornerRadius: AppTheme.Layout.terminalTabCornerRadius,
+                style: .continuous
+            )
         )
-        .contentShape(Rectangle())
         .onTapGesture(perform: activate)
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+            value: isActive
+        )
         .accessibilityElement(children: .contain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(isActive ? Text("accessibility.selected") : Text(verbatim: ""))
