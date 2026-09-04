@@ -35,6 +35,9 @@ enum AppTheme {
 
         /// Terminal 内容与容器边缘之间的统一留白，单位为 macOS 逻辑点。
         static let terminalContentInset: CGFloat = 6
+
+        /// MacSSH 1.1 Phase 7：右侧命令侧边栏固定宽度（任务书 §6，范围 280–320）。
+        static let rightSidebarWidth: CGFloat = 300
     }
 
     /// 应用内按钮交互动画参数，集中管理以保持所有功能页一致。

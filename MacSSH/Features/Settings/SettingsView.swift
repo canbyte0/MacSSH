@@ -21,6 +21,9 @@ struct SettingsView: View {
     /// Forget 持久化失败时携带的错误信息，驱动错误 Alert。
     @State private var forgetError: ForgetFailureInfo?
 
+    /// MacSSH 1.1 Phase 7：清空命令历史确认。
+    @State private var pendingClearHistory = false
+
     var body: some View {
         @Bindable var appState = appState
 
@@ -59,6 +62,25 @@ struct SettingsView: View {
                 // 广播重绘，不重建任何 Runtime Session）。
                 HighlightRulesEditor(store: appState.terminalHighlightCoordinator.highlightStore)
                     .padding(.top, 4)
+
+                // MacSSH 1.1 Phase 7：命令历史设置（任务书 §32 / §33 / §40）。
+                Divider()
+                Toggle("sidebar_right.save_history", isOn: historyEnabledBinding)
+                    .accessibilityIdentifier("settings.saveCommandHistory")
+                Text(verbatim: L10n.string(
+                    "sidebar_right.history_disclosure",
+                    defaultValue: "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded.",
+                    locale: locale
+                ))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                Button(role: .destructive) {
+                    pendingClearHistory = true
+                } label: {
+                    Text("sidebar_right.clear_history")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityIdentifier("settings.clearHistory")
             }
 
             Section("settings.section.appearance") {
@@ -126,6 +148,24 @@ struct SettingsView: View {
         } message: { _ in
             Text("known_hosts.forget_failed_message")
         }
+        // MacSSH 1.1 Phase 7：清空命令历史确认。
+        .alert(
+            L10n.string("sidebar_right.clear_history_confirm",
+                        defaultValue: "Clear all command history?",
+                        locale: locale),
+            isPresented: clearHistoryAlertBinding
+        ) {
+            Button("action.cancel", role: .cancel) {}
+            Button("sidebar_right.clear_history", role: .destructive) {
+                appState.commandHistoryStore.clear()
+            }
+        } message: {
+            Text(verbatim: L10n.string(
+                "sidebar_right.clear_history_message",
+                defaultValue: "This only removes command history. Saved commands and groups are not affected.",
+                locale: locale
+            ))
+        }
     }
 
     private func forget() {
@@ -151,6 +191,30 @@ struct SettingsView: View {
             set: { isPresented in
                 if !isPresented {
                     pendingForgetID = nil
+                }
+            }
+        )
+    }
+
+    // MARK: - MacSSH 1.1 Phase 7：命令历史设置
+
+    /// 「保存命令历史」开关绑定（任务书 §32）。关闭后 Execute 不写 history。
+    private var historyEnabledBinding: Binding<Bool> {
+        Binding(
+            get: { appState.commandHistoryStore.historyEnabled },
+            set: { enabled in
+                appState.commandHistoryStore.historyEnabled = enabled
+            }
+        )
+    }
+
+    /// 清空历史确认 alert（任务书 §33 / Phase 7A 验收 §46：destructive confirmation）。
+    private var clearHistoryAlertBinding: Binding<Bool> {
+        Binding(
+            get: { pendingClearHistory },
+            set: { isPresented in
+                if !isPresented {
+                    pendingClearHistory = false
                 }
             }
         )

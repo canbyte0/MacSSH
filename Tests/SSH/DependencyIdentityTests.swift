@@ -163,11 +163,14 @@ final class DependencyIdentityTests: XCTestCase {
     /// Phase 5 patch（VS16 preserve-base-width）——作为 Phase 6 的 parent，保持不变。
     private let swiftTermPhase5PatchRevision = "8a5187fe8182bac3a01f2b82d2621993de5886be"
     private let swiftTermPhase5PatchBranch = "macssh-vs16-preserve-base-width"
-    /// Phase 6 patch（TerminalHighlightProvider）——当前生产 revision。
+    /// Phase 6 patch（TerminalHighlightProvider）。
     private let swiftTermPhase6PatchRevision = "6e56e32e16eba0c3a5f534136da272679085f44c"
     private let swiftTermPhase6PatchBranch = "macssh-terminal-highlight-provider"
-    /// 生产 revision = 最新 patch（Phase 6）。Phase 6B 后此值指向 6e56e32。
-    private var swiftTermPatchRevision: String { swiftTermPhase6PatchRevision }
+    /// Phase 7 patch（public pasteText API）——当前生产 revision。
+    private let swiftTermPhase7PatchRevision = "771e79f092a26e7fba7af0ab2b09a2bf10213109"
+    private let swiftTermPhase7PatchBranch = "macssh-public-paste-api"
+    /// 生产 revision = 最新 patch（Phase 7）。
+    private var swiftTermPatchRevision: String { swiftTermPhase7PatchRevision }
 
     /// Package.resolved 的文件路径（与 Xcode 工作区共享的 resolved 文件）。
     private var packageResolvedURL: URL {
@@ -193,8 +196,8 @@ final class DependencyIdentityTests: XCTestCase {
     }
 
     /// Package.resolved 必须把 SwiftTerm 锁定到 MacSSH 远端 fork 的**当前生产
-    /// patch** revision（Phase 6：TerminalHighlightProvider），而不是本地路径、
-    /// 上游 base 或 Phase 5 patch。SwiftPM identity 由 Package.swift 的 `name:`
+    /// patch** revision（Phase 7：pasteText API），而不是本地路径、上游 base
+    /// 或 Phase 5/6 patch。SwiftPM identity 由 Package.swift 的 `name:`
     /// 推导；远端 fork 的 identity 形如 "swiftterm"。
     func testPackageResolvedLocksSwiftTermToCurrentRemoteForkRevision() throws {
         let root = try loadPackageResolved()
@@ -207,7 +210,7 @@ final class DependencyIdentityTests: XCTestCase {
         XCTAssertEqual(
             state["revision"] as? String,
             swiftTermPatchRevision,
-            "Package.resolved 锁定的 SwiftTerm revision 不是当前生产 patch commit（Phase 6）"
+            "Package.resolved 锁定的 SwiftTerm revision 不是当前生产 patch commit（Phase 7）"
         )
         // location 必须指向 GitHub 上的 MacSSH 维护 fork，而非本地路径或上游仓库。
         let location = try XCTUnwrap(pin["location"] as? String)
@@ -235,17 +238,19 @@ final class DependencyIdentityTests: XCTestCase {
     }
 
     /// 输出 SwiftTerm fork 身份摘要（upstream base / fork 远端 URL / Phase 5 + Phase 6
-    /// patch revision / branch / upstream tag），供测试日志与验收报告引用，并校验各字段非空。
+    /// + Phase 7 patch revision / branch / upstream tag），供测试日志与验收报告引用，并校验各字段非空。
     func testPrintSwiftTermForkIdentitySummary() {
         let summary = """
-        ---- MacSSH SwiftTerm fork identity (Phase 5 + Phase 6) ----
+        ---- MacSSH SwiftTerm fork identity (Phase 5 + Phase 6 + Phase 7) ----
         upstream repository   : migueldeicaza/SwiftTerm
         upstream base         : \(swiftTermUpstreamBase) (\(swiftTermUpstreamTag))
         MacSSH fork remote    : \(swiftTermForkRepositoryURL)
         Phase 5 patch branch  : \(swiftTermPhase5PatchBranch)
         Phase 5 patch revision: \(swiftTermPhase5PatchRevision)
         Phase 6 patch branch  : \(swiftTermPhase6PatchBranch)
-        Phase 6 patch revision: \(swiftTermPhase6PatchRevision)  (current production)
+        Phase 6 patch revision: \(swiftTermPhase6PatchRevision)
+        Phase 7 patch branch  : \(swiftTermPhase7PatchBranch)
+        Phase 7 patch revision: \(swiftTermPhase7PatchRevision)  (current production)
         dependency type       : remote SwiftPM source-control (exact revision)
         ------------------------------------------------------------
         """
@@ -254,16 +259,19 @@ final class DependencyIdentityTests: XCTestCase {
         XCTAssertFalse(swiftTermForkRepositoryURL.isEmpty)
         XCTAssertFalse(swiftTermPhase5PatchRevision.isEmpty)
         XCTAssertFalse(swiftTermPhase6PatchRevision.isEmpty)
+        XCTAssertFalse(swiftTermPhase7PatchRevision.isEmpty)
         XCTAssertNotEqual(swiftTermUpstreamBase, swiftTermPhase5PatchRevision,
                           "upstream base 与 Phase 5 patch revision 不能相同")
         XCTAssertNotEqual(swiftTermPhase5PatchRevision, swiftTermPhase6PatchRevision,
                           "Phase 5 与 Phase 6 patch revision 不能相同（Phase 6 必须是 fork 上的新 commit）")
+        XCTAssertNotEqual(swiftTermPhase6PatchRevision, swiftTermPhase7PatchRevision,
+                          "Phase 6 与 Phase 7 patch revision 不能相同（Phase 7 必须是 fork 上的新 commit）")
     }
 
-    /// Phase 6 patch 必须以 Phase 5 patch 为 parent（不 squash、不 rebase 到 upstream）。
+    /// Phase 7 patch 必须以 Phase 6 patch 为 parent（不 squash、不 rebase 到 upstream）。
     /// 此处通过 Git 命令验证 parent 关系；若 fork 本地 checkout 不可用则跳过
     /// （CI 环境可能无 ThirdParty/SwiftTerm-fork）。
-    func testPhase6PatchParentIsPhase5Patch() throws {
+    func testPhase7PatchParentIsPhase6Patch() throws {
         let forkDir = URL(fileURLWithPath: projectDirectory)
             .appendingPathComponent("ThirdParty/SwiftTerm-fork")
         guard FileManager.default.fileExists(atPath: forkDir.path) else {
@@ -273,7 +281,7 @@ final class DependencyIdentityTests: XCTestCase {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
         process.currentDirectoryURL = forkDir
-        process.arguments = ["log", "--format=%P", "-1", swiftTermPhase6PatchRevision]
+        process.arguments = ["log", "--format=%P", "-1", swiftTermPhase7PatchRevision]
         let pipe = Pipe()
         process.standardOutput = pipe
         try process.run()
@@ -284,8 +292,8 @@ final class DependencyIdentityTests: XCTestCase {
         let data = pipe.fileHandleForReading.readDataToEndOfFile()
         let parent = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        XCTAssertEqual(parent, swiftTermPhase5PatchRevision,
-                       "Phase 6 patch 的 parent 必须是 Phase 5 patch（不 squash / 不 rebase）")
+        XCTAssertEqual(parent, swiftTermPhase6PatchRevision,
+                       "Phase 7 patch 的 parent 必须是 Phase 6 patch（不 squash / 不 rebase）")
     }
 
     // MARK: - Helpers

@@ -86,7 +86,7 @@ SwiftTerm (SwiftPM dependency)
                         (SwiftTerm default; intentionally not enabled for remote
                         hosts whose wcwidth/locale may differ)
 
-  Phase 6 patch (parent = Phase 5 patch; current production revision):
+  Phase 6 patch (parent = Phase 5 patch):
     Patch branch      : macssh-terminal-highlight-provider
     Patch revision    : 6e56e32e16eba0c3a5f534136da272679085f44c
     Patch diff file   : Docs/swiftterm-highlight-patch.diff
@@ -104,7 +104,25 @@ SwiftTerm (SwiftPM dependency)
                         was). No MacSSH names / UserDefaults / Rule model in
                         SwiftTerm.
 
-  Production revision: 6e56e32e16eba0c3a5f534136da272679085f44c (Phase 6)
+  Phase 7 patch (parent = Phase 6 patch; current production revision):
+    Patch branch      : macssh-public-paste-api
+    Patch revision    : 771e79f092a26e7fba7af0ab2b09a2bf10213109
+    Patch diff file   : Docs/swiftterm-paste-patch.diff
+    Purpose           : Public programmatic paste API. Adds
+                        TerminalView.pasteText(_:) (macOS) that reuses the
+                        internal insertText(_:replacementRange:isPaste:)
+                        path, giving hosts with their own command/snippet UI
+                        a programmatic equivalent of paste(_:) without reading
+                        the system pasteboard. Reuses SwiftTerm's single
+                        source of truth for bracketed paste (DECSET 2004:
+                        start / text / end, exactly once) and IME marked-text
+                        cleanup, routing bytes through the same
+                        TerminalViewDelegate.send(source:data:) delegate the
+                        keyboard uses. No trailing Return is sent. No MacSSH
+                        names / SavedCommand / UserDefaults / SwiftData in
+                        SwiftTerm.
+
+  Production revision: 771e79f092a26e7fba7af0ab2b09a2bf10213109 (Phase 7)
   Production dependency: remote SwiftPM source-control (exact immutable
                         revision; NOT branch/floating/version-range)
   Local dev checkout: ThirdParty/SwiftTerm-fork (optional local development

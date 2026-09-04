@@ -15,19 +15,32 @@ struct TerminalWorkspaceView: View {
     }
 
     var body: some View {
-        VStack(spacing: AppTheme.Spacing.none) {
-            TerminalTabBar()
+        @Bindable var appState = appState
 
-            Divider()
-
-            if let session = manager.activeSession {
-                paneSelector(for: session)
+        HStack(spacing: AppTheme.Spacing.none) {
+            // 左/中：现有 Tab Bar + paneSelector + workspace content。
+            // 展开右侧栏时此部分真实缩窄，SwiftTerm setFrameSize 触发
+            // cols/rows 重算 → PTY/SSH resize（任务书 §1 / §60 / §63）。
+            VStack(spacing: AppTheme.Spacing.none) {
+                TerminalTabBar()
 
                 Divider()
+
+                if let session = manager.activeSession {
+                    paneSelector(for: session)
+
+                    Divider()
+                }
+
+                workspaceContent
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
 
-            workspaceContent
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // MacSSH 1.1 Phase 7：右侧命令侧边栏（可展开/收起）。
+            if appState.isRightSidebarVisible {
+                Divider()
+                TerminalRightSidebarView()
+            }
         }
         .navigationTitle(navigationTitle)
         .accessibilityIdentifier("workspace.terminal")

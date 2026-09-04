@@ -46,6 +46,32 @@ final class AppState {
     /// 经 `cancelAndAwaitTransfers` 屏障先取消并等待清理。
     let transferManager: TransferManager
 
+    /// MacSSH 1.1 Phase 7：常用命令分组与命令的持久化 Store（SwiftData）。
+    /// 由本 App 层稳定对象持有——切换页面不会销毁命令数据。
+    let savedCommandStore: SavedCommandStore
+
+    /// MacSSH 1.1 Phase 7：命令历史 Store（SwiftData + historyEnabled UserDefaults）。
+    /// 只记录通过 MacSSH Execute 明确执行的命令（P1 安全边界：禁止 keyboard interception）。
+    let commandHistoryStore: CommandHistoryStore
+
+    /// MacSSH 1.1 Phase 7：统一 Paste / Execute 调度器。每次 action 实时读 activeSession，
+    /// 不缓存 stale target；disconnected → disable；成功 Execute 后 append history + 恢复焦点。
+    let commandDispatcher: TerminalCommandDispatcher
+
+    /// MacSSH 1.1 Phase 7：右侧栏是否展开（UI preference，UserDefaults 持久化）。
+    var isRightSidebarVisible: Bool {
+        didSet {
+            userDefaults.set(isRightSidebarVisible, forKey: AppPreferenceKey.rightSidebarVisible)
+        }
+    }
+
+    /// MacSSH 1.1 Phase 7：右侧栏当前选中 tab（history / savedCommands）。
+    var selectedRightSidebarTab: CommandSidebarTab {
+        didSet {
+            userDefaults.set(selectedRightSidebarTab.rawValue, forKey: AppPreferenceKey.rightSidebarTab)
+        }
+    }
+
     init(
         modelContainer: ModelContainer,
         userDefaults: UserDefaults = .standard
@@ -77,6 +103,35 @@ final class AppState {
         sessionManager.terminalHighlightCoordinator = terminalHighlightCoordinator
         self.sessionManager = sessionManager
         self.transferManager = transferManager
+
+        // MacSSH 1.1 Phase 7：命令侧边栏 Store + Dispatcher 装配。
+        // 必须在 localeProvider 闭包（捕获 self）之前初始化全部 Phase 7 非可选属性。
+        let savedCommandStore = SavedCommandStore(modelContainer: modelContainer)
+        let commandHistoryStore = CommandHistoryStore(
+            modelContainer: modelContainer,
+            userDefaults: userDefaults
+        )
+        let commandDispatcher = TerminalCommandDispatcher(
+            sessionManager: sessionManager,
+            historyStore: commandHistoryStore
+        )
+        self.savedCommandStore = savedCommandStore
+        self.commandHistoryStore = commandHistoryStore
+        self.commandDispatcher = commandDispatcher
+
+        // Phase 7 右侧栏 UI preference（UserDefaults 持久化，默认收起 + 默认 history tab）。
+        if userDefaults.object(forKey: AppPreferenceKey.rightSidebarVisible) == nil {
+            self.isRightSidebarVisible = false
+        } else {
+            self.isRightSidebarVisible = userDefaults.bool(forKey: AppPreferenceKey.rightSidebarVisible)
+        }
+        if let storedTab = userDefaults.string(forKey: AppPreferenceKey.rightSidebarTab),
+           let tab = CommandSidebarTab(rawValue: storedTab) {
+            self.selectedRightSidebarTab = tab
+        } else {
+            self.selectedRightSidebarTab = .history
+        }
+
         // Phase 1（1.1 Localization）：调度器 / 拒绝路径按当前 App Locale
         // 生成用户文案；语言切换只更新文案，绝不重建传输队列或 Session。
         transferManager.localeProvider = { [weak self] in

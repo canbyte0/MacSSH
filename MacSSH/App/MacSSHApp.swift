@@ -32,7 +32,15 @@ struct MacSSHApp: App {
         let schema = Schema([
             Host.self,
             HostGroup.self,
-            KnownHost.self
+            KnownHost.self,
+            // MacSSH 1.1 Phase 7：命令侧边栏 SwiftData model。
+            // 新增 model 属 additive lightweight migration（不改现有 model 字段）；
+            // on-disk 迁移测试（SwiftDataMigrationTests）证明现有数据保留。
+            // MacSSH 1.1 Phase 7：命令侧边栏 SwiftData model。
+            // 类名 SavedCommandGroup 避免与 SwiftUI CommandGroup 碰撞。
+            SavedCommandGroup.self,
+            SavedCommand.self,
+            CommandHistoryEntry.self
         ])
         let configuration = ModelConfiguration(
             "MacSSH",

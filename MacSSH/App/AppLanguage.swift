@@ -45,6 +45,10 @@ enum AppLanguage: String, CaseIterable, Identifiable, Sendable {
 /// 简单 App 偏好的集中 key，禁止在各 View 重复硬编码。
 enum AppPreferenceKey {
     static let language = "appLanguage"
+    /// MacSSH 1.1 Phase 7：右侧栏展开状态（Bool）。
+    static let rightSidebarVisible = "macssh.rightSidebarVisible"
+    /// MacSSH 1.1 Phase 7：右侧栏选中 tab（CommandSidebarTab rawValue）。
+    static let rightSidebarTab = "macssh.rightSidebarTab"
 }
 
 /// 非 SwiftUI 场景使用的集中本地化入口。

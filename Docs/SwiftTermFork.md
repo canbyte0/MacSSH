@@ -16,14 +16,17 @@ source-control 依赖。本文档记录 fork 身份、Local / Remote 宽度策�
 | Phase 5 patch revision | `8a5187fe8182bac3a01f2b82d2621993de5886be`（parent = upstream base） |
 | Phase 6 patch branch | `macssh-terminal-highlight-provider` |
 | Phase 6 patch revision | `6e56e32e16eba0c3a5f534136da272679085f44c`（parent = Phase 5 patch） |
-| **Production revision** | **`6e56e32e16eba0c3a5f534136da272679085f44c`**（Phase 6，当前生产） |
+| Phase 7 patch branch | `macssh-public-paste-api` |
+| Phase 7 patch revision | `771e79f092a26e7fba7af0ab2b09a2bf10213109`（parent = Phase 6 patch） |
+| **Production revision** | **`771e79f092a26e7fba7af0ab2b09a2bf10213109`**（Phase 7，当前生产） |
 | Production dependency | 远端 SwiftPM `remoteSourceControl`（exact revision，不可变 SHA） |
 | Phase 5 patch diff | `Docs/swiftterm-vs16-patch.diff` |
 | Phase 6 patch diff | `Docs/swiftterm-highlight-patch.diff` |
+| Phase 7 patch diff | `Docs/swiftterm-paste-patch.diff` |
 | Package.resolved | `MacSSH.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` |
 | Local dev checkout | `ThirdParty/SwiftTerm-fork`（可选，仅本地 fork 开发用；**不是**生产依赖） |
 
-Fork 基于 upstream base，之上**两个原子 patch commit**（Phase 5 → Phase 6），
+Fork 基于 upstream base，之上**三个原子 patch commit**（Phase 5 → Phase 6 → Phase 7），
 不带入任何上游 unrelated commit。生产依赖通过不可变 commit SHA 锁定
 （`kind = revision`），不依赖 branch / floating version / range。任意 fresh
 clone 均可从 GitHub 自动获取同一 patch commit。
@@ -142,22 +145,55 @@ public weak var highlightProvider: TerminalHighlightProvider?  // default nil = 
 - 不修改 cursor / selection 的既有行为；
 - 不改 Metal renderer 业务逻辑（仅复用既有背景通道）。
 
-## 6. 依赖可复现性（远端 fork）
+## 6. Phase 7 patch 内容（public programmatic paste API）
+
+Phase 7 在 Phase 6 patch 之上新增第三个原子 patch，为 SwiftTerm 增加通用的
+programmatic paste 入口，供 MacSSH 命令侧边栏（Phase 7B）粘贴/执行命令使用。
+SwiftTerm **不**知道 MacSSH 的命令模型 / 存储 / 历史逻辑。
+
+### 新 API
+
+```swift
+// macOS TerminalView (Sources/SwiftTerm/Mac/MacTerminalView.swift)
+public func pasteText(_ text: String)
+```
+
+### 实现要点
+
+- 复用 internal `insertText(_:replacementRange:isPaste:)`（`isPaste: true`），
+  与 `paste(_:)` 走**同一**内部路径，**不**复制 bracketed paste 实现。
+- bracketed paste（DECSET 2004）：由 SwiftTerm 单点处理 start/text/end，
+  host **不**手工包装 ESC 序列、**不**双重包裹。
+- IME marked-text：`insertText(_:isPaste:true)` 入口先清 `markedTextStorage`，
+  programmatic paste 与用户 paste 行为一致，不留悬挂组合态。
+- 字节经同一 `TerminalViewDelegate.send(source:data:)` delegate 送出
+  （Local PTY / Remote SSH channel），与键盘输入路径完全相同。
+- **不**发送 Return；host 自行决定是否追加 Return。
+
+### 不做的事
+
+- 不在 SwiftTerm 中出现 MacSSH / SavedCommand / History / CommandGroup 名称；
+- 不依赖 UserDefaults / SwiftData；
+- 不自动执行（不附 Return）；
+- 不改默认键盘 / paste 行为；
+- 不升级到 upstream main / 2.0。
+
+## 7. 依赖可复现性（远端 fork）
 
 生产依赖已发布到 GitHub，SwiftPM 以 `remoteSourceControl` + exact revision
 方式引用。任意机器 `git clone` MacSSH 后，Xcode/SwiftPM 会自动从
 `https://github.com/canbyte0/SwiftTerm.git` 获取 commit
-`6e56e32e16eba0c3a5f534136da272679085f44c`，无需本地 fork 目录。
+`771e79f092a26e7fba7af0ab2b09a2bf10213109`，无需本地 fork 目录。
 
 ```
 Xcode project reference:
   repositoryURL = "https://github.com/canbyte0/SwiftTerm.git"
-  requirement   = { kind = revision; revision = 6e56e32e... }
+  requirement   = { kind = revision; revision = 771e79f... }
 
 Package.resolved:
   kind     = remoteSourceControl
   location = https://github.com/canbyte0/SwiftTerm.git
-  revision = 6e56e32e16eba0c3a5f534136da272679085f44c
+  revision = 771e79f092a26e7fba7af0ab2b09a2bf10213109
 ```
 
 不使用 branch tracking 作为生产依赖 requirement——branch 仅用于 fork 上的
@@ -172,10 +208,10 @@ patch。它被 `.gitignore` 忽略，不进入 MacSSH repo，也不被生产依�
 ```sh
 git clone https://github.com/canbyte0/SwiftTerm.git ThirdParty/SwiftTerm-fork
 cd ThirdParty/SwiftTerm-fork
-git checkout 6e56e32e16eba0c3a5f534136da272679085f44c
+git checkout 771e79f092a26e7fba7af0ab2b09a2bf10213109
 ```
 
-## 7. 测试覆盖
+## 8. 测试覆盖
 
 ### SwiftTerm fork 内
 
@@ -192,12 +228,21 @@ git checkout 6e56e32e16eba0c3a5f534136da272679085f44c
   - selection 覆盖 highlight；ANSI foreground 保留；ANSI background 在 highlight 之下；
   - model/copy 不变；weak 生命周期（释放即恢复 default）；retain count 不变；
   - 宽字符双 cell 涂色；VS16 widen / preserve 双策略列涂色。
-- SwiftTerm 完整套件：741 tests / 63 suites 全过（含 Phase 5 + Phase 6 + upstream）。
+- Phase 7（`Tests/SwiftTermTests/PasteTextTests.swift`，12 tests）：
+  - plain mode 发送精确 UTF-8 文本（无 bracketed marker）；
+  - bracketed mode start + text + end 各一次（不双重包裹）；
+  - 不发送 Return（CR/LF）；empty text 行为；UTF-8 中文/Emoji；quotes byte-for-byte；
+  - IME marked-text 清理（`hasMarkedText` true→false）；delegate 路径与键盘一致；
+  - `EscapeSequences.cmdRet` 稳定 Return 字节契约。
+- SwiftTerm 完整套件：753 tests / 64 suites 全过（含 Phase 5 + Phase 6 + Phase 7 + upstream）。
 
 ### MacSSH 侧（`Tests/SSH/`）
 
 - `TerminalVS16WidthPolicyTests.swift`：Local/Remote VS16 端到端宽度行为；
 - `DependencyIdentityTests.swift`：Package.resolved 锁定当前生产 revision
-  （Phase 6 `6e56e32...`）；不引用本地路径 / 上游；Phase 6 parent = Phase 5。
-- Phase 6B 新增（待 push 后集成运行）：`TerminalHighlightMatcherTests` /
+  （Phase 7 `771e79f...`）；不引用本地路径 / 上游；Phase 7 parent = Phase 6。
+- Phase 6B 新增：`TerminalHighlightMatcherTests` /
   `TerminalHighlightStoreTests` / `TerminalHighlightCoordinatorTests`。
+- Phase 7B 新增（待集成运行）：`TerminalCommandDispatcherTests` /
+  `SavedCommandStoreTests` / `CommandHistoryStoreTests` /
+  `SwiftDataMigrationTests` / `TerminalRightSidebarStateTests`。

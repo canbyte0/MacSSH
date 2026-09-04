@@ -61,6 +61,18 @@
 		D10000000000000000000004 /* SSHService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000004 /* SSHService.swift */; };
 		D1000000000000000000000E /* KnownHostService.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000C /* KnownHostService.swift */; };
 		A1000000000000000000001C /* KnownHost.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001C /* KnownHost.swift */; };
+		A1000000000000000000001D /* CommandGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001D /* CommandGroup.swift */; };
+		A1000000000000000000001E /* SavedCommand.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001E /* SavedCommand.swift */; };
+		A1000000000000000000001F /* CommandHistoryEntry.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000001F /* CommandHistoryEntry.swift */; };
+		A10000000000000000000020 /* CommandValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000020 /* CommandValidation.swift */; };
+		A10000000000000000000021 /* SavedCommandStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000021 /* SavedCommandStore.swift */; };
+		A10000000000000000000022 /* CommandHistoryStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000022 /* CommandHistoryStore.swift */; };
+		A10000000000000000000023 /* TerminalCommandDispatcher.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000023 /* TerminalCommandDispatcher.swift */; };
+		A10000000000000000000024 /* CommandSidebarTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000024 /* CommandSidebarTab.swift */; };
+		A10000000000000000000025 /* CommandRowActions.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000025 /* CommandRowActions.swift */; };
+		A10000000000000000000026 /* TerminalRightSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* TerminalRightSidebarView.swift */; };
+		A10000000000000000000027 /* CommandHistorySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* CommandHistorySidebarView.swift */; };
+		A10000000000000000000028 /* SavedCommandsSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* SavedCommandsSidebarView.swift */; };
 		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
 		D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000E /* HostKeyChangedDialogView.swift */; };
 		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
@@ -106,6 +118,12 @@
 		H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */; };
 		W61000000000000000000001 /* TerminalScrollIndicatorController.swift in Sources */ = {isa = PBXBuildFile; fileRef = W62000000000000000000001 /* TerminalScrollIndicatorController.swift */; };
 		W71000000000000000000001 /* TerminalScrollIndicatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */; };
+		P71000000000000000000001 /* SwiftDataMigrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000001 /* SwiftDataMigrationTests.swift */; };
+		P71000000000000000000002 /* TerminalCommandDispatcherTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000002 /* TerminalCommandDispatcherTests.swift */; };
+		P71000000000000000000003 /* SavedCommandStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000003 /* SavedCommandStoreTests.swift */; };
+		P71000000000000000000004 /* CommandHistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000004 /* CommandHistoryStoreTests.swift */; };
+		P71000000000000000000005 /* TerminalRightSidebarStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */; };
+		P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -180,6 +198,18 @@
 		D20000000000000000000004 /* SSHService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHService.swift; sourceTree = "<group>"; };
 		D2000000000000000000000C /* KnownHostService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownHostService.swift; sourceTree = "<group>"; };
 		A2000000000000000000001C /* KnownHost.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KnownHost.swift; sourceTree = "<group>"; };
+		A2000000000000000000001D /* CommandGroup.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandGroup.swift; sourceTree = "<group>"; };
+		A2000000000000000000001E /* SavedCommand.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommand.swift; sourceTree = "<group>"; };
+		A2000000000000000000001F /* CommandHistoryEntry.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistoryEntry.swift; sourceTree = "<group>"; };
+		A20000000000000000000020 /* CommandValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandValidation.swift; sourceTree = "<group>"; };
+		A20000000000000000000021 /* SavedCommandStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000022 /* CommandHistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistoryStore.swift; sourceTree = "<group>"; };
+		A20000000000000000000023 /* TerminalCommandDispatcher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCommandDispatcher.swift; sourceTree = "<group>"; };
+		A20000000000000000000024 /* CommandSidebarTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandSidebarTab.swift; sourceTree = "<group>"; };
+		A20000000000000000000025 /* CommandRowActions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandRowActions.swift; sourceTree = "<group>"; };
+		A20000000000000000000026 /* TerminalRightSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRightSidebarView.swift; sourceTree = "<group>"; };
+		A20000000000000000000027 /* CommandHistorySidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistorySidebarView.swift; sourceTree = "<group>"; };
+		A20000000000000000000028 /* SavedCommandsSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandsSidebarView.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
@@ -229,6 +259,12 @@
 		H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalHighlightCoordinatorTests.swift; sourceTree = "<group>"; };
 		W62000000000000000000001 /* TerminalScrollIndicatorController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollIndicatorController.swift; sourceTree = "<group>"; };
 		W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalScrollIndicatorTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000001 /* SwiftDataMigrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftDataMigrationTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000002 /* TerminalCommandDispatcherTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalCommandDispatcherTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000003 /* SavedCommandStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandStoreTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000004 /* CommandHistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistoryStoreTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRightSidebarStateTests.swift; sourceTree = "<group>"; };
+		P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandsSidebarContentTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -310,6 +346,9 @@
 				A20000000000000000000017 /* Host.swift */,
 				A20000000000000000000018 /* HostGroup.swift */,
 				A2000000000000000000001C /* KnownHost.swift */,
+				A2000000000000000000001D /* CommandGroup.swift */,
+				A2000000000000000000001E /* SavedCommand.swift */,
+				A2000000000000000000001F /* CommandHistoryEntry.swift */,
 				H62000000000000000000001 /* TerminalHighlightRule.swift */,
 				A20000000000000000000012 /* TerminalSession.swift */,
 				E20000000000000000000003 /* RemoteTerminalSession.swift */,
@@ -412,6 +451,12 @@
 			H72000000000000000000002 /* TerminalHighlightStoreTests.swift */,
 			H72000000000000000000003 /* TerminalHighlightCoordinatorTests.swift */,
 			W72000000000000000000001 /* TerminalScrollIndicatorTests.swift */,
+			P72000000000000000000001 /* SwiftDataMigrationTests.swift */,
+			P72000000000000000000002 /* TerminalCommandDispatcherTests.swift */,
+			P72000000000000000000003 /* SavedCommandStoreTests.swift */,
+			P72000000000000000000004 /* CommandHistoryStoreTests.swift */,
+			P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */,
+			P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -451,6 +496,10 @@
 				A2000000000000000000000E /* TerminalWorkspaceView.swift */,
 				A20000000000000000000015 /* TerminalRepresentable.swift */,
 				E20000000000000000000005 /* RemoteTerminalRepresentable.swift */,
+				A20000000000000000000025 /* CommandRowActions.swift */,
+				A20000000000000000000026 /* TerminalRightSidebarView.swift */,
+				A20000000000000000000027 /* CommandHistorySidebarView.swift */,
+				A20000000000000000000028 /* SavedCommandsSidebarView.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -524,6 +573,11 @@
 				W62000000000000000000001 /* TerminalScrollIndicatorController.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
+				A20000000000000000000020 /* CommandValidation.swift */,
+				A20000000000000000000021 /* SavedCommandStore.swift */,
+				A20000000000000000000022 /* CommandHistoryStore.swift */,
+				A20000000000000000000023 /* TerminalCommandDispatcher.swift */,
+				A20000000000000000000024 /* CommandSidebarTab.swift */,
 			);
 			path = Terminal;
 			sourceTree = "<group>";
@@ -766,6 +820,18 @@
 				D10000000000000000000004 /* SSHService.swift in Sources */,
 				D1000000000000000000000E /* KnownHostService.swift in Sources */,
 				A1000000000000000000001C /* KnownHost.swift in Sources */,
+				A1000000000000000000001D /* CommandGroup.swift in Sources */,
+				A1000000000000000000001E /* SavedCommand.swift in Sources */,
+				A1000000000000000000001F /* CommandHistoryEntry.swift in Sources */,
+				A10000000000000000000020 /* CommandValidation.swift in Sources */,
+				A10000000000000000000021 /* SavedCommandStore.swift in Sources */,
+				A10000000000000000000022 /* CommandHistoryStore.swift in Sources */,
+				A10000000000000000000023 /* TerminalCommandDispatcher.swift in Sources */,
+				A10000000000000000000024 /* CommandSidebarTab.swift in Sources */,
+				A10000000000000000000025 /* CommandRowActions.swift in Sources */,
+				A10000000000000000000026 /* TerminalRightSidebarView.swift in Sources */,
+				A10000000000000000000027 /* CommandHistorySidebarView.swift in Sources */,
+				A10000000000000000000028 /* SavedCommandsSidebarView.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 				E10000000000000000000001 /* RemoteTerminalError.swift in Sources */,
@@ -818,6 +884,12 @@
 				H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */,
 				H71000000000000000000003 /* TerminalHighlightCoordinatorTests.swift in Sources */,
 				W71000000000000000000001 /* TerminalScrollIndicatorTests.swift in Sources */,
+				P71000000000000000000001 /* SwiftDataMigrationTests.swift in Sources */,
+				P71000000000000000000002 /* TerminalCommandDispatcherTests.swift in Sources */,
+				P71000000000000000000003 /* SavedCommandStoreTests.swift in Sources */,
+				P71000000000000000000004 /* CommandHistoryStoreTests.swift in Sources */,
+				P71000000000000000000005 /* TerminalRightSidebarStateTests.swift in Sources */,
+				P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -837,7 +909,7 @@
 			repositoryURL = "https://github.com/canbyte0/SwiftTerm.git";
 			requirement = {
 				kind = revision;
-				revision = 6e56e32e16eba0c3a5f534136da272679085f44c;
+				revision = 771e79f092a26e7fba7af0ab2b09a2bf10213109;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

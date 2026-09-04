@@ -19,6 +19,28 @@ struct AppToolbarContent: ToolbarContent {
                 .accessibilityIdentifier("toolbar.newSession")
             }
         }
+
+        // MacSSH 1.1 Phase 7：右侧命令侧边栏 toggle（仅 Terminal 页显示）。
+        // 任务书 §3 / §40 / §64：native toolbar button，不浮在 Terminal 上。
+        if appState.selectedSection == .terminal {
+            @Bindable var appState = appState
+            ToolbarItem(placement: .primaryAction) {
+                Button {
+                    appState.isRightSidebarVisible.toggle()
+                } label: {
+                    Image(systemName: appState.isRightSidebarVisible
+                          ? "sidebar.right"
+                          : "sidebar.right")
+                }
+                .help(appState.isRightSidebarVisible
+                      ? L10n.string("sidebar_right.hide", defaultValue: "Hide Sidebar", locale: appState.language.locale)
+                      : L10n.string("sidebar_right.show", defaultValue: "Show Sidebar", locale: appState.language.locale))
+                .accessibilityLabel(appState.isRightSidebarVisible
+                                    ? L10n.string("sidebar_right.hide", defaultValue: "Hide Sidebar", locale: appState.language.locale)
+                                    : L10n.string("sidebar_right.show", defaultValue: "Show Sidebar", locale: appState.language.locale))
+                .accessibilityIdentifier("toolbar.toggleRightSidebar")
+            }
+        }
     }
 
     private func newLocalSession() {
