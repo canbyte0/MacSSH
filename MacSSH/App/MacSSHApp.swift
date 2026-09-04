@@ -88,8 +88,31 @@ struct MacSSHApp: App {
     /// `reply(.terminateNow)` 完成退出。期间绝不后台继续传输。
     @MainActor
     final class AppDelegate: NSObject, NSApplicationDelegate {
-        /// 应用入口装配的弱引用（App 生命周期内唯一，仅退出屏障读取）。
+        /// 应用入口装配的弱引用（App 生命周期内唯一，仅退出屏障读取 +
+        /// launch 稳定点 appearance reapply）。
         static weak var appState: AppState?
+
+        /// GUI Remediation Round 1（FAIL #1 cold-launch appearance persistence）：
+        ///
+        /// `AppState.init` → `AppAppearanceController.init` → `apply()` 在
+        /// SwiftUI `App.init` 阶段执行，早于 `applicationDidFinishLaunching`。
+        /// 在 SwiftUI `WindowGroup` 创建第一个 `NSWindow` 的过程中，AppKit
+        /// launch 流程可能重置 `NSApp.appearance`（恢复跟随系统 = nil），
+        /// 导致 saved dark 冷启动后实际 UI 变浅色（Picker 仍显示 dark 因
+        /// controller.mode 持久化成功，但 runtime `NSApp.appearance` 被覆盖）。
+        ///
+        /// `applicationDidFinishLaunching` 是 AppKit launch 流程的稳定点：
+        /// 此时所有基础设置已完成、SwiftUI scene 尚未创建首个可见窗口。
+        /// 在此 reapply 确保 `NSApp.appearance` 在用户看到第一个可见窗口前
+        /// 为 requested mode，且之后不被 framework launch 覆盖（任务书 §7 /
+        /// §8 / §11）。
+        ///
+        /// 单一 writer 保持（§9 / §10）：经 `controller.apply()`，不重读
+        /// UserDefaults、不重建 mapping。幂等（§11）：与 init 的早期 apply
+        /// 合计最多两次，无循环、无 Timer、无 polling、无 mode rewrite。
+        func applicationDidFinishLaunching(_ notification: Notification) {
+            AppDelegate.appState?.appearanceController.apply()
+        }
 
         func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
             guard let manager = AppDelegate.appState?.transferManager else {

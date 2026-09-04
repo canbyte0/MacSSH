@@ -26,6 +26,7 @@ struct SettingsView: View {
 
     var body: some View {
         @Bindable var appState = appState
+        @Bindable var appearanceController = appState.appearanceController
 
         Form {
             Section("settings.section.general") {
@@ -84,9 +85,19 @@ struct SettingsView: View {
             }
 
             Section("settings.section.appearance") {
-                LabeledContent("settings.mode") {
-                    Text("settings.system_mode")
+                // MacSSH 1.1 Phase 8：外观模式 Picker（任务书 §29）。风格与上方
+                // 「语言」Picker 完全一致：LabeledContent 行 + native menu Picker。
+                // 行内值反映 requested mode（controller.mode），非 resolved
+                // effectiveAppearance（任务书 §31：system + 系统深色 → 显示
+                // 「跟随系统」而非「深色」）。选择即生效，无 Save / Apply / 重启。
+                Picker("settings.mode", selection: $appearanceController.mode) {
+                    ForEach(AppAppearanceMode.allCases) { mode in
+                        Text(LocalizedStringKey(mode.localizedOptionKey))
+                            .tag(mode)
+                    }
                 }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("settings.appearanceMode")
             }
 
             Section("SSH") {

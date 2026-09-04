@@ -84,6 +84,21 @@ final class TerminalAppearanceCoordinator {
         TerminalAppearanceProvider.apply(palette, to: terminalView)
     }
 
+    // MARK: - App-level explicit apply（MacSSH 1.1 Phase 8）
+
+    /// 受控入口：供 `AppAppearanceController` 在用户切换 mode 并设置
+    /// `NSApp.appearance` 之后**同步**刷新全部已注册终端视图。
+    ///
+    /// 与 KVO 回调路径语义完全一致（无条件遍历 apply 当前 palette，无全局
+    /// 去重——P2-2）。显式调用避免依赖 KVO 回调内 `Task { @MainActor in handler() }`
+    /// 的异步 hop（下一 runloop），使 Settings 切换 mode 后 existing Terminal
+    /// **立即**刷新（任务书 §14 / §15）。即使 resolved effectiveAppearance
+    /// 未产生有意义模式变化（系统已 Dark、system→dark），显式 apply 仍安全刷新
+    /// 全部 registered views（任务书 §16 / §41）。
+    func applyCurrentAppearance() {
+        applyCurrentAppearanceToAllRegisteredViews()
+    }
+
     // MARK: - Testing seams
 
     /// 仅供测试：模拟一次 appearance 变化并把指定模式应用到全部已注册视图，

@@ -34,6 +34,14 @@ final class AppState {
     /// 不重建任何 Runtime Session / Shell / SSH。
     let terminalAppearanceCoordinator: TerminalAppearanceCoordinator
 
+    /// MacSSH 1.1 Phase 8：应用外观控制器，由本 App 层稳定对象持有。
+    /// 单一 writer（任务书 §9 / §17）：应用外观偏好读写只由本控制器进行；
+    /// Settings Picker 绑定 `controller.mode`。跟随用户请求模式设置
+    /// `NSApp.appearance`，经 `TerminalAppearanceCoordinator` 同步刷新全部
+    /// 已注册终端；system mode 下由 Coordinator 的 effectiveAppearance KVO
+    /// 安全网处理系统外观变化。不重建任何 Runtime Session / Shell / SSH。
+    let appearanceController: AppAppearanceController
+
     /// MacSSH 1.1 Phase 6：终端字符串高亮运行时协调器，由本 App 层稳定对象
     /// 持有。规则变更（add/edit/delete/enable/全局开关）经 Store 触发回调，
     /// 协调器无条件广播全部 live TerminalView 重绘（`terminal.updateFullScreen`
@@ -93,6 +101,17 @@ final class AppState {
         // 完成后回填注册其 terminalView（与 localeProvider 回填模式一致）。
         let terminalAppearanceCoordinator = TerminalAppearanceCoordinator()
         self.terminalAppearanceCoordinator = terminalAppearanceCoordinator
+
+        // MacSSH 1.1 Phase 8：外观控制器须在 SessionManager 之前创建并 apply
+        // ——任何 Local/Remote Terminal 创建前 NSApp.appearance 已确定，首帧
+        // 即为请求模式，避免 Light→Dark / Dark→Light 闪烁（任务书 §18 / §20）。
+        // 单一 writer：只有本控制器读写 appearanceMode 偏好。Coordinator registry
+        // 此刻为空，apply 的 terminal 刷新 no-op；NSApp.appearance 已就位。
+        let appearanceController = AppAppearanceController(
+            userDefaults: userDefaults,
+            coordinator: terminalAppearanceCoordinator
+        )
+        self.appearanceController = appearanceController
 
         // MacSSH 1.1 Phase 6：高亮协调器须同样在 SessionManager 之前创建，
         // 初始 Local Session 的 terminalView 由本装配末尾回填注册（与外观

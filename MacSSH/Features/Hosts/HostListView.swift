@@ -169,6 +169,27 @@ struct HostListView: View {
             }
         }
         .listStyle(.sidebar)
+        // GUI Remediation 2（Host Sidebar manual-appearance consistency）：
+        // `.sidebar` list style 底层 `NSVisualEffectView` 使用 `.sidebar`
+        // vibrancy material + `blendingMode = .behindWindow`，即使
+        // `NSApp.appearance = .darkAqua`（`effectiveAppearance = darkAqua`），
+        // behind-window blending 仍混合桌面/Window Server composition，导致
+        // manual Dark 在 system Light vs Dark 下主背景灰度漂移（任务书 §5/§8）。
+        //
+        // 最小修复（§9/§10）：隐藏 behind-window vibrancy 背景，替换为 opaque
+        // semantic `windowBackgroundColor`——跟随 `NSApp.effectiveAppearance`
+        //（manual dark → dark、manual light → light、system → 跟随系统），
+        // 不再受桌面 composition 影响。语义色在 SwiftUI 中保持 semantic（不
+        // 提前 resolve，避免 Phase 4 式 dynamic-color freeze，§14）。
+        //
+        // 不用 Material（`.regularMaterial`/`.thinMaterial` 仍 translucent，
+        // 不解决 behind-window 渗透，§10）。不引入第二 appearance source
+        //（无 `.preferredColorScheme`/`NSWindow.appearance` override，§11）。
+        // 与 RootView/TerminalWorkspaceView/TerminalRightSidebarView 等既有
+        // `windowBackgroundColor` 惯例一致。List 的 selection/hover/keyboard/
+        // disclosure/context menu/row layout/scrolling 不受影响（§12）。
+        .scrollContentBackground(.hidden)
+        .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityLabel("accessibility.hosts_sidebar")
     }
 

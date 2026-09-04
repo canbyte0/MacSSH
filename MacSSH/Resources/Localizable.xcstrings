@@ -3554,6 +3554,57 @@
         }
       }
     },
+    "settings.appearance.dark": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dark"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "深色"
+          }
+        }
+      }
+    },
+    "settings.appearance.light": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Light"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "浅色"
+          }
+        }
+      }
+    },
+    "settings.appearance.system": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Follow System"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "跟随系统"
+          }
+        }
+      }
+    },
     "settings.confirm_before_closing_ssh": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -3822,23 +3873,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "终端"
-          }
-        }
-      }
-    },
-    "settings.system_mode": {
-      "extractionState": "manual_uploaded",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "System"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "跟随系统"
           }
         }
       }

@@ -4281,3 +4281,75 @@ Terminal.app login shell 实测 `LANG=zh_CN.UTF-8`）。
   nano / less / top / resize / Last login 目视）仍待用户人工验收。
 
 停止开发，等待用户验收。
+
+## MacSSH 1.1 Phase 8：Manual App Appearance（2026-09-04）
+
+状态：**实现完成，待独立代码验收 + 用户 GUI 验收**
+
+baseline：`245689dd36421d2c8491d20dcd9388fc1c6c4f34`
+（Phase 7 FINAL remediation；Phase 8B 启动前已 fast-forward push 到
+`github/main`）。branch：`feature/macssh-1.1-manual-appearance`。
+
+计划书 Phase 8 = "Session Tabs"（已完成，见上节）。本节为计划书 §45
+Settings `## Appearance` 规范（System/Light/Dark）的实现——Manual App
+Appearance 是已文档化 Settings 规范，用户选择先实现，无 AGENTS.md 冲突。
+
+### 范围
+
+- Settings `外观 > 模式` 三选项：跟随系统 / 浅色 / 深色
+  （`AppAppearanceMode`：system/light/dark），实时生效，无 Save/重启。
+- 单一 source of truth：`AppAppearanceMode`(UserDefaults
+  `macssh.appearanceMode`) → `AppAppearanceController.mode` →
+  `NSApp.appearance` → `NSApp.effectiveAppearance` →
+  `TerminalAppearanceCoordinator` → per-TerminalView。
+- 不引入 `preferredColorScheme` / `@AppStorage` / 第二套 colorScheme。
+
+### 关键实现
+
+- `AppAppearanceMode`（`MacSSH/App/AppAppearanceMode.swift`）：
+  String/CaseIterable/Identifiable/Sendable；默认 system；非法值回退
+  system；`nsAppearance` 映射 nil/.aqua/.darkAqua；`localizedOptionKey`
+  字面量供 obsolete 审计识别。
+- `AppAppearanceController`（`MacSSH/App/AppAppearanceController.swift`）：
+  `@MainActor @Observable`；单一 writer；`mode` didSet 持久化+apply；
+  `apply()` 设 `NSApp.appearance` + `coordinator.applyCurrentAppearance()`；
+  注入 `appearanceSetter` 接缝供测试，不依赖真实 NSApp。
+- `TerminalAppearanceCoordinator`：最小扩展 `applyCurrentAppearance()`
+  （复用现有 private `applyCurrentAppearanceToAllRegisteredViews`），
+  供 controller 同步刷新；KVO 安全网保留不变。
+- `AppState`：`coordinator` 后、`SessionManager` 前创建 controller 并
+  apply（首帧无闪烁）。
+- `SettingsView`：静态 `LabeledContent` 替换为 `Picker(.menu)` 绑定
+  `controller.mode`，与"语言"Picker 风格一致。
+
+### 本地化
+
+- 新增 `settings.appearance.system/light/dark`（zh-Hans：跟随系统/浅色/
+  深色；en：Follow System/Light/Dark）。
+- 删除 obsolete `settings.system_mode`。
+- `LocalizationTests`：`testCatalogHasNoObsoleteKeys` /
+  `testCatalogKeysAllHaveCompleteTranslations` 均 PASS。
+
+### 测试
+
+新增 3 个测试类（26 用例，全执行无 skip）：
+`AppAppearanceModeTests`(9) / `AppAppearanceControllerTests`(12) /
+`TerminalAppearanceManualModeTests`(5)。
+
+全 MacSSH 测试（fresh DerivedData，Debug）：
+**445 executed / 114 skipped / 0 failures**。
+Debug/Release fresh clean build：BUILD SUCCEEDED，0 production warnings。
+
+### live probe（§38，/tmp，未入库）
+
+确认 `NSApp.appearance` 行为：nil→跟随系统；.aqua→Light；
+.darkAqua→Dark；manual→system(nil)→重新跟随系统。
+
+### 待验收
+
+- 独立代码验收（Independent Code Acceptance）。
+- 用户 GUI 验收：launch flash、manual Light/Dark、system live switch、
+  Settings 同步刷新、Right Sidebar/Terminal 回归。
+
+停止开发，未 commit / 未 merge / 未 push Phase 8 分支，等待验收。
+详见 `Docs/Phase8B-Final-Report.md`。

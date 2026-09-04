@@ -49,6 +49,8 @@ enum AppPreferenceKey {
     static let rightSidebarVisible = "macssh.rightSidebarVisible"
     /// MacSSH 1.1 Phase 7：右侧栏选中 tab（CommandSidebarTab rawValue）。
     static let rightSidebarTab = "macssh.rightSidebarTab"
+    /// MacSSH 1.1 Phase 8：应用外观模式（AppAppearanceMode rawValue：system/light/dark）。
+    static let appearanceMode = "macssh.appearanceMode"
 }
 
 /// 非 SwiftUI 场景使用的集中本地化入口。
