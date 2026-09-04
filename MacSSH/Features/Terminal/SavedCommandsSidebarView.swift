@@ -111,7 +111,10 @@ struct SavedCommandsSidebarView: View {
                 Image(systemName: "plus")
                     .font(.system(size: 13))
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(AppInteractiveButtonStyle(
+                baseStyle: BorderlessButtonStyle(),
+                compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+            ))
             .accessibilityLabel(L10n.string("sidebar_right.add", defaultValue: "Add", locale: locale))
             .accessibilityIdentifier("sidebar_right.addMenu")
         )
@@ -272,11 +275,12 @@ private struct GroupSection: View {
     /// 分组内新增命令入口（GUI Acceptance Round 1 FAIL #2：分组内无法新增命令）。
     let onAddCommand: (SavedCommandGroup) -> Void
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = true
     @State private var pendingDelete = false
 
     var body: some View {
-        DisclosureGroup(isExpanded: $isExpanded) {
+        DisclosureGroup(isExpanded: expansionBinding) {
             let sortedCommands = group.commands.sorted(by: { $0.sortOrder < $1.sortOrder })
             if sortedCommands.isEmpty {
                 // 空分组仍可见，显示简洁「暂无命令」占位（GUI Acceptance FAIL #1）。
@@ -325,6 +329,23 @@ private struct GroupSection: View {
         }
     }
 
+    /// DisclosureGroup 与键盘操作共用同一 Binding，确保展开和收起都进入
+    /// 显式动画 transaction；Reduce Motion 开启时直接更新状态。
+    private var expansionBinding: Binding<Bool> {
+        Binding(
+            get: { isExpanded },
+            set: { expanded in
+                withAnimation(
+                    reduceMotion
+                        ? nil
+                        : .easeInOut(duration: AppTheme.SidebarMotion.groupDuration)
+                ) {
+                    isExpanded = expanded
+                }
+            }
+        )
+    }
+
     private var groupMenu: some View {
         Menu {
             Button {
@@ -348,7 +369,10 @@ private struct GroupSection: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
-        .buttonStyle(.borderless)
+        .buttonStyle(AppInteractiveButtonStyle(
+            baseStyle: BorderlessButtonStyle(),
+            compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+        ))
         .accessibilityLabel(L10n.string("sidebar_right.group_actions", defaultValue: "Group actions", locale: appState.language.locale))
     }
 }
@@ -360,6 +384,7 @@ private struct SavedCommandRow: View {
     let canDispatch: Bool
     let onEdit: () -> Void
     @Environment(AppState.self) private var appState
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var body: some View {
@@ -383,6 +408,13 @@ private struct SavedCommandRow: View {
         .padding(.vertical, AppTheme.Spacing.compact / 2)
         .background(rowBackground)
         .contentShape(Rectangle())
+        // 行底色与操作按钮淡入淡出，避免 hover 时瞬间闪现。
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+            value: isHovering
+        )
         .onHover { isHovering = $0 }
         .contextMenu {
             Button("sidebar_right.edit") { onEdit() }

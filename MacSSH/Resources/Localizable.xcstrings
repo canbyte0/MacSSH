@@ -5118,6 +5118,23 @@
         }
       }
     },
+    "sidebar_right.resize": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize Sidebar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整侧边栏宽度"
+          }
+        }
+      }
+    },
     "sidebar_right.ungrouped": {
       "extractionState": "manual_uploaded",
       "localizations": {

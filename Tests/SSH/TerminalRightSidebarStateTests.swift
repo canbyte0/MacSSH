@@ -35,4 +35,47 @@ final class TerminalRightSidebarStateTests: XCTestCase {
     func testMaxEntries() {
         XCTAssertEqual(CommandHistoryStore.maxEntries, 1000)
     }
+
+    /// 开启和关闭使用同一段 220 ms 动画，保持双向节奏一致。
+    func testRightSidebarAnimationDuration() {
+        XCTAssertEqual(AppTheme.SidebarMotion.duration, 0.22, accuracy: 0.0001)
+    }
+
+    /// 分组动画略短于整栏开合，确保内容展开与收起轻快且双向一致。
+    func testRightSidebarGroupAnimationDuration() {
+        XCTAssertEqual(AppTheme.SidebarMotion.groupDuration, 0.18, accuracy: 0.0001)
+    }
+
+    /// 默认值和静态范围与已确认的交互设计一致。
+    func testRightSidebarWidthDefaultsAndBounds() {
+        XCTAssertEqual(AppTheme.Layout.rightSidebarWidth, 300)
+        XCTAssertEqual(AppTheme.Layout.rightSidebarMinimumWidth, 240)
+        XCTAssertEqual(AppTheme.Layout.rightSidebarMaximumWidth, 520)
+        XCTAssertEqual(AppTheme.Layout.terminalMinimumWidthBesideSidebar, 320)
+        XCTAssertEqual(AppTheme.Layout.rightSidebarResizeHandleWidth, 7)
+    }
+
+    /// 宽窗口下建议值应稳定限制在 240...520 pt。
+    func testRightSidebarWidthPolicyClampsToStaticBounds() {
+        XCTAssertEqual(RightSidebarWidthPolicy.clamp(100, availableWidth: 1_200), 240)
+        XCTAssertEqual(RightSidebarWidthPolicy.clamp(360, availableWidth: 1_200), 360)
+        XCTAssertEqual(RightSidebarWidthPolicy.clamp(800, availableWidth: 1_200), 520)
+    }
+
+    /// 窗口较窄时动态上限应为 Terminal 保留至少 320 pt。
+    func testRightSidebarWidthPolicyProtectsTerminalSpace() {
+        let availableWidth: CGFloat = 700
+        let expectedMaximum = availableWidth
+            - AppTheme.Layout.terminalMinimumWidthBesideSidebar
+            - AppTheme.Layout.rightSidebarResizeHandleWidth
+
+        XCTAssertEqual(
+            RightSidebarWidthPolicy.maximumWidth(availableWidth: availableWidth),
+            expectedMaximum
+        )
+        XCTAssertEqual(
+            RightSidebarWidthPolicy.clamp(500, availableWidth: availableWidth),
+            expectedMaximum
+        )
+    }
 }

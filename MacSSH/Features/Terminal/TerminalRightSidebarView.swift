@@ -10,6 +10,14 @@ import SwiftUI
 struct TerminalRightSidebarView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// 由外层工作区根据拖动位置和当前窗口宽度计算出的实际宽度。
+    let width: CGFloat
+
+    init(width: CGFloat = AppTheme.Layout.rightSidebarWidth) {
+        self.width = width
+    }
 
     var body: some View {
         @Bindable var appState = appState
@@ -22,7 +30,7 @@ struct TerminalRightSidebarView: View {
             sidebarContent(tab: appState.selectedRightSidebarTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(width: AppTheme.Layout.rightSidebarWidth)
+        .frame(width: width)
         .background(Color(nsColor: .windowBackgroundColor))
         .accessibilityIdentifier("workspace.rightSidebar")
     }
@@ -39,7 +47,9 @@ struct TerminalRightSidebarView: View {
             Spacer()
         }
         .padding(.horizontal, AppTheme.Spacing.regular)
-        .padding(.vertical, AppTheme.Spacing.compact)
+        // 与主面板 TerminalTabBar 共用同一高度，使本栏下方 Divider
+        // 以及内容 Header 下方 Divider 都落在相同的水平坐标。
+        .frame(height: AppTheme.Layout.tabBarHeight)
         .background(.bar)
     }
 
@@ -59,7 +69,18 @@ struct TerminalRightSidebarView: View {
                         .fill(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
                 )
         }
-        .buttonStyle(.plain)
+        // 显式 `.plain` 会覆盖 WindowGroup 的统一按钮动画，因此在此重新套用
+        // 同一交互样式；固定圆形底色不会扩大可见 hover 范围。
+        .buttonStyle(AppInteractiveButtonStyle(
+            baseStyle: PlainButtonStyle(),
+            compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+        ))
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+            value: isSelected
+        )
         .help(tab == .history
               ? L10n.string("sidebar_right.history", defaultValue: "History", locale: locale)
               : L10n.string("sidebar_right.saved_commands", defaultValue: "Saved Commands", locale: locale))

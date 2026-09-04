@@ -58,7 +58,10 @@ struct CommandHistorySidebarView: View {
                     Image(systemName: "trash")
                         .font(.system(size: 12))
                 }
-                .buttonStyle(.borderless)
+                .buttonStyle(AppInteractiveButtonStyle(
+                    baseStyle: BorderlessButtonStyle(),
+                    compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+                ))
                 .help(L10n.string("sidebar_right.clear_history", defaultValue: "Clear History", locale: locale))
                 .accessibilityLabel(L10n.string("sidebar_right.clear_history", defaultValue: "Clear History", locale: locale))
                 .accessibilityIdentifier("sidebar_right.clearHistory")
@@ -119,6 +122,7 @@ private struct HistoryRow: View {
     let canDispatch: Bool
     @Environment(AppState.self) private var appState
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isHovering = false
 
     var body: some View {
@@ -151,6 +155,13 @@ private struct HistoryRow: View {
                 .fill(isHovering ? Color.primary.opacity(0.04) : Color.clear)
         )
         .contentShape(Rectangle())
+        // 背景与 Paste / Run 按钮使用同一 hover transaction 平滑出现、消失。
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+            value: isHovering
+        )
         .onHover { isHovering = $0 }
         .accessibilityElement(children: .contain)
     }

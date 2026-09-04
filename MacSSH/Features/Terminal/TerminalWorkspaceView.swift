@@ -1,4 +1,28 @@
+import AppKit
 import SwiftUI
+
+/// 右侧栏宽度约束的纯计算策略，供界面与单元测试共同使用。
+enum RightSidebarWidthPolicy {
+    /// 当前可用宽度下的动态上限；窗口足够宽时仍受设计最大值限制。
+    static func maximumWidth(availableWidth: CGFloat) -> CGFloat {
+        let widthPreservingTerminal = availableWidth
+            - AppTheme.Layout.terminalMinimumWidthBesideSidebar
+            - AppTheme.Layout.rightSidebarResizeHandleWidth
+
+        return min(
+            AppTheme.Layout.rightSidebarMaximumWidth,
+            max(AppTheme.Layout.rightSidebarMinimumWidth, widthPreservingTerminal)
+        )
+    }
+
+    /// 把建议宽度限制在静态下限与当前窗口的动态上限之间。
+    static func clamp(_ proposedWidth: CGFloat, availableWidth: CGFloat) -> CGFloat {
+        min(
+            max(proposedWidth, AppTheme.Layout.rightSidebarMinimumWidth),
+            maximumWidth(availableWidth: availableWidth)
+        )
+    }
+}
 
 /// Terminal 页面（Phase 8）：Tab Bar + Active Session 终端内容。
 ///
@@ -9,6 +33,9 @@ import SwiftUI
 struct TerminalWorkspaceView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    /// 一次拖动开始时的宽度，用于避免增量事件累积误差。
+    @State private var rightSidebarDragStartWidth: CGFloat?
 
     private var manager: SessionManager {
         appState.sessionManager
@@ -17,33 +44,111 @@ struct TerminalWorkspaceView: View {
     var body: some View {
         @Bindable var appState = appState
 
-        HStack(spacing: AppTheme.Spacing.none) {
-            // 左/中：现有 Tab Bar + paneSelector + workspace content。
-            // 展开右侧栏时此部分真实缩窄，SwiftTerm setFrameSize 触发
-            // cols/rows 重算 → PTY/SSH resize（任务书 §1 / §60 / §63）。
-            VStack(spacing: AppTheme.Spacing.none) {
-                TerminalTabBar()
+        GeometryReader { proxy in
+            let sidebarWidth = RightSidebarWidthPolicy.clamp(
+                appState.rightSidebarWidth,
+                availableWidth: proxy.size.width
+            )
 
-                Divider()
-
-                if let session = manager.activeSession {
-                    paneSelector(for: session)
+            HStack(spacing: AppTheme.Spacing.none) {
+                // 左/中：现有 Tab Bar + paneSelector + workspace content。
+                // 展开右侧栏时此部分真实缩窄，SwiftTerm setFrameSize 触发
+                // cols/rows 重算 → PTY/SSH resize（任务书 §1 / §60 / §63）。
+                VStack(spacing: AppTheme.Spacing.none) {
+                    TerminalTabBar()
 
                     Divider()
+
+                    if let session = manager.activeSession {
+                        paneSelector(for: session)
+
+                        Divider()
+                    }
+
+                    workspaceContent
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
 
-                workspaceContent
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            }
+                // 右侧命令侧边栏：整体保留原有开合 transition，左边缘支持拖动。
+                if appState.isRightSidebarVisible {
+                    HStack(spacing: AppTheme.Spacing.none) {
+                        rightSidebarResizeHandle(
+                            sidebarWidth: sidebarWidth,
+                            availableWidth: proxy.size.width
+                        )
 
-            // MacSSH 1.1 Phase 7：右侧命令侧边栏（可展开/收起）。
-            if appState.isRightSidebarVisible {
-                Divider()
-                TerminalRightSidebarView()
+                        TerminalRightSidebarView(width: sidebarWidth)
+                    }
+                    .transition(.move(edge: .trailing))
+                }
             }
+            // 只让可见状态触发开合动画；拖动宽度时必须实时跟手，不插值延迟。
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .easeInOut(duration: AppTheme.SidebarMotion.duration),
+                value: appState.isRightSidebarVisible
+            )
         }
         .navigationTitle(navigationTitle)
         .accessibilityIdentifier("workspace.terminal")
+    }
+
+    /// 7 pt 透明热区覆盖系统 1 pt 分隔线，兼顾易拖动与原生外观。
+    private func rightSidebarResizeHandle(
+        sidebarWidth: CGFloat,
+        availableWidth: CGFloat
+    ) -> some View {
+        RightSidebarResizeHandle(
+            onDragChanged: { translationX in
+                if rightSidebarDragStartWidth == nil {
+                    rightSidebarDragStartWidth = sidebarWidth
+                }
+                guard let startWidth = rightSidebarDragStartWidth else { return }
+
+                // 分隔线向左移动（负位移）应增大右侧栏宽度。
+                appState.rightSidebarWidth = RightSidebarWidthPolicy.clamp(
+                    startWidth - translationX,
+                    availableWidth: availableWidth
+                )
+            },
+            onDragEnded: {
+                rightSidebarDragStartWidth = nil
+            }
+        )
+        .frame(width: AppTheme.Layout.rightSidebarResizeHandleWidth)
+        .overlay {
+            Rectangle()
+                .fill(Color(nsColor: .separatorColor))
+                .frame(width: 1)
+                .allowsHitTesting(false)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            Text(verbatim: L10n.string(
+                "sidebar_right.resize",
+                defaultValue: "Resize Sidebar",
+                locale: locale
+            ))
+        )
+        .accessibilityValue(Text(verbatim: "\(Int(sidebarWidth.rounded())) pt"))
+        .accessibilityAdjustableAction { direction in
+            let delta: CGFloat
+            switch direction {
+            case .increment:
+                delta = AppTheme.Layout.rightSidebarKeyboardResizeStep
+            case .decrement:
+                delta = -AppTheme.Layout.rightSidebarKeyboardResizeStep
+            @unknown default:
+                return
+            }
+
+            appState.rightSidebarWidth = RightSidebarWidthPolicy.clamp(
+                sidebarWidth + delta,
+                availableWidth: availableWidth
+            )
+        }
+        .accessibilityIdentifier("workspace.rightSidebar.resizeHandle")
     }
 
     /// Phase 9：per-session 的 Terminal / Files 分段控制。
@@ -337,5 +442,59 @@ struct TerminalWorkspaceView: View {
                 arguments: session.hostDisplayName ?? session.hostname ?? "Remote"
             )
         }
+    }
+}
+
+/// AppKit 原生拖动热区。
+///
+/// 使用 cursor rect 而不是手动 push/pop 光标：鼠标离开热区后 AppKit 会自动
+/// 恢复 Terminal 的 I-beam 或其他控件自己的光标，避免光标状态泄漏。
+private struct RightSidebarResizeHandle: NSViewRepresentable {
+    let onDragChanged: (CGFloat) -> Void
+    let onDragEnded: () -> Void
+
+    func makeNSView(context: Context) -> RightSidebarResizeHandleView {
+        let view = RightSidebarResizeHandleView()
+        view.onDragChanged = onDragChanged
+        view.onDragEnded = onDragEnded
+        return view
+    }
+
+    func updateNSView(_ nsView: RightSidebarResizeHandleView, context: Context) {
+        nsView.onDragChanged = onDragChanged
+        nsView.onDragEnded = onDragEnded
+    }
+}
+
+/// 以 window 坐标计算整次拖动位移，窗口布局更新不会造成跳变。
+private final class RightSidebarResizeHandleView: NSView {
+    var onDragChanged: ((CGFloat) -> Void)?
+    var onDragEnded: (() -> Void)?
+    private var dragStartX: CGFloat?
+
+    override var acceptsFirstResponder: Bool { false }
+
+    override func resetCursorRects() {
+        super.resetCursorRects()
+        addCursorRect(bounds, cursor: .resizeLeftRight)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartX = event.locationInWindow.x
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let dragStartX else { return }
+        onDragChanged?(event.locationInWindow.x - dragStartX)
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartX = nil
+        onDragEnded?()
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        window?.invalidateCursorRects(for: self)
     }
 }

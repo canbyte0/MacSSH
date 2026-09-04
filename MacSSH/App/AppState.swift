@@ -72,6 +72,12 @@ final class AppState {
         }
     }
 
+    /// 右侧命令栏在当前 App 运行期间的宽度。
+    ///
+    /// 此状态有意不写入 UserDefaults：切换页面或收起再展开时保留，
+    /// 完全退出并重新启动后恢复为设计默认值。
+    var rightSidebarWidth: CGFloat = AppTheme.Layout.rightSidebarWidth
+
     init(
         modelContainer: ModelContainer,
         userDefaults: UserDefaults = .standard

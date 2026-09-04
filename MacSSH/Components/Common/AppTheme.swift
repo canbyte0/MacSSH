@@ -36,8 +36,25 @@ enum AppTheme {
         /// Terminal 内容与容器边缘之间的统一留白，单位为 macOS 逻辑点。
         static let terminalContentInset: CGFloat = 6
 
-        /// MacSSH 1.1 Phase 7：右侧命令侧边栏固定宽度（任务书 §6，范围 280–320）。
+        /// 右侧命令侧边栏默认宽度；用户可在当前运行期间拖动调整。
         static let rightSidebarWidth: CGFloat = 300
+        /// 拖动调整时允许的静态宽度边界。
+        static let rightSidebarMinimumWidth: CGFloat = 240
+        static let rightSidebarMaximumWidth: CGFloat = 520
+        /// 调整侧边栏时优先为 Terminal 保留的最小可用宽度。
+        static let terminalMinimumWidthBesideSidebar: CGFloat = 320
+        /// 左边缘拖动热区宽度；其中仅绘制 1 pt 系统分隔线。
+        static let rightSidebarResizeHandleWidth: CGFloat = 7
+        /// VoiceOver“调整值”操作每次增减的宽度。
+        static let rightSidebarKeyboardResizeStep: CGFloat = 20
+    }
+
+    /// 右侧命令栏采用接近 macOS 原生侧栏的克制开合节奏。
+    enum SidebarMotion {
+        /// 开启与关闭共用同一时长，关闭时由 SwiftUI 自动反向播放 transition。
+        static let duration = 0.22
+        /// 常用命令分组展开与收起的时长，略短于整栏开合以保持轻快。
+        static let groupDuration = 0.18
     }
 
     /// 应用内按钮交互动画参数，集中管理以保持所有功能页一致。
