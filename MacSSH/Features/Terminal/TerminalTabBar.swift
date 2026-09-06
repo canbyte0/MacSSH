@@ -110,7 +110,7 @@ private struct TerminalTabItemView: View {
                 cornerRadius: AppTheme.Layout.terminalTabCornerRadius,
                 style: .continuous
             )
-            // 未选中标签使用轻量动态描边；选中标签仅保留浅青填充。
+            // 未选中标签使用轻量动态描边；选中标签使用当前强调色的浅色填充。
             .strokeBorder(isActive ? Color.clear : Color.primary.opacity(0.12), lineWidth: 1)
         }
         // 42 - 34 = 8 pt，上下各 4 pt，确保四个圆角不被 Tab Bar 边缘裁切。

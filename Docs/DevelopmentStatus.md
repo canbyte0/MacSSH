@@ -4353,3 +4353,119 @@ Debug/Release fresh clean build：BUILD SUCCEEDED，0 production warnings。
 
 停止开发，未 commit / 未 merge / 未 push Phase 8 分支，等待验收。
 详见 `Docs/Phase8B-Final-Report.md`。
+
+## 2026-09-05：设置项「粘贴后高亮」（用户单独授权）
+
+- 设置 → 终端新增原生开关，默认关闭；中英文标题和说明已通过实际 App 检查。
+- 使用 `macssh.pasteHighlightEnabled` 持久化，仅对新建的本地 zsh 生效；
+  已打开的会话不重启、不注入配置命令。开启时保留用户 Shell 自身的高亮配置。
+- 关闭时，随包 `.zshenv` 立即恢复原生 ZDOTDIR、在顶层读取用户 `.zshenv`，
+  后续启动文件仍由 zsh 自身加载。单次 `precmd` hook 在首次提示符前设置
+  `paste:none` 后自行移除。没有改写用户 `.zshrc`，不修改 bracketed paste、
+  ZLE widget、其他高亮样式、SSH 或 SFTP 路径。
+- 没有保留中间方案的多阶段启动代理：本机 `/etc/zshrc` 会依 ZDOTDIR 设置
+  HISTFILE，因此最终方案在该文件运行前已恢复用户目录；隔离测试覆盖此项。
+- 修正既有翻译生成脚本缺失现有词条的问题：保留修改前已编译目录的 369 个
+  中英文词条，再新增本项的 2 个词条（371 个），避免重新生成丢失已有翻译。
+
+### 本轮验证
+
+- `Scripts/test-zsh-paste-highlighting.py`：12/12 通过。覆盖配置读取顺序、
+  顶层作用域、自定义 ZDOTDIR、历史路径、RCS、退出脚本、现有 precmd hook；
+  真实 PTY 对比开关两态的反色输出，并确认多行粘贴仍需 Return 才执行。
+- XCTest：`LocalShellLauncherTests` + `LocalizationTests`，最终
+  **43 pass / 0 skip / 0 failure**，包含默认值、AppState 重建后的持久化、
+  zsh/bash 环境隔离、原生 login 参数以及既有本地 Shell 回归。
+- Debug / Release arm64 构建成功；Release 严格签名校验通过。
+  Release 资源目录仅有最终 `.zshenv`，无中间脚本或历史文件。
+- 正式 App 源码构建无 compiler warning；fresh Debug 测试目标编译仍有
+  **16 条既有 warning**，位于 TerminalCommandDispatcherTests、SavedCommandStoreTests、
+  CommandHistoryStoreTests、TerminalAppearanceTests。本轮未进行无关测试重构。
+- 实际 App：确认中文默认关闭、可开启、英文标题和说明正确、可关闭，最后
+  恢复简体中文与关闭状态。持久化由 XCTest 重建 AppState 验证，未声称完成
+  人工整进程重启验收。`git diff --check` 通过。
+
+### 使用与边界
+
+- 改动开关后新建终端标签页验证；旧标签页保持原行为。
+- 仅控制 zsh 的粘贴反色，不控制手动鼠标选区、字符串高亮规则或远端 Shell。
+- 如果用户启动脚本整体覆盖 `precmd_functions`，或插件在之后重新设置
+  `zle_highlight`，可能覆盖本偏好；本实现不强制接管用户 hook 或按键。
+- 最终 Release：`/private/tmp/MacSSH-PasteHighlight-Final-Release/Build/Products/Release/MacSSH.app`。
+- 未提交、未合并、未推送，未开始后续 Phase。
+
+## MacSSH 1.1 Phase 5（补记）：VS16 Width Compatibility — FINAL PASS
+
+> 补记说明：Phase 5 当时的验收状态由 commit、测试与 `Docs/SwiftTermFork.md`
+> 承载，本文件此前缺正式记录（Phase 9F-S 规范核对阶段确认的 P3 文档缺口）。
+> Phase 9 已 FINAL PASS，现按 Phase 9F-S 审计结论补记。
+
+- 交付 commit：`5d0c2df`（2026-09-02，feat(terminal): 切换 SwiftTerm 依赖至
+  MacSSH fork 并启用 VS16 宽度策略）。
+- 生产依赖自上游 `migueldeicaza/SwiftTerm` 切换到 MacSSH 维护远端 fork
+  `canbyte0/SwiftTerm`（remote SwiftPM source-control，exact revision 锁定）。
+- **Local Terminal = `.preserveBaseWidth`**：⚠️ / ❤️ 基字符 + VS16 按 1 logical
+  cell 处理，与 macOS zsh 系统 `wcwidth()` 一致；修复 bracketed paste 重绘
+  光标列分叉（历史行漂移 `eecho ...`）。
+- **Remote Terminal = `.widenToEmojiWidth`（SwiftTerm 默认）**：⚠️ / ❤️ 按
+  2 logical cells 处理。**有意产品决策**，不是配置遗漏——远端 Linux / BSD /
+  macOS 的 wcwidth / glibc / musl / libc / locale / Unicode tables 可能与
+  本机 macOS 不同，Remote 的正确宽度策略不能由本机 macOS wcwidth 决定。
+- VS16 scalar 保留在 grapheme cluster 中（emoji presentation 不变），只改变
+  cell 列宽；不改 UTF-8 bytes / PTY data / CSI。
+- 测试：`TerminalVS16WidthPolicyTests`（MacSSH 侧 Local/Remote 策略与端到端
+  宽度）+ fork `VariationSelector16WidthPolicyTests`；规范由
+  `Docs/SwiftTermFork.md` §4 记载。
+- Phase 6B §46 曾以该测试组做回归再确认；Phase 9F-S 规范核对（2026-09-06）
+  判定 CASE A — HISTORICAL POLICY CONFIRMED：Local/Remote 差异为 Phase 5
+  已批准产品规范，Phase 9 未改变 width policy。
+
+## MacSSH 1.1 Phase 9：Terminal Font Size + VS16 Large-Font Rendering — FINAL PASS（2026-09-06）
+
+### Terminal Font Size 最终规范
+
+- default = 14，min = 10，max = 32，step = 1；
+  UserDefaults key = `macssh.terminalFontSize`（单一 writer：
+  `TerminalFontSizeController`）。
+- 实现：`@MainActor @Observable TerminalFontSizeController`（weak
+  TerminalView registry；`size.didSet` persist + apply 广播全部已注册 view）。
+- 能力：existing Local / Remote session 字号 live update（不关闭会话、不重建
+  Shell / SSH / PTY）；新建会话（Local 新 Tab、Remote 断开重连）即用当前字号；
+  SwiftTerm `font` setter 内置 `resetFont()` → geometry 重算 → `resize` →
+  Local `setWinSize`（TIOCSWINSZ）/ Remote `resizeChannelPTY`。
+- Settings UI：`[-] [value pt] [+]`（10 pt 减号 disabled、32 pt 加号 disabled，
+  不允许直接编辑文字；Phase 9B UI Preview Gate 方案 A）。
+
+### SwiftTerm renderer integration
+
+- **Accepted revision：`40d473b1fdb456d49cc04b7f253277fcb9ac3987`**
+  （`macssh-vs16-one-cell-render-fit`，immutable SHA pin，非 floating branch）。
+- lineage：`771e79f`（Phase 7 paste）→ `93abf601`（9D-C uniform-fit，首轮
+  独立验收 FAIL 后修正）→ `40d473b1`（9D-D draw-time scale）。
+- Phase 9D-D real-pixel 修复：单 cell fitted CG glyph 改用**原 CTFont +
+  CGContext 局部 uniform transform**（saveGState/translate/scale），不再
+  `CTFontCreateCopyWithAttributes(size * scale)`——Apple Color Emoji sbix
+  bitmap strike 重选使拷贝字体 ink 与 point size 非线性，18–32pt 残留
+  +2.0~3.0pt cell 溢出。Wide（columnWidth ≥ 2）路径不变。
+- **VS16 width policy 未改变**：Local = preserveBaseWidth（1 cell）、
+  Remote = widenToEmojiWidth（2 cells）——Phase 5 已批准产品规范
+  （见上文补记；Phase 9F-S CASE A）。
+
+### 验收结论（Phase 9A–9F 全链）
+
+- 14 / 24 / 32 pt 真实 GUI 验收：Local + Remote 的 ⚠️/❤️ containment
+  （各自策略内不侵入邻格）、separator 间距规则（34/58/76px、51/87/114px
+  精确等距）、cursor/grid 逐格步进、editing 无残影、字号 live update、
+  new-session current size、window resize、Light/Dark 全部通过。
+- 历史 bug 验证：旧 93abf601 GUI 的 24pt ≈ +3.0pt / 32pt ≈ +2~2.5pt 溢出
+  消失（实测 slack ≤ ±1.7px）。
+- Debug / Release fresh build：BUILD SUCCEEDED，0 candidate-caused warnings。
+- MacSSH full suite：通过（详见 Phase 9E-R / 9G 记录）。
+- 证据：`Docs/Phase9A` ~ `Phase9D-D`、Phase 9F GUI 截图（/tmp，不入 repo）。
+
+### Known technical debt（不阻塞）
+
+- `LocalShellLauncherTests.testN_FiftyCreateTerminateCyclesLeaveNoOrphan`
+  为负载敏感 flaky（FD +3 偶发）：隔离复跑可通过，非确定性，未修改测试。
+
+- 未提交、未合并、未推送（Phase 9G 完成 commit 准备后等待用户授权）。

@@ -3690,23 +3690,6 @@
         }
       }
     },
-    "settings.font_size_value": {
-      "extractionState": "manual_uploaded",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "14 pt"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "14 pt"
-          }
-        }
-      }
-    },
     "settings.language": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -3771,6 +3754,40 @@
           "stringUnit": {
             "state": "translated",
             "value": "打开主窗口"
+          }
+        }
+      }
+    },
+    "settings.paste_highlight": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Highlight pasted text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "粘贴后高亮"
+          }
+        }
+      }
+    },
+    "settings.paste_highlight_help": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Applies to new local zsh terminals. When on, uses the shell's paste highlighting. Does not affect SSH or bracketed paste protection."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对新建的本地 zsh 终端生效。开启时使用 Shell 自身的粘贴高亮，不影响 SSH 或安全粘贴保护。"
           }
         }
       }
@@ -5084,6 +5101,23 @@
         }
       }
     },
+    "sidebar_right.resize": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Resize Sidebar"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "调整侧边栏宽度"
+          }
+        }
+      }
+    },
     "sidebar_right.save_history": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -5148,23 +5182,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "显示侧边栏"
-          }
-        }
-      }
-    },
-    "sidebar_right.resize": {
-      "extractionState": "manual_uploaded",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resize Sidebar"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "调整侧边栏宽度"
           }
         }
       }

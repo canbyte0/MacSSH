@@ -51,6 +51,10 @@ enum AppPreferenceKey {
     static let rightSidebarTab = "macssh.rightSidebarTab"
     /// MacSSH 1.1 Phase 8：应用外观模式（AppAppearanceMode rawValue：system/light/dark）。
     static let appearanceMode = "macssh.appearanceMode"
+    /// MacSSH 1.1 Phase 9：终端字号（Int，10...32，step 1，default 14）。
+    static let terminalFontSize = "macssh.terminalFontSize"
+    /// 本地 zsh 粘贴高亮偏好；未设置时关闭，新终端启动时读取。
+    static let pasteHighlightEnabled = "macssh.pasteHighlightEnabled"
 }
 
 /// 非 SwiftUI 场景使用的集中本地化入口。

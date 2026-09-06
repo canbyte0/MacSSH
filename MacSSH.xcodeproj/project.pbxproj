@@ -7,14 +7,18 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AB1000000000000000000001 /* ShellIntegration in Resources */ = {isa = PBXBuildFile; fileRef = AB2000000000000000000001 /* ShellIntegration */; };
 		A10000000000000000000001 /* MacSSHApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000001 /* MacSSHApp.swift */; };
 		A10000000000000000000002 /* AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000002 /* AppState.swift */; };
 		T10000000000000000000001 /* AppLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000001 /* AppLanguage.swift */; };
 	F81000000000000000000001 /* AppAppearanceMode.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82000000000000000000001 /* AppAppearanceMode.swift */; };
 	F81000000000000000000002 /* AppAppearanceController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82000000000000000000002 /* AppAppearanceController.swift */; };
+	F81000000000000000000003 /* TerminalFontSizeController.swift in Sources */ = {isa = PBXBuildFile; fileRef = F82000000000000000000003 /* TerminalFontSizeController.swift */; };
 	F87100000000000000000001 /* AppAppearanceControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87200000000000000000001 /* AppAppearanceControllerTests.swift */; };
 	F87100000000000000000002 /* AppAppearanceModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87200000000000000000002 /* AppAppearanceModeTests.swift */; };
 	F87100000000000000000003 /* TerminalAppearanceManualModeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87200000000000000000003 /* TerminalAppearanceManualModeTests.swift */; };
+	F87100000000000000000004 /* TerminalFontSizeControllerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87200000000000000000004 /* TerminalFontSizeControllerTests.swift */; };
+	F87100000000000000000005 /* TerminalFontResizeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F87200000000000000000005 /* TerminalFontResizeTests.swift */; };
 		T10000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = T20000000000000000000002 /* Localizable.xcstrings */; };
 		U10000000000000000000001 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = U20000000000000000000001 /* Assets.xcassets */; };
 		J51000000000000000000001 /* JetBrainsMono-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = J52000000000000000000001 /* JetBrainsMono-Regular.ttf */; };
@@ -148,14 +152,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AB2000000000000000000001 /* ShellIntegration */ = {isa = PBXFileReference; lastKnownFileType = folder; path = ShellIntegration; sourceTree = "<group>"; };
 		A20000000000000000000001 /* MacSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MacSSHApp.swift; sourceTree = "<group>"; };
 		A20000000000000000000002 /* AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppState.swift; sourceTree = "<group>"; };
 		T20000000000000000000001 /* AppLanguage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLanguage.swift; sourceTree = "<group>"; };
 	F82000000000000000000001 /* AppAppearanceMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceMode.swift; sourceTree = "<group>"; };
 	F82000000000000000000002 /* AppAppearanceController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceController.swift; sourceTree = "<group>"; };
+	F82000000000000000000003 /* TerminalFontSizeController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontSizeController.swift; sourceTree = "<group>"; };
 	F87200000000000000000001 /* AppAppearanceControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceControllerTests.swift; sourceTree = "<group>"; };
 	F87200000000000000000002 /* AppAppearanceModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAppearanceModeTests.swift; sourceTree = "<group>"; };
 	F87200000000000000000003 /* TerminalAppearanceManualModeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAppearanceManualModeTests.swift; sourceTree = "<group>"; };
+	F87200000000000000000004 /* TerminalFontSizeControllerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontSizeControllerTests.swift; sourceTree = "<group>"; };
+	F87200000000000000000005 /* TerminalFontResizeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalFontResizeTests.swift; sourceTree = "<group>"; };
 		T20000000000000000000002 /* Localizable.xcstrings */ = {isa = PBXFileReference; lastKnownFileType = text.json.xcstrings; path = Localizable.xcstrings; sourceTree = "<group>"; };
 		U20000000000000000000001 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		J52000000000000000000001 /* JetBrainsMono-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = font.ttf; name = "JetBrainsMono-Regular.ttf"; path = "ThirdParty/JetBrainsMono/JetBrainsMono-Regular.ttf"; sourceTree = SOURCE_ROOT; };
@@ -346,6 +354,7 @@
 				A20000000000000000000003 /* RootView.swift */,
 				F82000000000000000000001 /* AppAppearanceMode.swift */,
 				F82000000000000000000002 /* AppAppearanceController.swift */,
+				F82000000000000000000003 /* TerminalFontSizeController.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -422,6 +431,7 @@
 			children = (
 				U20000000000000000000001 /* Assets.xcassets */,
 				T20000000000000000000002 /* Localizable.xcstrings */,
+				AB2000000000000000000001 /* ShellIntegration */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -460,6 +470,8 @@
 			F87200000000000000000001 /* AppAppearanceControllerTests.swift */,
 			F87200000000000000000002 /* AppAppearanceModeTests.swift */,
 			F87200000000000000000003 /* TerminalAppearanceManualModeTests.swift */,
+			F87200000000000000000004 /* TerminalFontSizeControllerTests.swift */,
+			F87200000000000000000005 /* TerminalFontResizeTests.swift */,
 			U72000000000000000000001 /* LocalShellLauncherTests.swift */,
 			V72000000000000000000001 /* TerminalVS16WidthPolicyTests.swift */,
 			H72000000000000000000001 /* TerminalHighlightMatcherTests.swift */,
@@ -767,6 +779,7 @@
 			files = (
 				U10000000000000000000001 /* Assets.xcassets in Resources */,
 				T10000000000000000000002 /* Localizable.xcstrings in Resources */,
+				AB1000000000000000000001 /* ShellIntegration in Resources */,
 				J51000000000000000000001 /* JetBrainsMono-Regular.ttf in Resources */,
 				J51000000000000000000002 /* JetBrainsMono-Bold.ttf in Resources */,
 				J51000000000000000000003 /* JetBrainsMono-Italic.ttf in Resources */,
@@ -812,7 +825,8 @@
 				J61000000000000000000003 /* TerminalAppearanceCoordinator.swift in Sources */,
 			F81000000000000000000001 /* AppAppearanceMode.swift in Sources */,
 			F81000000000000000000002 /* AppAppearanceController.swift in Sources */,
-				H61000000000000000000001 /* TerminalHighlightRule.swift in Sources */,
+			F81000000000000000000003 /* TerminalFontSizeController.swift in Sources */,
+			H61000000000000000000001 /* TerminalHighlightRule.swift in Sources */,
 				H61000000000000000000002 /* TerminalHighlightMatcher.swift in Sources */,
 				H61000000000000000000003 /* TerminalHighlightPalette.swift in Sources */,
 				H61000000000000000000004 /* TerminalHighlightProviderImpl.swift in Sources */,
@@ -898,7 +912,9 @@
 			F87100000000000000000001 /* AppAppearanceControllerTests.swift in Sources */,
 			F87100000000000000000002 /* AppAppearanceModeTests.swift in Sources */,
 			F87100000000000000000003 /* TerminalAppearanceManualModeTests.swift in Sources */,
-				U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */,
+			F87100000000000000000004 /* TerminalFontSizeControllerTests.swift in Sources */,
+			F87100000000000000000005 /* TerminalFontResizeTests.swift in Sources */,
+			U71000000000000000000001 /* LocalShellLauncherTests.swift in Sources */,
 				V71000000000000000000001 /* TerminalVS16WidthPolicyTests.swift in Sources */,
 				H71000000000000000000001 /* TerminalHighlightMatcherTests.swift in Sources */,
 				H71000000000000000000002 /* TerminalHighlightStoreTests.swift in Sources */,
@@ -929,7 +945,7 @@
 			repositoryURL = "https://github.com/canbyte0/SwiftTerm.git";
 			requirement = {
 				kind = revision;
-				revision = 771e79f092a26e7fba7af0ab2b09a2bf10213109;
+				revision = 40d473b1fdb456d49cc04b7f253277fcb9ac3987;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

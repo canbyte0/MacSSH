@@ -104,7 +104,7 @@ SwiftTerm (SwiftPM dependency)
                         was). No MacSSH names / UserDefaults / Rule model in
                         SwiftTerm.
 
-  Phase 7 patch (parent = Phase 6 patch; current production revision):
+  Phase 7 patch (parent = Phase 6 patch):
     Patch branch      : macssh-public-paste-api
     Patch revision    : 771e79f092a26e7fba7af0ab2b09a2bf10213109
     Patch diff file   : Docs/swiftterm-paste-patch.diff
@@ -122,7 +122,44 @@ SwiftTerm (SwiftPM dependency)
                         names / SavedCommand / UserDefaults / SwiftData in
                         SwiftTerm.
 
-  Production revision: 771e79f092a26e7fba7af0ab2b09a2bf10213109 (Phase 7)
+  Phase 9D patch (parent = Phase 7 patch; current production revision):
+    Patch branch      : macssh-vs16-one-cell-render-fit
+    Patch revision    : 40d473b1fdb456d49cc04b7f253277fcb9ac3987
+    Purpose           : Presentation-only uniform-fit for single-cell fallback
+                        glyphs whose ink overflows the logical cell (e.g. an
+                        Apple Color Emoji glyph shaped for a width-1 ⚠️/❤️
+                        cell under preserveBaseWidth). Extends the shared
+                        TerminalView.glyphSlotFit(font:glyph:columnWidth:)
+                        entry point (consumed by BOTH the CoreGraphics and
+                        Metal renderers) and a file-level bounded (1024)
+                        glyphFitCache keyed by (fontID, glyph, columnWidth,
+                        cellWidth, cellHeight) to width-1 fallback runs whose
+                        ink is wider/taller than the cell. Uniform scale
+                        (scaleX == scaleY, clamped <= 1, never upscaled),
+                        advance/ink center, metrics-driven predicate (never
+                        Unicode code-point or font-size checks). A base-font
+                        family guard (isBaseFont) recognizes all four FontSet
+                        members (normal/bold/italic/boldItalic) so styled
+                        ASCII stays identity (regression from the baseline
+                        columnWidth >= 2 gate restored). Does NOT touch the
+                        Terminal parser, VariationSelector16WidthPolicy,
+                        preserveBaseWidth semantics, buffer model, cursor
+                        column, PTY bytes, bracketed-paste bytes, highlight
+                        background geometry, or selection. Independent Fork
+                        Re-Acceptance PASS (Docs/Phase9D-B2-Independent-Fork-
+                        Re-Acceptance.md); first-round FAIL (ded302c) preserved
+                        in Docs/Phase9D-B-Independent-Fork-Acceptance.md.
+                        Phase 9D-D (parent 93abf601): the CoreGraphics
+                        single-cell fitted branch now draws the ORIGINAL
+                        CTFont under a local saveGState/translate/scale
+                        transform instead of a scaled CTFont copy — sbix
+                        (Apple Color Emoji) bitmap strike re-selection made
+                        the copy's ink non-linear in point size, leaving a
+                        +2.0~3.0pt cell overflow at 18-32pt. Wide
+                        (columnWidth >= 2) path unchanged. Independent Fork
+                        Acceptance ACCEPT (0 P1 / 0 P2).
+
+  Production revision: 40d473b1fdb456d49cc04b7f253277fcb9ac3987 (Phase 9D)
   Production dependency: remote SwiftPM source-control (exact immutable
                         revision; NOT branch/floating/version-range)
   Local dev checkout: ThirdParty/SwiftTerm-fork (optional local development

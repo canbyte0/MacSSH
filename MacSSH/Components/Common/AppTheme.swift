@@ -1,10 +1,18 @@
+import AppKit
 import CoreGraphics
 import SwiftUI
 
-/// 应用基础视觉令牌，全部使用系统动态颜色以自动适配明暗模式。
+/// 应用基础视觉令牌，使用动态颜色自动适配明暗模式。
 enum AppTheme {
-    /// 应用的克制强调色；使用 SwiftUI 系统颜色，不绑定固定色值。
-    static var accentColor: Color { .teal }
+    /// 浅色主题采用已确认的深灰 #4A4A4A，深色主题保留原来的系统青色。
+    /// 由实际渲染外观解析颜色，不缓存当前主题；跟随系统和手动切换均能刷新。
+    /// 仅替换应用强调色，不修改系统亮蓝导航图标或终端 ANSI 调色板。
+    static let accentColor = Color(nsColor: NSColor(name: nil) { appearance in
+        if appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua {
+            return .systemTeal
+        }
+        return NSColor(srgbRed: 74.0 / 255, green: 74.0 / 255, blue: 74.0 / 255, alpha: 1)
+    })
 
     /// 主窗口尺寸令牌。
     enum Window {

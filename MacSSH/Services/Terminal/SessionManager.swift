@@ -58,6 +58,15 @@ final class SessionManager {
     /// 与 `terminalAppearanceCoordinator` 同位置（避免遗漏初始 Tab）。
     weak var terminalHighlightCoordinator: TerminalHighlightCoordinator?
 
+    /// MacSSH 1.1 Phase 9：终端字号控制器，由 AppState 装配注入（弱引用：
+    /// controller 由 AppState 强持有，本 Manager 仅持有弱引用，无引用环）。
+    /// Local / Remote 创建路径在此调用 `register`，与
+    /// `terminalAppearanceCoordinator` / `terminalHighlightCoordinator`
+    /// 同位置（避免遗漏初始 Tab）。Reconnect reattach 复用现有 TerminalView
+    /// （已注册过），不需 register。
+    @ObservationIgnored
+    weak var terminalFontSizeController: TerminalFontSizeController?
+
     init(sshService: SSHService) {
         self.sshService = sshService
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
@@ -130,6 +139,10 @@ final class SessionManager {
         terminalAppearanceCoordinator?.register(service.terminalView)
         // MacSSH 1.1 Phase 6：同一注册点挂接高亮 provider，新 Tab 立即生效。
         terminalHighlightCoordinator?.register(service.terminalView)
+        // MacSSH 1.1 Phase 9：同一注册点挂接字号 controller，新 Tab 立即应用
+        // 当前字号（在 SwiftUI 插入 view 前同步设置 view.font，首帧即请求
+        // 字号，无 14→18 闪烁）。
+        terminalFontSizeController?.register(service.terminalView)
         AppLogger.app.info("Local terminal session created")
         return session
     }
@@ -448,6 +461,9 @@ final class SessionManager {
                     // MacSSH 1.1 Phase 6：Remote 同样启用高亮——matcher 只看
                     // BufferLine 文本，与连接类型无关（Phase 6A 已证）。
                     terminalHighlightCoordinator?.register(service.terminalView)
+                    // MacSSH 1.1 Phase 9：Remote 同样应用当前字号——
+                    // Local / Remote 在 font 构造与注册上完全同源。
+                    terminalFontSizeController?.register(service.terminalView)
                     service.startIfNeeded()
                 }
 

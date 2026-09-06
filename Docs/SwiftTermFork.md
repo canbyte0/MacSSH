@@ -178,22 +178,70 @@ public func pasteText(_ text: String)
 - 不改默认键盘 / paste 行为；
 - 不升级到 upstream main / 2.0。
 
-## 7. 依赖可复现性（远端 fork）
+## 7. Phase 9D patch 内容（VS16 1-cell uniform-fit renderer remediation）
+
+Phase 9D 在 Phase 7 patch 之上新增第四个原子 patch（branch
+`macssh-vs16-one-cell-render-fit`，两个 commit：`93abf601` uniform-fit →
+`40d473b1` draw-time scale）。修复大字号下 Apple Color Emoji 按 width-1
+fallback 渲染时 ink 溢出 logical cell 的真实像素缺陷（Phase 9 真实 GUI 曾
+观察 24pt ≈ +3.0pt、32pt ≈ +2~2.5pt 邻格侵入）。
+
+### 新 API
+
+```swift
+// AppleTerminalView（CoreGraphics 与 Metal renderer 共用入口）
+public func glyphSlotFit(font: CTFont, glyph: CGGlyph, columnWidth: Int) -> ...
+// + file-level bounded glyphFitCache（上限 1024，key = fontID/glyph/
+//   columnWidth/cellWidth/cellHeight）
+```
+
+### 实现要点
+
+- 仅作用于 **width-1 fallback runs 且 ink 宽/高超过 cell** 的 glyph
+  （metrics-driven predicate，绝不按 Unicode code-point / 字号判断）。
+- uniform scale（scaleX == scaleY，clamp ≤ 1，绝不放大），advance/ink
+  居中；`isBaseFont` guard 覆盖 FontSet 全部四个成员
+  （normal/bold/italic/boldItalic），styled ASCII 保持 identity。
+- `40d473b1`（Phase 9D-D）：CoreGraphics 单 cell fitted 分支改用**原
+  CTFont + CGContext 局部 uniform transform**
+  （saveGState/translate/scale/restore），不再
+  `CTFontCreateCopyWithAttributes(size * scale)`——Apple Color Emoji
+  sbix bitmap strike 重选使拷贝字体的 ink 与 point size 非线性
+  （分段常量），拷贝路径在 18–32pt 仍残留 +2.0~3.0pt cell 溢出。
+  Wide（columnWidth ≥ 2）路径保持历史 reduced-point-size 拷贝不变。
+
+### 不做的事
+
+- 不触碰 Terminal parser、`VariationSelector16WidthPolicy`、
+  `preserveBaseWidth` 语义、buffer model、cursor column、PTY bytes、
+  bracketed-paste bytes、highlight background geometry、selection；
+- 不升级到 upstream main / 2.0。
+
+### 验收
+
+- 首轮独立 fork 验收 FAIL（ded302c，见
+  `Docs/Phase9D-B-VS16-Renderer-Remediation-Report.md`），修正后
+  `Docs/Phase9D-B2-Independent-Fork-Re-Acceptance.md` PASS；
+  Phase 9D-D 独立 fork 验收 ACCEPT（0 P1 / 0 P2）。
+- MacSSH 侧 Phase 9E pin 集成 + Phase 9E-R baseline 整改 + Phase 9F
+  真实 GUI 验收（14/24/32pt Local + Remote）FINAL PASS。
+
+## 8. 依赖可复现性（远端 fork）
 
 生产依赖已发布到 GitHub，SwiftPM 以 `remoteSourceControl` + exact revision
 方式引用。任意机器 `git clone` MacSSH 后，Xcode/SwiftPM 会自动从
 `https://github.com/canbyte0/SwiftTerm.git` 获取 commit
-`771e79f092a26e7fba7af0ab2b09a2bf10213109`，无需本地 fork 目录。
+`40d473b1fdb456d49cc04b7f253277fcb9ac3987`，无需本地 fork 目录。
 
 ```
 Xcode project reference:
   repositoryURL = "https://github.com/canbyte0/SwiftTerm.git"
-  requirement   = { kind = revision; revision = 771e79f... }
+  requirement   = { kind = revision; revision = 40d473b1... }
 
 Package.resolved:
   kind     = remoteSourceControl
   location = https://github.com/canbyte0/SwiftTerm.git
-  revision = 771e79f092a26e7fba7af0ab2b09a2bf10213109
+  revision = 40d473b1fdb456d49cc04b7f253277fcb9ac3987
 ```
 
 不使用 branch tracking 作为生产依赖 requirement——branch 仅用于 fork 上的
@@ -208,10 +256,10 @@ patch。它被 `.gitignore` 忽略，不进入 MacSSH repo，也不被生产依�
 ```sh
 git clone https://github.com/canbyte0/SwiftTerm.git ThirdParty/SwiftTerm-fork
 cd ThirdParty/SwiftTerm-fork
-git checkout 771e79f092a26e7fba7af0ab2b09a2bf10213109
+git checkout 40d473b1fdb456d49cc04b7f253277fcb9ac3987
 ```
 
-## 8. 测试覆盖
+## 9. 测试覆盖
 
 ### SwiftTerm fork 内
 
@@ -234,13 +282,22 @@ git checkout 771e79f092a26e7fba7af0ab2b09a2bf10213109
   - 不发送 Return（CR/LF）；empty text 行为；UTF-8 中文/Emoji；quotes byte-for-byte；
   - IME marked-text 清理（`hasMarkedText` true→false）；delegate 路径与键盘一致；
   - `EscapeSequences.cmdRet` 稳定 Return 字节契约。
-- SwiftTerm 完整套件：753 tests / 64 suites 全过（含 Phase 5 + Phase 6 + Phase 7 + upstream）。
+- Phase 9D（`Tests/SwiftTermTests/RasterContainmentTests.swift`）：
+  - 10–32pt 真实 CTFont 光栅 containment（单 cell fallback glyph ink 不越
+    logical cell；uniform scale 只缩不放）；
+  - styled ASCII（normal/bold/italic/boldItalic）identity 不缩放；
+  - wide（columnWidth ≥ 2）路径行为不变；
+  - 9D-D 原字体 + transform 绘制与拷贝字体路径的 ink 等价性回归。
+- SwiftTerm 完整套件：全过（含 Phase 5 + Phase 6 + Phase 7 + Phase 9D + upstream）。
 
 ### MacSSH 侧（`Tests/SSH/`）
 
 - `TerminalVS16WidthPolicyTests.swift`：Local/Remote VS16 端到端宽度行为；
 - `DependencyIdentityTests.swift`：Package.resolved 锁定当前生产 revision
-  （Phase 7 `771e79f...`）；不引用本地路径 / 上游；Phase 7 parent = Phase 6。
+  （Phase 9D `40d473b1...`）；不引用本地路径 / 上游；Phase 9D parent =
+  Phase 7（经 `93abf601`）。
+- Phase 9 新增：`TerminalFontSizeControllerTests` / `TerminalFontResizeTests`
+  （字号偏好、min/max/step、existing-session apply、PTY resize 链）。
 - Phase 6B 新增：`TerminalHighlightMatcherTests` /
   `TerminalHighlightStoreTests` / `TerminalHighlightCoordinatorTests`。
 - Phase 7B 新增（待集成运行）：`TerminalCommandDispatcherTests` /

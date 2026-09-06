@@ -19,6 +19,13 @@ final class AppState {
     /// Sidebar 当前选择的顶层页面。
     var selectedSection: AppSection = .terminal
 
+    /// 只影响新建本地 zsh 的粘贴高亮，不重启现有会话或修改 SSH。
+    var pasteHighlightEnabled: Bool {
+        didSet {
+            userDefaults.set(pasteHighlightEnabled, forKey: AppPreferenceKey.pasteHighlightEnabled)
+        }
+    }
+
     /// SSH 连接工厂与共享安全服务（Phase 5 引入，Phase 6 扩展安全验证，
     /// Phase 8 起不再按 Host 持有单一连接——连接由 SessionManager
     /// 代表各 Remote Session 持有）。
@@ -48,6 +55,17 @@ final class AppState {
     /// + `needsDisplay`），不重建任何 Runtime Session / Shell / SSH / PTY /
     /// TerminalView；规则持久化在 UserDefaults（与 `language` 同类偏好）。
     let terminalHighlightCoordinator: TerminalHighlightCoordinator
+
+    /// MacSSH 1.1 Phase 9：终端字号控制器，由本 App 层稳定对象持有。
+    /// 单一 writer（任务书 §46）：终端字号偏好读写只由本控制器进行；
+    /// SettingsView 减号/加号按钮绑定 `controller.size`，写入经 `didSet`
+    /// 持久化并 apply。font **无外部触发源**（无 KVO / 系统信号 /
+    /// `effectiveAppearance` 等价物），单一 writer 即单一 broadcaster——
+    /// 不需像 Appearance 那样拆出独立 Coordinator。apply 经 SwiftTerm
+    /// `font` public setter 内置 `resetFont()` → `computeFontDimensions` →
+    /// `resize` → `sizeChanged` → Local `setWinSize` ioctl TIOCSWINSZ / Remote
+    /// `resizeChannelPTY`，不重建任何 Runtime Session / Shell / SSH / PTY。
+    let terminalFontSizeController: TerminalFontSizeController
 
     /// 传输运行时（Phase 10）：由本 App 层稳定对象持有——切换页面 /
     /// 切换会话 / 关闭 Transfers 面板都不取消传输；关闭传输所属会话时
@@ -92,6 +110,7 @@ final class AppState {
     ) {
         self.userDefaults = userDefaults
         language = AppLanguage.load(from: userDefaults)
+        pasteHighlightEnabled = userDefaults.bool(forKey: AppPreferenceKey.pasteHighlightEnabled)
 
         let sshService = SSHService(modelContainer: modelContainer)
         self.sshService = sshService
@@ -119,6 +138,15 @@ final class AppState {
         let terminalHighlightCoordinator = TerminalHighlightCoordinator(userDefaults: userDefaults)
         self.terminalHighlightCoordinator = terminalHighlightCoordinator
 
+        // MacSSH 1.1 Phase 9：字号控制器须在 SessionManager 之前创建——
+        // SessionManager 构造时即创建首个 Local Session，由 AppState 在装配
+        // 完成后回填注册其 terminalView（与 Appearance / Highlight 同模式）。
+        // 此时 registry 为空，apply 的 terminal 刷新 no-op；request size
+        // 已就位（load 后 `size` 已是用户上次设置）。
+        // 单一 writer：只有本控制器读写 `terminalFontSize` 偏好。
+        let terminalFontSizeController = TerminalFontSizeController(userDefaults: userDefaults)
+        self.terminalFontSizeController = terminalFontSizeController
+
         let sessionManager = SessionManager(sshService: sshService)
         let transferManager = TransferManager()
         // 双向弱引用装配（两者均由本对象强持有，绝不形成引用环）。
@@ -126,6 +154,8 @@ final class AppState {
         sessionManager.transferManager = transferManager
         sessionManager.terminalAppearanceCoordinator = terminalAppearanceCoordinator
         sessionManager.terminalHighlightCoordinator = terminalHighlightCoordinator
+        // MacSSH 1.1 Phase 9：与 Appearance / Highlight 同模式注入 weak 引用。
+        sessionManager.terminalFontSizeController = terminalFontSizeController
         self.sessionManager = sessionManager
         self.transferManager = transferManager
 
@@ -176,6 +206,11 @@ final class AppState {
                 // MacSSH 1.1 Phase 6：同一回填点注册高亮 provider——初始
                 // Local Session 的高亮立即生效，不等首次 draw。
                 terminalHighlightCoordinator.register(terminalView)
+                // MacSSH 1.1 Phase 9：同一回填点注册字号 controller——初始
+                // Local Session 的字号立即应用（实际 SessionManager.createLocalSession
+                // 内已通过 weak controller 注册过，此处的 register 是冗余但
+                // 幂等的——与 Appearance / Highlight 同模式，保留对称）。
+                terminalFontSizeController.register(terminalView)
             }
         }
 

@@ -60,7 +60,11 @@ struct SavedCommandsSidebarView: View {
                 listView
             }
         )
-        .sheet(item: $sheet) { item in sheetContent(for: item) }
+        .sheet(item: $sheet) { item in
+            sheetContent(for: item)
+                // Sheet 显式使用应用语言，使动态标题、输入提示和校验文案与主界面一致。
+                .environment(\.locale, appState.language.locale)
+        }
         .accessibilityIdentifier("sidebar_right.saved_commands_content")
     }
 
@@ -112,6 +116,8 @@ struct SavedCommandsSidebarView: View {
                 Image(systemName: "plus")
                     .font(.system(size: 13))
             }
+            // 只保留加号；隐藏系统下拉箭头，仍使用原生 Menu 交互。
+            .menuIndicator(.hidden)
             .buttonStyle(AppInteractiveButtonStyle(
                 baseStyle: BorderlessButtonStyle(),
                 compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
@@ -172,7 +178,8 @@ struct SavedCommandsSidebarView: View {
             Group {
                 if !ungrouped.isEmpty {
                     Text("sidebar_right.ungrouped")
-                        .font(.caption)
+                        // 与历史说明、来源标注保持相同的辅助字号。
+                        .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                         .padding(.horizontal, AppTheme.Spacing.regular)
                         .padding(.vertical, AppTheme.Spacing.compact / 2)
@@ -286,7 +293,7 @@ private struct GroupSection: View {
             if sortedCommands.isEmpty {
                 // 空分组仍可见，显示简洁「暂无命令」占位（GUI Acceptance FAIL #1）。
                 Text("sidebar_right.group_empty")
-                    .font(.caption)
+                    .font(.system(size: 11))
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, AppTheme.Spacing.regular)
                     .padding(.vertical, AppTheme.Spacing.compact / 2)
@@ -370,6 +377,8 @@ private struct GroupSection: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
         }
+        // 所有分组菜单统一只显示省略号，不影响左侧 DisclosureGroup 展开箭头。
+        .menuIndicator(.hidden)
         .buttonStyle(AppInteractiveButtonStyle(
             baseStyle: BorderlessButtonStyle(),
             compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
@@ -391,7 +400,8 @@ private struct SavedCommandRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.compact) {
             Text(verbatim: command.command)
-                .font(.system(.callout, design: .monospaced))
+                // 与历史命令统一为 13 pt 终端字体（JetBrains Mono 级联），便于辨认路径和符号。
+                .font(Font(TerminalFontProvider.regularFont(size: 13)))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .textSelection(.enabled)
@@ -464,15 +474,21 @@ private struct CommandEditorSheet: View {
                 .font(.headline)
             TextField(L10n.string("sidebar_right.command_placeholder", defaultValue: "Command", locale: locale), text: $text)
                 .textFieldStyle(.roundedBorder)
-                .font(.system(.body, design: .monospaced))
+                // 命令编辑框与侧栏命令文本统一为 13 pt 终端字体（JetBrains Mono 级联）。
+                .font(Font(TerminalFontProvider.regularFont(size: 13)))
             if let err = validationError {
                 Text(verbatim: err).font(.caption).foregroundStyle(.red)
             }
             HStack {
-                Button("action.cancel", role: .cancel) { dismiss() }
-                Button("common.save") {
+                // 与标题使用相同的显式 Locale，避免原生按钮保留系统语言文案。
+                Button(role: .cancel) { dismiss() } label: {
+                    Text(verbatim: L10n.string("action.cancel", defaultValue: "Cancel", locale: locale))
+                }
+                Button {
                     onSave(text)
                     dismiss()
+                } label: {
+                    Text(verbatim: L10n.string("common.save", defaultValue: "Save", locale: locale))
                 }
                 .disabled(validationError != nil)
             }
@@ -532,10 +548,15 @@ private struct GroupEditorSheet: View {
                     .font(.caption).foregroundStyle(.red)
             }
             HStack {
-                Button("action.cancel", role: .cancel) { dismiss() }
-                Button("common.save") {
+                // 分组创建与重命名共用此处，按钮文案始终跟随应用语言。
+                Button(role: .cancel) { dismiss() } label: {
+                    Text(verbatim: L10n.string("action.cancel", defaultValue: "Cancel", locale: locale))
+                }
+                Button {
                     onSave(name)
                     dismiss()
+                } label: {
+                    Text(verbatim: L10n.string("common.save", defaultValue: "Save", locale: locale))
                 }
                 .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

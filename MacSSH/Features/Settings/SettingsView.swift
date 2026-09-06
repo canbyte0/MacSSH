@@ -27,6 +27,7 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var appState = appState
         @Bindable var appearanceController = appState.appearanceController
+        @Bindable var fontSizeController = appState.terminalFontSizeController
 
         Form {
             Section("settings.section.general") {
@@ -52,12 +53,55 @@ struct SettingsView: View {
                 LabeledContent("settings.font") {
                     Text(verbatim: "JetBrains Mono")
                 }
+                // MacSSH 1.1 Phase 9：终端字号可配置（任务书 §46）。
+                // 采用紧凑 −/+ 方块按钮 + 中间当前字号（用户在 Phase 9B UI
+                // Preview Gate 选定方案 A）。10 pt 时减号 disabled，32 pt 时
+                // 加号 disabled，避免越界；不允许直接编辑文字。绑定
+                // `$fontSizeController.size`（单一 source of truth），
+                // 写入经 `size.didSet` 同步 persist + apply（广播全部已注册
+                // TerminalView，SwiftTerm font setter 内置 resetFont → resize
+                // → sizeChanged → Local setWinSize / Remote resizeChannelPTY，
+                // 不重建任何 Runtime Session）。
                 LabeledContent("settings.font_size") {
-                    Text("settings.font_size_value")
+                    HStack(spacing: 6) {
+                        Button {
+                            fontSizeController.decrement()
+                        } label: {
+                            Image(systemName: "minus")
+                                .frame(width: 12, height: 12)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(fontSizeController.size <= TerminalFontSizeController.minSize)
+                        .accessibilityIdentifier("settings.fontSizeDecrement")
+
+                        Text("\(fontSizeController.size) pt")
+                            .monospacedDigit()
+                            .frame(minWidth: 50, alignment: .center)
+                            .accessibilityIdentifier("settings.fontSizeValue")
+
+                        Button {
+                            fontSizeController.increment()
+                        } label: {
+                            Image(systemName: "plus")
+                                .frame(width: 12, height: 12)
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
+                        .disabled(fontSizeController.size >= TerminalFontSizeController.maxSize)
+                        .accessibilityIdentifier("settings.fontSizeIncrement")
+                    }
                 }
                 LabeledContent("settings.scrollback") {
                     Text("settings.scrollback_value")
                 }
+                // 原生开关：只配置下一次 zsh 启动，不向当前命令行注入命令。
+                Toggle("settings.paste_highlight", isOn: $appState.pasteHighlightEnabled)
+                    .toggleStyle(.switch)
+                    .accessibilityIdentifier("settings.pasteHighlight")
+                Text("settings.paste_highlight_help")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
                 // MacSSH 1.1 Phase 6：终端字符串高亮子区块（与现有只读占位
                 // 共存于同一 Section；规则 CRUD 经 Store 触发 Coordinator
                 // 广播重绘，不重建任何 Runtime Session）。

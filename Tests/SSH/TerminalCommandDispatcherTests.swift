@@ -99,12 +99,16 @@ final class TerminalCommandDispatcherTests: XCTestCase {
 
     @MainActor
     func testHistoryReplayAppendsNewEntry() {
+        // 2026-09-05 授权的去重语义：replay 相同 command 不新增重复行，
+        // history count 保持 1，该行刷新时间戳并保持在最顶部，
+        // source 快照更新为最近一次执行的来源。
         let (dispatcher, _) = makeDispatcher(mock: MockInputTarget())
         dispatcher.execute(command: "ls", source: .savedCommand)
         dispatcher.execute(command: "ls", source: .historyReplay)
         let entries = dispatcher.historyStore.recentEntries()
-        XCTAssertEqual(entries.count, 2, "History replay 应再新增一条")
-        // recentEntries 按 executedAt 降序（newest first）；replay 是最新一条。
+        XCTAssertEqual(entries.count, 1, "History replay 相同命令不应产生重复条目")
+        XCTAssertEqual(entries.first?.command, "ls")
+        // recentEntries 按 executedAt 降序（newest first）；replay 后仍置顶。
         XCTAssertEqual(entries.first?.source, "historyReplay")
     }
 

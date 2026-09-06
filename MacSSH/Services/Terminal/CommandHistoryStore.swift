@@ -11,6 +11,8 @@ import SwiftData
 ///
 /// 职责（任务书 §39 / Phase 7A 验收）：
 /// - append（仅在 historyEnabled 且 Execute 成功发送后调用）；
+/// - dedupe（2026-09-05 用户授权行为变更）：相同 command 文本只保留一条，
+///   再次执行时刷新该行时间戳与快照，按 executedAt 倒序自然置顶；
 /// - query（按 executedAt 倒序）；
 /// - scope（全局 / 按 session，Phase 7A 默认全局）；
 /// - retention（全局上限 1000，超限 prune 最旧，deterministic）；
@@ -55,6 +57,7 @@ final class CommandHistoryStore {
         } else {
             self.historyEnabled = userDefaults.bool(forKey: Self.historyEnabledKey)
         }
+        dedupeExistingEntries()
     }
 
     // MARK: - append
@@ -82,15 +85,34 @@ final class CommandHistoryStore {
             return // 用户关闭历史记录：不写。
         }
         let context = modelContainer.mainContext
-        let entry = CommandHistoryEntry(
-            command: command,
-            executedAt: .now,
-            sessionID: sessionID,
-            sessionKind: sessionKind,
-            hostDisplayName: hostDisplayName,
-            source: source
+        // 去重语义（2026-09-05 用户授权行为变更）：相同 command 文本（精确匹配，
+        // 不做 trim/规范化）只保留一条。再次执行时刷新该行时间戳与快照，
+        // 视图按 executedAt 倒序自然置顶，不产生重复行。
+        let duplicateDescriptor = FetchDescriptor<CommandHistoryEntry>(
+            predicate: #Predicate { $0.command == command }
         )
-        context.insert(entry)
+        let duplicates = (try? context.fetch(duplicateDescriptor)) ?? []
+        if let kept = Self.newestEntry(of: duplicates) {
+            kept.executedAt = .now
+            kept.sessionID = sessionID
+            kept.sessionKind = sessionKind
+            kept.hostDisplayName = hostDisplayName
+            kept.source = source
+            // 防御：理论上经 init 合并后不会有多条；若存在则合并为一条。
+            for extra in duplicates where extra !== kept {
+                context.delete(extra)
+            }
+        } else {
+            let entry = CommandHistoryEntry(
+                command: command,
+                executedAt: .now,
+                sessionID: sessionID,
+                sessionKind: sessionKind,
+                hostDisplayName: hostDisplayName,
+                source: source
+            )
+            context.insert(entry)
+        }
         do {
             try saveAction(context)
         } catch {
@@ -146,6 +168,48 @@ final class CommandHistoryStore {
         } catch {
             context.rollback()
             AppLogger.app.error("Command history clear failed (persistence)")
+        }
+    }
+
+    // MARK: - dedupe
+
+    /// deterministic「保留哪条」规则：executedAt 最新；并列时 id.uuidString 最小。
+    static func newestEntry(of entries: [CommandHistoryEntry]) -> CommandHistoryEntry? {
+        entries.max { lhs, rhs in
+            if lhs.executedAt != rhs.executedAt {
+                return lhs.executedAt < rhs.executedAt
+            }
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
+    /// 一次性合并去重语义引入（2026-09-05）之前已存在的存量重复行。
+    /// 每条 command 只保留最新一条；store 每次初始化时执行（上限 1000 行，开销可忽略），
+    /// upsert 保证之后不再产生重复，因此本方法通常是无操作的。
+    private func dedupeExistingEntries() {
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<CommandHistoryEntry>()
+        guard let all = try? context.fetch(descriptor) else {
+            return
+        }
+        var byCommand: [String: [CommandHistoryEntry]] = [:]
+        for entry in all {
+            byCommand[entry.command, default: []].append(entry)
+        }
+        var didDelete = false
+        for (_, group) in byCommand where group.count > 1 {
+            guard let kept = Self.newestEntry(of: group) else { continue }
+            for extra in group where extra !== kept {
+                context.delete(extra)
+                didDelete = true
+            }
+        }
+        guard didDelete else { return }
+        do {
+            try saveAction(context)
+        } catch {
+            context.rollback()
+            AppLogger.app.error("Command history dedupe migration failed (persistence)")
         }
     }
 

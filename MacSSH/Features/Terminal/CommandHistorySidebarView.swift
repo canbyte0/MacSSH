@@ -91,14 +91,14 @@ struct CommandHistorySidebarView: View {
     // MARK: - Fixed disclosure banner (always visible)
 
     /// 顶部常显的简短 disclosure（修复 P3：原仅在 empty state 显示）。
-    /// 复用 `sidebar_right.history_disclosure` 双语文案，footnote + secondary。
+    /// 复用双语文案，使用 11 pt 系统常规字体提高辅助文字可读性。
     private var disclosureBanner: some View {
         Text(verbatim: L10n.string(
             "sidebar_right.history_disclosure",
             defaultValue: "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded.",
             locale: locale
         ))
-        .font(.caption2)
+        .font(.system(size: 11))
         .foregroundStyle(.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, AppTheme.Spacing.regular)
@@ -131,13 +131,16 @@ private struct HistoryRow: View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.compact) {
             VStack(alignment: .leading, spacing: 2) {
                 Text(verbatim: entry.command)
-                    .font(.system(.callout, design: .monospaced))
+                    // 历史与常用命令统一使用 13 pt 终端字体（JetBrains Mono 级联，
+                    // 中文回落 PingFang SC、Emoji 回落 Apple Color Emoji）。
+                    .font(Font(TerminalFontProvider.regularFont(size: 13)))
                     .lineLimit(2)
                     .truncationMode(.middle)
                     .textSelection(.enabled)
 
                 Text(verbatim: sourceLabel)
-                    .font(.caption2)
+                    // 来源属于辅助文字，统一使用 11 pt 常规字重。
+                    .font(.system(size: 11))
                     .foregroundStyle(.tertiary)
             }
 

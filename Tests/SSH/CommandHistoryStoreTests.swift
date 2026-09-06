@@ -60,9 +60,77 @@ final class CommandHistoryStoreTests: XCTestCase {
     }
 
     func testReplayAppend() {
+        // 2026-09-05 去重语义：replay 相同命令不再新增重复行，
+        // 而是刷新该行时间戳与 source 快照，使其保持最新并置顶。
         store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
         store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "historyReplay")
-        XCTAssertEqual(store.recentEntries().count, 2, "History replay 应再新增一条")
+        let entries = store.recentEntries()
+        XCTAssertEqual(entries.count, 1, "History replay 相同命令不应再新增重复行")
+        XCTAssertEqual(entries.first?.source, "historyReplay", "source 快照应刷新为最近一次执行")
+    }
+
+    // MARK: - dedupe（2026-09-05 用户授权行为变更）
+
+    func testAppendDuplicateKeepsSingleEntryWithLatestSnapshot() {
+        let firstSession = UUID()
+        let secondSession = UUID()
+        store.append(command: "git status", sessionID: firstSession, sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "git status", sessionID: secondSession, sessionKind: "remoteSSH", hostDisplayName: "web-01", source: "historyReplay")
+        let entries = store.recentEntries()
+        XCTAssertEqual(entries.count, 1, "相同 command 只应保留一条")
+        XCTAssertEqual(entries.first?.sessionID, secondSession, "sessionID 快照应刷新为最近一次执行")
+        XCTAssertEqual(entries.first?.sessionKind, "remoteSSH")
+        XCTAssertEqual(entries.first?.hostDisplayName, "web-01")
+    }
+
+    func testAppendDuplicateMovesToTop() {
+        store.append(command: "aaa", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "bbb", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "ccc", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "aaa", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        let commands = store.recentEntries().map { $0.command }
+        XCTAssertEqual(commands.count, 3, "重复命令不应新增行")
+        XCTAssertEqual(commands.first, "aaa", "重复执行的命令应置顶到第一个")
+        XCTAssertEqual(Set(commands).count, 3, "列表中不应存在重复 command")
+    }
+
+    func testInitMergesPreExistingDuplicates() throws {
+        // 绕过 store 直接向容器插入重复行，模拟去重语义引入前的存量数据。
+        let context = container.mainContext
+        let old = CommandHistoryEntry(
+            command: "pwd",
+            executedAt: Date(timeIntervalSince1970: 1000),
+            sessionID: UUID(),
+            sessionKind: "local",
+            hostDisplayName: nil,
+            source: "savedCommand"
+        )
+        let newer = CommandHistoryEntry(
+            command: "pwd",
+            executedAt: Date(timeIntervalSince1970: 2000),
+            sessionID: UUID(),
+            sessionKind: "remoteSSH",
+            hostDisplayName: "nas",
+            source: "historyReplay"
+        )
+        context.insert(old)
+        context.insert(newer)
+        try context.save()
+
+        // 新 store 初始化时应合并存量重复，保留 executedAt 最新的一条。
+        let freshDefaults = UserDefaults(suiteName: "Merge-\(UUID().uuidString)")!
+        let freshStore = CommandHistoryStore(modelContainer: container, userDefaults: freshDefaults)
+        let entries = freshStore.recentEntries()
+        XCTAssertEqual(entries.count, 1, "存量重复应合并为一条")
+        XCTAssertEqual(entries.first?.id, newer.id, "应保留 executedAt 最新的一条")
+        XCTAssertEqual(entries.first?.hostDisplayName, "nas")
+    }
+
+    func testDifferentCommandsAreNotDeduplicated() {
+        store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "ls -la", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        store.append(command: "ls ", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
+        XCTAssertEqual(store.recentEntries().count, 3, "去重为精确匹配，不做 trim/规范化")
     }
 
     func testEntriesForSession() {

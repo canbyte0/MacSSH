@@ -76,6 +76,8 @@ enum LocalShellLauncher {
             accountShell: account?.shell,
             environmentShell: ProcessInfo.processInfo.environment["SHELL"],
             lang: systemLocaleLANG(),
+            pasteHighlightEnabled: UserDefaults.standard.bool(forKey: AppPreferenceKey.pasteHighlightEnabled),
+            zshIntegrationDirectory: Bundle.main.url(forResource: "ShellIntegration", withExtension: nil)?.path,
             isExecutable: { path in
                 path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path)
             }
@@ -154,6 +156,8 @@ enum LocalShellLauncher {
         accountShell: String?,
         environmentShell: String?,
         lang: String?,
+        pasteHighlightEnabled: Bool = true,
+        zshIntegrationDirectory: String? = nil,
         isExecutable: (String) -> Bool
     ) -> LocalShellLaunchConfiguration {
         let accountShellIsUsable = accountShell.map(isExecutable) ?? false
@@ -180,6 +184,15 @@ enum LocalShellLauncher {
         // 绝不回退到任何硬编码 locale。
         if let lang {
             environment.append("LANG=\(lang)")
+        }
+
+        // 仅关闭本地 zsh 的 paste 高亮；开启时完整保留 Shell 原生配置。
+        // Bundle 内的代理按原顺序读取用户配置并恢复 ZDOTDIR，不改写用户文件。
+        // 不触碰 bracketed paste、ZLE widget 或 SSH 的环境/数据通路。
+        if !pasteHighlightEnabled,
+           URL(fileURLWithPath: fallbackShell).lastPathComponent == "zsh",
+           let zshIntegrationDirectory {
+            environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
         }
 
         // 账户 Shell 可用且系统 login 在场 → 原生登录链。

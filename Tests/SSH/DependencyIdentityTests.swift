@@ -152,10 +152,12 @@ final class DependencyIdentityTests: XCTestCase {
     /// SwiftTerm fork 依赖身份 pin。SwiftTerm 不再直接引用上游
     /// `migueldeicaza/SwiftTerm`，也不使用本地 `ThirdParty/SwiftTerm-fork`
     /// 作为生产依赖来源。生产依赖是一个 MacSSH 维护的、发布到 GitHub 的远端
-    /// fork（remote SwiftPM source-control 依赖），其上有两个原子 patch：
+    /// fork（remote SwiftPM source-control 依赖），其上有以下原子 patch：
     ///   Phase 5：VS16 preserve-base-width 兼容（parent = upstream base）
     ///   Phase 6：TerminalHighlightProvider presentation decoration hook（parent = Phase 5）
-    /// 生产 revision 始终指向**最新** patch commit（当前为 Phase 6）。
+    ///   Phase 7：public pasteText API（parent = Phase 6）
+    ///   Phase 9D：VS16 1-cell uniform-fit renderer remediation（parent = Phase 7）
+    /// 生产 revision 始终指向**最新** patch commit（当前为 Phase 9D）。
     /// 这些值必须与 ThirdParty/MANIFEST.txt、Package.resolved 一致。
     private let swiftTermUpstreamBase = "464df5207fc2432e16c9a23abe538187196daf5f"
     private let swiftTermUpstreamTag = "v1.19.0"
@@ -166,11 +168,15 @@ final class DependencyIdentityTests: XCTestCase {
     /// Phase 6 patch（TerminalHighlightProvider）。
     private let swiftTermPhase6PatchRevision = "6e56e32e16eba0c3a5f534136da272679085f44c"
     private let swiftTermPhase6PatchBranch = "macssh-terminal-highlight-provider"
-    /// Phase 7 patch（public pasteText API）——当前生产 revision。
+    /// Phase 7 patch（public pasteText API）。
     private let swiftTermPhase7PatchRevision = "771e79f092a26e7fba7af0ab2b09a2bf10213109"
     private let swiftTermPhase7PatchBranch = "macssh-public-paste-api"
-    /// 生产 revision = 最新 patch（Phase 7）。
-    private var swiftTermPatchRevision: String { swiftTermPhase7PatchRevision }
+    /// Phase 9D patch（VS16 1-cell uniform-fit renderer remediation）——当前生产 revision。
+    /// Phase 9E pin 推进：9D-D draw-time CGContext scaling（parent = 93abf601）。
+    private let swiftTermPhase9DPatchRevision = "40d473b1fdb456d49cc04b7f253277fcb9ac3987"
+    private let swiftTermPhase9DPatchBranch = "macssh-vs16-one-cell-render-fit"
+    /// 生产 revision = 最新 patch（Phase 9D）。
+    private var swiftTermPatchRevision: String { swiftTermPhase9DPatchRevision }
 
     /// Package.resolved 的文件路径（与 Xcode 工作区共享的 resolved 文件）。
     private var packageResolvedURL: URL {
@@ -196,8 +202,8 @@ final class DependencyIdentityTests: XCTestCase {
     }
 
     /// Package.resolved 必须把 SwiftTerm 锁定到 MacSSH 远端 fork 的**当前生产
-    /// patch** revision（Phase 7：pasteText API），而不是本地路径、上游 base
-    /// 或 Phase 5/6 patch。SwiftPM identity 由 Package.swift 的 `name:`
+    /// patch** revision（Phase 9D：VS16 1-cell uniform-fit renderer），而不是本地路径、
+    /// 上游 base 或 Phase 5/6/7 patch。SwiftPM identity 由 Package.swift 的 `name:`
     /// 推导；远端 fork 的 identity 形如 "swiftterm"。
     func testPackageResolvedLocksSwiftTermToCurrentRemoteForkRevision() throws {
         let root = try loadPackageResolved()
@@ -210,7 +216,7 @@ final class DependencyIdentityTests: XCTestCase {
         XCTAssertEqual(
             state["revision"] as? String,
             swiftTermPatchRevision,
-            "Package.resolved 锁定的 SwiftTerm revision 不是当前生产 patch commit（Phase 7）"
+            "Package.resolved 锁定的 SwiftTerm revision 不是当前生产 patch commit（Phase 9D）"
         )
         // location 必须指向 GitHub 上的 MacSSH 维护 fork，而非本地路径或上游仓库。
         let location = try XCTUnwrap(pin["location"] as? String)
@@ -238,10 +244,11 @@ final class DependencyIdentityTests: XCTestCase {
     }
 
     /// 输出 SwiftTerm fork 身份摘要（upstream base / fork 远端 URL / Phase 5 + Phase 6
-    /// + Phase 7 patch revision / branch / upstream tag），供测试日志与验收报告引用，并校验各字段非空。
+    /// + Phase 7 + Phase 9D patch revision / branch / upstream tag），供测试日志与验收
+    /// 报告引用，并校验各字段非空且各 patch revision 互不相同。
     func testPrintSwiftTermForkIdentitySummary() {
         let summary = """
-        ---- MacSSH SwiftTerm fork identity (Phase 5 + Phase 6 + Phase 7) ----
+        ---- MacSSH SwiftTerm fork identity (Phase 5 + Phase 6 + Phase 7 + Phase 9D) ----
         upstream repository   : migueldeicaza/SwiftTerm
         upstream base         : \(swiftTermUpstreamBase) (\(swiftTermUpstreamTag))
         MacSSH fork remote    : \(swiftTermForkRepositoryURL)
@@ -250,7 +257,9 @@ final class DependencyIdentityTests: XCTestCase {
         Phase 6 patch branch  : \(swiftTermPhase6PatchBranch)
         Phase 6 patch revision: \(swiftTermPhase6PatchRevision)
         Phase 7 patch branch  : \(swiftTermPhase7PatchBranch)
-        Phase 7 patch revision: \(swiftTermPhase7PatchRevision)  (current production)
+        Phase 7 patch revision: \(swiftTermPhase7PatchRevision)
+        Phase 9D patch branch : \(swiftTermPhase9DPatchBranch)
+        Phase 9D patch revision: \(swiftTermPhase9DPatchRevision)  (current production)
         dependency type       : remote SwiftPM source-control (exact revision)
         ------------------------------------------------------------
         """
@@ -260,12 +269,15 @@ final class DependencyIdentityTests: XCTestCase {
         XCTAssertFalse(swiftTermPhase5PatchRevision.isEmpty)
         XCTAssertFalse(swiftTermPhase6PatchRevision.isEmpty)
         XCTAssertFalse(swiftTermPhase7PatchRevision.isEmpty)
+        XCTAssertFalse(swiftTermPhase9DPatchRevision.isEmpty)
         XCTAssertNotEqual(swiftTermUpstreamBase, swiftTermPhase5PatchRevision,
                           "upstream base 与 Phase 5 patch revision 不能相同")
         XCTAssertNotEqual(swiftTermPhase5PatchRevision, swiftTermPhase6PatchRevision,
                           "Phase 5 与 Phase 6 patch revision 不能相同（Phase 6 必须是 fork 上的新 commit）")
         XCTAssertNotEqual(swiftTermPhase6PatchRevision, swiftTermPhase7PatchRevision,
                           "Phase 6 与 Phase 7 patch revision 不能相同（Phase 7 必须是 fork 上的新 commit）")
+        XCTAssertNotEqual(swiftTermPhase7PatchRevision, swiftTermPhase9DPatchRevision,
+                          "Phase 7 与 Phase 9D patch revision 不能相同（Phase 9D 必须是 fork 上的新 commit）")
     }
 
     /// Phase 7 patch 必须以 Phase 6 patch 为 parent（不 squash、不 rebase 到 upstream）。
@@ -294,6 +306,35 @@ final class DependencyIdentityTests: XCTestCase {
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         XCTAssertEqual(parent, swiftTermPhase6PatchRevision,
                        "Phase 7 patch 的 parent 必须是 Phase 6 patch（不 squash / 不 rebase）")
+    }
+
+    /// Phase 9D patch（当前生产 revision）必须从 Phase 7 patch 谱系延伸
+    ///（不 squash、不 rebase 到 upstream）。Phase 9D 现为同分支多 commit 系列
+    ///（93abf601 → 40d473b1，Phase 9E 推进），因此断言 Phase 7 patch 是生产
+    /// revision 的**祖先**而非直接 parent。此处通过 Git 命令验证谱系关系；
+    /// 若 fork 本地 checkout 不可用则跳过（CI 环境可能无 ThirdParty/SwiftTerm-fork）。
+    func testPhase9DPatchParentIsPhase7Patch() throws {
+        let forkDir = URL(fileURLWithPath: projectDirectory)
+            .appendingPathComponent("ThirdParty/SwiftTerm-fork")
+        guard FileManager.default.fileExists(atPath: forkDir.path) else {
+            throw XCTSkip("ThirdParty/SwiftTerm-fork 本地 checkout 不存在，跳过 parent 关系验证")
+        }
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.currentDirectoryURL = forkDir
+        process.arguments = ["merge-base", "--is-ancestor",
+                             swiftTermPhase7PatchRevision,
+                             swiftTermPhase9DPatchRevision]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        try process.run()
+        process.waitUntilExit()
+        // exit 128 = git fatal（如浅克隆缺 commit），视为环境不可用而非断言失败。
+        guard process.terminationStatus != 128 else {
+            throw XCTSkip("git merge-base 失败，可能本地 checkout 无此 commit")
+        }
+        XCTAssertEqual(process.terminationStatus, 0,
+                       "Phase 7 patch 必须是生产 revision 的祖先（不 squash / 不 rebase 到 upstream）")
     }
 
     // MARK: - Helpers

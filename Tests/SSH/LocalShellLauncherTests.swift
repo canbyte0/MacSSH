@@ -1,6 +1,7 @@
 import Darwin
 import Foundation
 import SwiftTerm
+import SwiftData
 import XCTest
 
 @testable import MacSSH
@@ -32,6 +33,56 @@ final class LocalShellLauncherTests: XCTestCase {
     }
 
     // MARK: - 纯决策：登录链与回退矩阵
+
+    /// 独立偏好域验证默认关闭及重新创建 AppState 后的开关持久化。
+    func testPasteHighlightPreferencePersistsAcrossAppStateCreation() throws {
+        let suiteName = "MacSSH.PasteHighlightTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let initial = AppState(modelContainer: container, userDefaults: defaults)
+        XCTAssertFalse(initial.pasteHighlightEnabled)
+        initial.pasteHighlightEnabled = true
+        let reloaded = AppState(modelContainer: container, userDefaults: defaults)
+        XCTAssertTrue(reloaded.pasteHighlightEnabled)
+        reloaded.pasteHighlightEnabled = false
+        XCTAssertFalse(AppState(modelContainer: container, userDefaults: defaults).pasteHighlightEnabled)
+    }
+
+    /// 开关仅影响 zsh 启动环境；保留 login argv，不干预其他 Shell。
+    func testPasteHighlightIntegrationIsRestrictedToDisabledLocalZsh() {
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            for enabled in [false, true] {
+                let configuration = LocalShellLauncher.resolve(
+                    username: "tester", home: "/Users/tester",
+                    accountShell: shell, environmentShell: nil, lang: nil,
+                    pasteHighlightEnabled: enabled,
+                    zshIntegrationDirectory: "/Application With Spaces/ShellIntegration",
+                    isExecutable: { _ in true }
+                )
+                XCTAssertEqual(configuration.executable, "/usr/bin/login")
+                XCTAssertEqual(configuration.args, ["-p", "-f", "tester"])
+                XCTAssertEqual(
+                    configuration.environment.contains("ZDOTDIR=/Application With Spaces/ShellIntegration"),
+                    shell == "/bin/zsh" && !enabled
+                )
+            }
+        }
+    }
+
+    /// 资源缺失时不注入失效 ZDOTDIR，继续原生启动（打包另有资源检查）。
+    func testPasteHighlightMissingResourcesPreservesNativeStartup() {
+        let configuration = LocalShellLauncher.resolve(
+            username: "tester", home: "/Users/tester", accountShell: "/bin/zsh",
+            environmentShell: nil, lang: nil, pasteHighlightEnabled: false,
+            isExecutable: { _ in true }
+        )
+        XCTAssertFalse(configuration.environment.contains { $0.hasPrefix("ZDOTDIR=") })
+    }
 
     /// 账户 Shell 与 /usr/bin/login 均可用 → 系统登录链，
     /// argv 与 Terminal.app 实证一致（`login -p -f <user>`，
