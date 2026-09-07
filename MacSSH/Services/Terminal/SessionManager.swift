@@ -192,6 +192,14 @@ final class SessionManager {
         activateSession(id: sessions[index].id)
     }
 
+    /// 把粘贴高亮设置广播到全部已打开的 Local zsh；Remote Session 不参与。
+    /// 各 Local Service 通过独立控制 FIFO 通知 ZLE，不重建 Session / Shell / PTY。
+    func setPasteHighlightEnabledForLocalSessions(_ isEnabled: Bool) {
+        for session in sessions {
+            session.localService?.setPasteHighlightEnabled(isEnabled)
+        }
+    }
+
     // MARK: - 关闭
 
     /// UI 关闭入口（Tab 按钮 / ⌘W / Host Disconnect）：需要确认的

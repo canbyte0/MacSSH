@@ -2,6 +2,81 @@ import AppKit
 import Darwin
 import SwiftTerm
 
+/// 单个本地 zsh 会话的粘贴高亮控制通道。
+///
+/// App 通过仅当前用户可访问的命名管道发送 `1` / `0`；zsh 的 ZLE 文件描述符
+/// handler 在行编辑器内部读取并重绘当前输入行。整个过程不向 PTY 输入流注入
+/// 命令或按键，也不重启 Shell、不修改用户启动文件。
+final class PasteHighlightControlChannel {
+    /// 传给 ShellIntegration 的命名管道路径。
+    let fifoPath: String
+
+    /// App 端以读写、非阻塞方式持有管道：即使 zsh 尚未完成启动，也能先排队
+    /// 最新设置；`O_CLOEXEC` 防止 fork 后该 App 端描述符泄漏到登录链。
+    private var fileDescriptor: Int32 = -1
+    private let directoryURL: URL
+
+    init?(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default
+    ) {
+        directoryURL = temporaryDirectory.appendingPathComponent(
+            "MacSSH-paste-highlight-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let fifoURL = directoryURL.appendingPathComponent("control.fifo")
+        fifoPath = fifoURL.path
+
+        do {
+            try fileManager.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+        } catch {
+            return nil
+        }
+
+        guard mkfifo(fifoPath, mode_t(S_IRUSR | S_IWUSR)) == 0 else {
+            try? fileManager.removeItem(at: directoryURL)
+            return nil
+        }
+
+        fileDescriptor = open(fifoPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        guard fileDescriptor >= 0 else {
+            try? fileManager.removeItem(at: directoryURL)
+            return nil
+        }
+    }
+
+    deinit {
+        close()
+    }
+
+    /// 幂等关闭描述符并删除本会话创建的私有临时目录。
+    func close() {
+        if fileDescriptor >= 0 {
+            Darwin.close(fileDescriptor)
+            fileDescriptor = -1
+        }
+        // 目录由本对象创建且名称含随机 UUID，只清理本会话自己的控制通道。
+        try? FileManager.default.removeItem(at: directoryURL)
+    }
+
+    /// 把最新开关值写入 FIFO；两字节写入小于 `PIPE_BUF`，不会产生半条消息。
+    @discardableResult
+    func send(isEnabled: Bool) -> Bool {
+        guard fileDescriptor >= 0 else {
+            return false
+        }
+        let bytes: [UInt8] = isEnabled ? [49, 10] : [48, 10]
+        let written = bytes.withUnsafeBytes { buffer in
+            write(fileDescriptor, buffer.baseAddress, buffer.count)
+        }
+        return written == bytes.count
+    }
+}
+
 /// 管理 Phase 2 唯一本地 Shell、PTY 和 SwiftTerm View 的生命周期。
 @MainActor
 final class LocalTerminalService: NSObject {
@@ -16,6 +91,9 @@ final class LocalTerminalService: NSObject {
 
     /// 防止 SwiftUI 重建包装层时重复启动 Shell。
     private var hasStarted = false
+
+    /// 每个 Local Session 独立持有控制通道，关闭会话时随 Service 一并释放。
+    private var pasteHighlightControlChannel: PasteHighlightControlChannel?
 
     init(session: TerminalSession) {
         self.session = session
@@ -75,8 +153,13 @@ final class LocalTerminalService: NSObject {
 
         hasStarted = true
         session.processState = .starting
+        if URL(fileURLWithPath: session.shellPath).lastPathComponent == "zsh" {
+            pasteHighlightControlChannel = PasteHighlightControlChannel()
+        }
 
-        let configuration = LocalShellLauncher.makeConfiguration()
+        let configuration = LocalShellLauncher.makeConfiguration(
+            pasteHighlightControlPath: pasteHighlightControlChannel?.fifoPath
+        )
         switch configuration.strategy {
         case .systemLogin:
             AppLogger.terminal.info("Local terminal launching via system login chain")
@@ -99,6 +182,7 @@ final class LocalTerminalService: NSObject {
             session.processState = .running
             AppLogger.terminal.info("Local terminal started with account login shell")
         } else {
+            closePasteHighlightControlChannel()
             session.processState = .failedToStart
             AppLogger.terminal.error("Local terminal failed to start")
         }
@@ -119,6 +203,7 @@ final class LocalTerminalService: NSObject {
             return
         }
         terminalView.terminate()
+        closePasteHighlightControlChannel()
         AppLogger.terminal.info("Local terminal process termination requested")
 
         let pid = terminalView.process.shellPid
@@ -178,6 +263,30 @@ final class LocalTerminalService: NSObject {
             window.makeFirstResponder(terminalView)
         }
     }
+
+    /// 立即同步本会话的 zsh 粘贴高亮，不向 PTY 输入任何命令或按键。
+    func setPasteHighlightEnabled(_ isEnabled: Bool) {
+        // 尚未启动的会话会在 `startIfNeeded()` 中直接读取最新持久化值，
+        // 无需提前创建 FIFO 或排队消息。
+        guard hasStarted else {
+            return
+        }
+        // 本设置只定义本地 zsh 行编辑器行为；其他账户 Shell 保持原生。
+        guard URL(fileURLWithPath: session.shellPath).lastPathComponent == "zsh" else {
+            return
+        }
+        guard pasteHighlightControlChannel?.send(isEnabled: isEnabled) == true else {
+            AppLogger.terminal.warning("Local paste highlight runtime update unavailable")
+            return
+        }
+        AppLogger.terminal.info("Local paste highlight runtime setting updated")
+    }
+
+    /// 统一释放控制通道；进程启动失败、主动关闭和自然退出均调用。
+    private func closePasteHighlightControlChannel() {
+        pasteHighlightControlChannel?.close()
+        pasteHighlightControlChannel = nil
+    }
 }
 
 extension LocalTerminalService: LocalProcessTerminalViewDelegate {
@@ -211,6 +320,7 @@ extension LocalTerminalService: LocalProcessTerminalViewDelegate {
     /// 子进程结束回调可能来自 SwiftTerm 的后台 I/O 队列，统一切回主线程更新 UI 状态。
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
         Task { @MainActor [weak self] in
+            self?.closePasteHighlightControlChannel()
             self?.session.processState = .exited(exitCode)
             AppLogger.terminal.info("Local terminal process terminated")
         }

@@ -4469,3 +4469,33 @@ Debug/Release fresh clean build：BUILD SUCCEEDED，0 production warnings。
   为负载敏感 flaky（FD +3 偶发）：隔离复跑可通过，非确定性，未修改测试。
 
 - 未提交、未合并、未推送（Phase 9G 完成 commit 准备后等待用户授权）。
+
+## 2026-09-07：设置项「粘贴后高亮」立即生效修复（用户单独授权）
+
+- 根因：原实现只在新建本地 zsh 时读取开关，`AppState` 改动后仅持久化设置，
+  已打开的 Shell 没有接收更新，因此必须重启 App 或新建会话才能生效。
+- 每个本地 zsh 会话现使用权限为 `0700` 的私有临时目录和权限为 `0600` 的
+  命名管道接收 `1` / `0` 状态；App 不向 PTY 注入命令、文本或按键。
+- 随包 `.zshenv` 使用 zsh 原生 `zle -F` 监听状态，在同一个现有会话里只修改
+  `zle_highlight` 的 `paste:*` 项，并调用 `zle -R` 重绘当前输入行；开启恢复
+  Shell 原有粘贴样式，关闭设为 `paste:none`，其他高亮项保持不变。
+- 管道双方打开后立即移除文件系统路径；会话结束或启动失败时关闭 App 侧描述符，
+  避免运行时临时文件残留。仅处理本地 zsh，不影响 bash、SSH、SFTP、用户配置、
+  bracketed paste、安全粘贴保护或命令执行时机。
+- 设置说明同步更新为中英文，并明确“对所有本地 zsh 终端立即生效”。
+
+### 本轮验证
+
+- `Scripts/test-zsh-paste-highlighting.py`：**13/13 通过**。新增真实 PTY 测试，
+  在同一个 zsh 和同一段尚未执行的粘贴内容上验证开启 → 关闭 → 开启即时重绘；
+  同时确认未按 Return 前不会执行命令，私有管道路径会被清理。
+- XCTest：`LocalShellLauncherTests` + `LocalizationTests`，**45 pass / 0 skip /
+  0 failure**；覆盖运行时通道注入、状态写入顺序、zsh/bash 隔离和既有回归。
+- fresh Debug / Release arm64：**BUILD SUCCEEDED**，两种配置均为 **0 warning**；
+  Release App 中的 `.zshenv` 与源码一致，签名检查通过。
+- 实际 Debug App：在同一个已打开的本地 zsh 标签和同一段当前输入上，关闭后
+  反色立即消失、开启后立即恢复；测试文本已用 `Ctrl+C` 取消，未执行。最终将
+  “粘贴后高亮”恢复为关闭，未改动“自动高亮”。
+- `/Applications/MacSSH.app` 正式版未覆盖；仅退出本轮 Debug 测试进程，并清理
+  一个无人占用的旧测试 FIFO 临时目录。`git diff --check` 通过。
+- 未提交、未合并、未推送，未开始后续 Phase。

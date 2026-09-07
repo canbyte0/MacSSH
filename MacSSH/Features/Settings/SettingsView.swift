@@ -95,7 +95,8 @@ struct SettingsView: View {
                 LabeledContent("settings.scrollback") {
                     Text("settings.scrollback_value")
                 }
-                // 原生开关：只配置下一次 zsh 启动，不向当前命令行注入命令。
+                // 原生开关：经每个 Local Session 的控制 FIFO 立即同步到 zsh ZLE，
+                // 不向当前命令行注入命令，也不影响 Remote Session。
                 Toggle("settings.paste_highlight", isOn: $appState.pasteHighlightEnabled)
                     .toggleStyle(.switch)
                     .accessibilityIdentifier("settings.pasteHighlight")

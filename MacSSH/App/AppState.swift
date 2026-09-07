@@ -19,10 +19,12 @@ final class AppState {
     /// Sidebar 当前选择的顶层页面。
     var selectedSection: AppSection = .terminal
 
-    /// 只影响新建本地 zsh 的粘贴高亮，不重启现有会话或修改 SSH。
+    /// 影响全部本地 zsh 的粘贴高亮；持久化后通过 SessionManager 立即广播，
+    /// 不重启现有会话、不修改用户 Shell 配置，也不触碰 SSH。
     var pasteHighlightEnabled: Bool {
         didSet {
             userDefaults.set(pasteHighlightEnabled, forKey: AppPreferenceKey.pasteHighlightEnabled)
+            sessionManager.setPasteHighlightEnabledForLocalSessions(pasteHighlightEnabled)
         }
     }
 

@@ -68,7 +68,9 @@ enum LocalShellLauncher {
     static let systemLoginPath = "/usr/bin/login"
 
     /// 生产入口：读取当前账户与文件系统状态，决定启动链。
-    static func makeConfiguration() -> LocalShellLaunchConfiguration {
+    static func makeConfiguration(
+        pasteHighlightControlPath: String? = nil
+    ) -> LocalShellLaunchConfiguration {
         let account = LoginShellResolver.currentAccount()
         return resolve(
             username: account?.name ?? NSUserName(),
@@ -77,6 +79,7 @@ enum LocalShellLauncher {
             environmentShell: ProcessInfo.processInfo.environment["SHELL"],
             lang: systemLocaleLANG(),
             pasteHighlightEnabled: UserDefaults.standard.bool(forKey: AppPreferenceKey.pasteHighlightEnabled),
+            pasteHighlightControlPath: pasteHighlightControlPath,
             zshIntegrationDirectory: Bundle.main.url(forResource: "ShellIntegration", withExtension: nil)?.path,
             isExecutable: { path in
                 path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path)
@@ -157,6 +160,7 @@ enum LocalShellLauncher {
         environmentShell: String?,
         lang: String?,
         pasteHighlightEnabled: Bool = true,
+        pasteHighlightControlPath: String? = nil,
         zshIntegrationDirectory: String? = nil,
         isExecutable: (String) -> Bool
     ) -> LocalShellLaunchConfiguration {
@@ -186,13 +190,23 @@ enum LocalShellLauncher {
             environment.append("LANG=\(lang)")
         }
 
-        // 仅关闭本地 zsh 的 paste 高亮；开启时完整保留 Shell 原生配置。
-        // Bundle 内的代理按原顺序读取用户配置并恢复 ZDOTDIR，不改写用户文件。
-        // 不触碰 bracketed paste、ZLE widget 或 SSH 的环境/数据通路。
-        if !pasteHighlightEnabled,
-           URL(fileURLWithPath: fallbackShell).lastPathComponent == "zsh",
+        // 本地 zsh 通过 Bundle 内的单 `.zshenv` 代理保持原生启动顺序，并在
+        // ZLE 内监听每会话独立的控制 FIFO。开启和关闭均可实时更新现有输入行，
+        // 不向 PTY 注入命令、不改写用户文件、不影响 SSH 或 bracketed paste。
+        //
+        // 控制通道创建失败时保留旧的安全退路：关闭状态仍在新会话启动时应用
+        // `paste:none`；开启状态完全使用 Shell 原生配置。
+        if URL(fileURLWithPath: fallbackShell).lastPathComponent == "zsh",
            let zshIntegrationDirectory {
-            environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
+            if let pasteHighlightControlPath {
+                environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
+                environment.append(
+                    "MACSSH_PASTE_HIGHLIGHT_ENABLED=\(pasteHighlightEnabled ? "1" : "0")"
+                )
+                environment.append("MACSSH_PASTE_HIGHLIGHT_FIFO=\(pasteHighlightControlPath)")
+            } else if !pasteHighlightEnabled {
+                environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
+            }
         }
 
         // 账户 Shell 可用且系统 login 在场 → 原生登录链。

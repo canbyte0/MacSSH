@@ -266,7 +266,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("settings.scrollback", "Scrollback", "回滚行数"),
     ("settings.scrollback_value", "10000 lines", "10000 行"),
     ("settings.paste_highlight", "Highlight pasted text", "粘贴后高亮"),
-    ("settings.paste_highlight_help", "Applies to new local zsh terminals. When on, uses the shell's paste highlighting. Does not affect SSH or bracketed paste protection.", "对新建的本地 zsh 终端生效。开启时使用 Shell 自身的粘贴高亮，不影响 SSH 或安全粘贴保护。"),
+    ("settings.paste_highlight_help", "Applies immediately to all local zsh terminals. When on, uses the shell's paste highlighting. Does not affect SSH or bracketed paste protection.", "对所有本地 zsh 终端立即生效。开启时使用 Shell 自身的粘贴高亮，不影响 SSH 或安全粘贴保护。"),
     ("settings.mode", "Mode", "模式"),
     ("settings.connection_timeout", "Connection timeout", "连接超时"),
     ("settings.connection_timeout_value", "15 seconds", "15 秒"),

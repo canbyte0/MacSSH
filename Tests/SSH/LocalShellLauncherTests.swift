@@ -53,8 +53,8 @@ final class LocalShellLauncherTests: XCTestCase {
         XCTAssertFalse(AppState(modelContainer: container, userDefaults: defaults).pasteHighlightEnabled)
     }
 
-    /// 开关仅影响 zsh 启动环境；保留 login argv，不干预其他 Shell。
-    func testPasteHighlightIntegrationIsRestrictedToDisabledLocalZsh() {
+    /// 控制通道不可用时保留旧安全退路：仅关闭态 zsh 注入启动代理。
+    func testPasteHighlightFallbackIsRestrictedToDisabledLocalZsh() {
         for shell in ["/bin/zsh", "/bin/bash"] {
             for enabled in [false, true] {
                 let configuration = LocalShellLauncher.resolve(
@@ -72,6 +72,63 @@ final class LocalShellLauncherTests: XCTestCase {
                 )
             }
         }
+    }
+
+    /// 控制通道可用时，两种开关状态的 zsh 都装配运行时监听；bash 不装配。
+    func testPasteHighlightRuntimeControlIsRestrictedToLocalZsh() {
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            for enabled in [false, true] {
+                let configuration = LocalShellLauncher.resolve(
+                    username: "tester", home: "/Users/tester",
+                    accountShell: shell, environmentShell: nil, lang: nil,
+                    pasteHighlightEnabled: enabled,
+                    pasteHighlightControlPath: "/private/control.fifo",
+                    zshIntegrationDirectory: "/Application With Spaces/ShellIntegration",
+                    isExecutable: { _ in true }
+                )
+                let isZsh = shell == "/bin/zsh"
+                XCTAssertEqual(
+                    configuration.environment.contains("ZDOTDIR=/Application With Spaces/ShellIntegration"),
+                    isZsh
+                )
+                XCTAssertEqual(
+                    configuration.environment.contains("MACSSH_PASTE_HIGHLIGHT_FIFO=/private/control.fifo"),
+                    isZsh
+                )
+                XCTAssertEqual(
+                    configuration.environment.contains(
+                        "MACSSH_PASTE_HIGHLIGHT_ENABLED=\(enabled ? "1" : "0")"
+                    ),
+                    isZsh
+                )
+            }
+        }
+    }
+
+    /// App 端控制通道按顺序写入完整状态消息，供已打开 zsh 的 ZLE 读取。
+    func testPasteHighlightControlChannelQueuesStateMessages() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "MacSSH.PasteChannelTests.\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let channel = try XCTUnwrap(
+            PasteHighlightControlChannel(temporaryDirectory: temporaryDirectory)
+        )
+        defer { channel.close() }
+        let reader = open(channel.fifoPath, O_RDONLY | O_NONBLOCK)
+        XCTAssertGreaterThanOrEqual(reader, 0)
+        defer { close(reader) }
+
+        XCTAssertTrue(channel.send(isEnabled: true))
+        XCTAssertTrue(channel.send(isEnabled: false))
+
+        var bytes = [UInt8](repeating: 0, count: 4)
+        let count = read(reader, &bytes, bytes.count)
+        XCTAssertEqual(count, 4)
+        XCTAssertEqual(String(decoding: bytes, as: UTF8.self), "1\n0\n")
     }
 
     /// 资源缺失时不注入失效 ZDOTDIR，继续原生启动（打包另有资源检查）。

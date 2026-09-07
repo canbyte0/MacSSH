@@ -3781,13 +3781,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Applies to new local zsh terminals. When on, uses the shell's paste highlighting. Does not affect SSH or bracketed paste protection."
+            "value": "Applies immediately to all local zsh terminals. When on, uses the shell's paste highlighting. Does not affect SSH or bracketed paste protection."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "对新建的本地 zsh 终端生效。开启时使用 Shell 自身的粘贴高亮，不影响 SSH 或安全粘贴保护。"
+            "value": "对所有本地 zsh 终端立即生效。开启时使用 Shell 自身的粘贴高亮，不影响 SSH 或安全粘贴保护。"
           }
         }
       }
