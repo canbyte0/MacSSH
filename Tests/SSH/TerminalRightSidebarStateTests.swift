@@ -1,3 +1,4 @@
+import SwiftData
 import XCTest
 @testable import MacSSH
 
@@ -8,19 +9,78 @@ final class TerminalRightSidebarStateTests: XCTestCase {
     func testCommandSidebarTabRawValues() {
         XCTAssertEqual(CommandSidebarTab.history.rawValue, "history")
         XCTAssertEqual(CommandSidebarTab.savedCommands.rawValue, "savedCommands")
-        XCTAssertEqual(CommandSidebarTab.allCases.count, 2)
+        // MacSSH 1.1 Phase 10B：Agent tab。
+        XCTAssertEqual(CommandSidebarTab.agent.rawValue, "agent")
+        XCTAssertEqual(CommandSidebarTab.allCases.count, 3)
+        XCTAssertEqual(
+            CommandSidebarTab.allCases,
+            [.history, .savedCommands, .agent],
+            "CaseIterable 顺序：history → savedCommands → agent"
+        )
     }
 
     func testCommandSidebarTabSystemImages() {
         XCTAssertEqual(CommandSidebarTab.history.systemImage, "clock.arrow.circlepath")
         // savedCommands 用 command.square（Phase 7A 验收 §58）
         XCTAssertEqual(CommandSidebarTab.savedCommands.systemImage, "command.square")
+        // agent 用 sparkles（Phase 10B 任务书 §3，不引入自定义图片资产）
+        XCTAssertEqual(CommandSidebarTab.agent.systemImage, "sparkles")
     }
 
     func testTabRoundTripFromRawValue() {
         XCTAssertEqual(CommandSidebarTab(rawValue: "history"), .history)
         XCTAssertEqual(CommandSidebarTab(rawValue: "savedCommands"), .savedCommands)
+        XCTAssertEqual(CommandSidebarTab(rawValue: "agent"), .agent)
         XCTAssertNil(CommandSidebarTab(rawValue: "invalid"), "无效值应返回 nil")
+    }
+
+    /// Phase 10B 任务书 §30：agent tab 的 persisted raw value 可恢复。
+    @MainActor
+    func testPersistedAgentTabRestores() throws {
+        let appState = try makeAppState(storedTabRawValue: "agent")
+        XCTAssertEqual(appState.selectedRightSidebarTab, .agent)
+    }
+
+    /// Phase 10B 任务书 §30：invalid stored value 回落 history（既有行为回归）。
+    @MainActor
+    func testInvalidPersistedTabFallsBackToHistory() throws {
+        let appState = try makeAppState(storedTabRawValue: "bogus")
+        XCTAssertEqual(appState.selectedRightSidebarTab, .history)
+    }
+
+    /// Agent tab 的 localizedTitle 按 Locale 解析（不缓存、不泄漏 raw key）。
+    func testCommandSidebarTabLocalizedTitles() {
+        let zh = CommandSidebarTab.agent.localizedTitle(locale: AppLanguage.simplifiedChinese.locale)
+        let en = CommandSidebarTab.agent.localizedTitle(locale: AppLanguage.english.locale)
+        XCTAssertEqual(zh, "智能助手")
+        XCTAssertEqual(en, "Agent")
+        XCTAssertNotEqual(zh, CommandSidebarTab.agent.rawValue)
+
+        // 既有 tab 标题回归。
+        XCTAssertEqual(
+            CommandSidebarTab.history.localizedTitle(locale: AppLanguage.english.locale),
+            "History"
+        )
+        XCTAssertEqual(
+            CommandSidebarTab.savedCommands.localizedTitle(locale: AppLanguage.english.locale),
+            "Saved Commands"
+        )
+    }
+
+    /// 构造内存态 AppState（绝不动用户真实偏好 / 持久化存储），
+    /// 可注入已持久化的 rightSidebarTab raw value。
+    @MainActor
+    private func makeAppState(storedTabRawValue: String?) throws -> AppState {
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let suiteName = "MacSSH.TerminalRightSidebarStateTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        if let storedTabRawValue {
+            defaults.set(storedTabRawValue, forKey: AppPreferenceKey.rightSidebarTab)
+        }
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        return AppState(modelContainer: container, userDefaults: defaults)
     }
 
     func testAppPreferenceKeysExist() {

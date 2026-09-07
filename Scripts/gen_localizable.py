@@ -447,6 +447,22 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("sidebar_right.show", "Show Sidebar", "显示侧边栏"),
     ("sidebar_right.ungrouped", "Ungrouped", "未分组"),
     ("validation.highlight_text_required", "Highlight text is required", "请输入高亮文本"),
+
+    # ── Agent Sidebar / agent（MacSSH 1.1 Phase 10B）────────────────
+    ("agent.title", "Agent", "智能助手"),
+    ("agent.input.placeholder", "Ask Agent…", "向 Agent 提问…"),
+    ("agent.empty.title", "Ask about this terminal", "询问当前终端"),
+    ("agent.empty.subtitle", "Phase 10B uses a local mock responder.\nNo commands can be executed yet.", "Phase 10B 使用本地模拟回复。\n尚不能执行任何命令。"),
+    ("agent.context.local", "Local", "本地"),
+    ("agent.context.ssh", "SSH", "SSH"),
+    ("agent.context.unavailable", "Session unavailable", "会话不可用"),
+    ("agent.stop", "Stop", "停止"),
+    ("agent.send", "Send", "发送"),
+    ("agent.error.generic", "Unable to generate response.", "无法生成回复。"),
+    ("agent.error.no_session", "No active terminal session.", "没有可用的终端会话。"),
+    ("agent.role.user", "You", "我"),
+    ("agent.role.assistant", "Agent", "智能助手"),
+    ("agent.role.system", "System", "系统"),
 ]
 
 def build_catalog() -> dict:

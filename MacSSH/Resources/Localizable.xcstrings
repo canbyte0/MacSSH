@@ -426,6 +426,244 @@
         }
       }
     },
+    "agent.context.local": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地"
+          }
+        }
+      }
+    },
+    "agent.context.ssh": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "SSH"
+          }
+        }
+      }
+    },
+    "agent.context.unavailable": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Session unavailable"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "会话不可用"
+          }
+        }
+      }
+    },
+    "agent.empty.subtitle": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phase 10B uses a local mock responder.\nNo commands can be executed yet."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phase 10B 使用本地模拟回复。\n尚不能执行任何命令。"
+          }
+        }
+      }
+    },
+    "agent.empty.title": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask about this terminal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "询问当前终端"
+          }
+        }
+      }
+    },
+    "agent.error.generic": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Unable to generate response."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "无法生成回复。"
+          }
+        }
+      }
+    },
+    "agent.error.no_session": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No active terminal session."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "没有可用的终端会话。"
+          }
+        }
+      }
+    },
+    "agent.input.placeholder": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Ask Agent…"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向 Agent 提问…"
+          }
+        }
+      }
+    },
+    "agent.role.assistant": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能助手"
+          }
+        }
+      }
+    },
+    "agent.role.system": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "System"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "系统"
+          }
+        }
+      }
+    },
+    "agent.role.user": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "You"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "我"
+          }
+        }
+      }
+    },
+    "agent.send": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送"
+          }
+        }
+      }
+    },
+    "agent.stop": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Stop"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "停止"
+          }
+        }
+      }
+    },
+    "agent.title": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Agent"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能助手"
+          }
+        }
+      }
+    },
     "authentication.password": {
       "extractionState": "manual_uploaded",
       "localizations": {

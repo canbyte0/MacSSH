@@ -81,12 +81,8 @@ struct TerminalRightSidebarView: View {
                 : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
             value: isSelected
         )
-        .help(tab == .history
-              ? L10n.string("sidebar_right.history", defaultValue: "History", locale: locale)
-              : L10n.string("sidebar_right.saved_commands", defaultValue: "Saved Commands", locale: locale))
-        .accessibilityLabel(tab == .history
-                            ? L10n.string("sidebar_right.history", defaultValue: "History", locale: locale)
-                            : L10n.string("sidebar_right.saved_commands", defaultValue: "Saved Commands", locale: locale))
+        .help(tab.localizedTitle(locale: locale))
+        .accessibilityLabel(tab.localizedTitle(locale: locale))
         .accessibilityAddTraits(isSelected ? [.isSelected, .isButton] : .isButton)
         .accessibilityIdentifier("sidebar_right.tab.\(tab.rawValue)")
     }
@@ -100,6 +96,9 @@ struct TerminalRightSidebarView: View {
             CommandHistorySidebarView()
         case .savedCommands:
             SavedCommandsSidebarView()
+        case .agent:
+            // MacSSH 1.1 Phase 10B：Agent tab（UI Shell，mock provider，无网络/执行）。
+            AgentSidebarView()
         }
     }
 }

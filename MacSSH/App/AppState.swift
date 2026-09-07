@@ -86,6 +86,14 @@ final class AppState {
     /// 不缓存 stale target；disconnected → disable；成功 Execute 后 append history + 恢复焦点。
     let commandDispatcher: TerminalCommandDispatcher
 
+    /// MacSSH 1.1 Phase 10B：Agent 会话注册表（memory-only，per-terminal-session）。
+    /// 仅由 AppState 装配持有；Agent domain 不侵入 Terminal / SSH service。
+    let agentConversationStore: AgentConversationStore
+
+    /// MacSSH 1.1 Phase 10B：Agent Sidebar 视图模型（mock provider，无网络 / 无执行）。
+    /// 每次 action 实时读 SessionManager.activeSession，不缓存 stale target。
+    let agentViewModel: AgentViewModel
+
     /// MacSSH 1.1 Phase 7：右侧栏是否展开（UI preference，UserDefaults 持久化）。
     var isRightSidebarVisible: Bool {
         didSet {
@@ -175,6 +183,24 @@ final class AppState {
         self.savedCommandStore = savedCommandStore
         self.commandHistoryStore = commandHistoryStore
         self.commandDispatcher = commandDispatcher
+
+        // MacSSH 1.1 Phase 10B：Agent 装配（任务书 §9 最小集成）。
+        // AppState 持有 Store / ViewModel；具体 active session 由 ViewModel
+        // 经闭包实时解析（弱引用 SessionManager，Agent domain 不反向持有），
+        // SessionManager 完全不感知 Agent（不改 Terminal service）。
+        let agentConversationStore = AgentConversationStore()
+        let agentViewModel = AgentViewModel(
+            store: agentConversationStore,
+            provider: MockAgentProvider(),
+            activeSessionProvider: { [weak sessionManager] in
+                sessionManager?.activeSession
+            },
+            allSessionsProvider: { [weak sessionManager] in
+                sessionManager?.sessions ?? []
+            }
+        )
+        self.agentConversationStore = agentConversationStore
+        self.agentViewModel = agentViewModel
 
         // Phase 7 右侧栏 UI preference（UserDefaults 持久化，默认收起 + 默认 history tab）。
         if userDefaults.object(forKey: AppPreferenceKey.rightSidebarVisible) == nil {

@@ -82,6 +82,16 @@
 		A10000000000000000000026 /* TerminalRightSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000026 /* TerminalRightSidebarView.swift */; };
 		A10000000000000000000027 /* CommandHistorySidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000027 /* CommandHistorySidebarView.swift */; };
 		A10000000000000000000028 /* SavedCommandsSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000028 /* SavedCommandsSidebarView.swift */; };
+             XG10000000000000000000001 /* AgentSidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000001 /* AgentSidebarView.swift */; };
+             XG10000000000000000000002 /* AgentContextHeaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000002 /* AgentContextHeaderView.swift */; };
+             XG10000000000000000000003 /* AgentMessageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000003 /* AgentMessageView.swift */; };
+             XG10000000000000000000004 /* AgentMessage.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000004 /* AgentMessage.swift */; };
+             XG10000000000000000000005 /* AgentSessionContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000005 /* AgentSessionContext.swift */; };
+             XG10000000000000000000006 /* AgentConversation.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000006 /* AgentConversation.swift */; };
+             XG10000000000000000000007 /* AgentConversationStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000007 /* AgentConversationStore.swift */; };
+             XG10000000000000000000008 /* AgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000008 /* AgentProvider.swift */; };
+             XG10000000000000000000009 /* MockAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000009 /* MockAgentProvider.swift */; };
+             XG1000000000000000000000A /* AgentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000A /* AgentViewModel.swift */; };
 		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
 		D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000E /* HostKeyChangedDialogView.swift */; };
 		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
@@ -133,6 +143,8 @@
 		P71000000000000000000004 /* CommandHistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000004 /* CommandHistoryStoreTests.swift */; };
 		P71000000000000000000005 /* TerminalRightSidebarStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */; };
 		P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */; };
+             XG1000000000000000000000B /* AgentConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000B /* AgentConversationStoreTests.swift */; };
+             XG1000000000000000000000C /* AgentViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000C /* AgentViewModelTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -228,6 +240,16 @@
 		A20000000000000000000026 /* TerminalRightSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRightSidebarView.swift; sourceTree = "<group>"; };
 		A20000000000000000000027 /* CommandHistorySidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistorySidebarView.swift; sourceTree = "<group>"; };
 		A20000000000000000000028 /* SavedCommandsSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandsSidebarView.swift; sourceTree = "<group>"; };
+             XG20000000000000000000001 /* AgentSidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSidebarView.swift; sourceTree = "<group>"; };
+             XG20000000000000000000002 /* AgentContextHeaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentContextHeaderView.swift; sourceTree = "<group>"; };
+             XG20000000000000000000003 /* AgentMessageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMessageView.swift; sourceTree = "<group>"; };
+             XG20000000000000000000004 /* AgentMessage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentMessage.swift; sourceTree = "<group>"; };
+             XG20000000000000000000005 /* AgentSessionContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentSessionContext.swift; sourceTree = "<group>"; };
+             XG20000000000000000000006 /* AgentConversation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversation.swift; sourceTree = "<group>"; };
+             XG20000000000000000000007 /* AgentConversationStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationStore.swift; sourceTree = "<group>"; };
+             XG20000000000000000000008 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
+             XG20000000000000000000009 /* MockAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAgentProvider.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000A /* AgentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentViewModel.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
@@ -283,6 +305,8 @@
 		P72000000000000000000004 /* CommandHistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandHistoryStoreTests.swift; sourceTree = "<group>"; };
 		P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRightSidebarStateTests.swift; sourceTree = "<group>"; };
 		P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SavedCommandsSidebarContentTests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000B /* AgentConversationStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentConversationStoreTests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000C /* AgentViewModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentViewModelTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -380,29 +404,55 @@
 			sourceTree = "<group>";
 		};
 		A40000000000000000000004 /* Features */ = {
-			isa = PBXGroup;
-			children = (
-				A4000000000000000000000C /* Hosts */,
-				A4000000000000000000000D /* Terminal */,
-				A4000000000000000000000E /* SFTP */,
-				A4000000000000000000000F /* Transfers */,
-				A40000000000000000000010 /* Settings */,
-			);
-			path = Features;
-			sourceTree = "<group>";
-		};
-		A40000000000000000000005 /* Services */ = {
-			isa = PBXGroup;
-			children = (
-				A40000000000000000000011 /* SSH */,
-				A40000000000000000000012 /* SFTP */,
-				A40000000000000000000013 /* Terminal */,
-				A40000000000000000000014 /* Transfer */,
-				A40000000000000000000015 /* Security */,
-			);
-			path = Services;
-			sourceTree = "<group>";
-		};
+				isa = PBXGroup;
+				children = (
+					A4000000000000000000000C /* Hosts */,
+					A4000000000000000000000D /* Terminal */,
+					A4000000000000000000000E /* SFTP */,
+					A4000000000000000000000F /* Transfers */,
+					A40000000000000000000010 /* Settings */,
+					XG40000000000000000000001 /* Agent */,
+				);
+				path = Features;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000001 /* Agent */ = {
+				isa = PBXGroup;
+				children = (
+					XG20000000000000000000001 /* AgentSidebarView.swift */,
+					XG20000000000000000000002 /* AgentContextHeaderView.swift */,
+					XG20000000000000000000003 /* AgentMessageView.swift */,
+				);
+				path = Agent;
+				sourceTree = "<group>";
+			};
+			A40000000000000000000005 /* Services */ = {
+				isa = PBXGroup;
+				children = (
+					A40000000000000000000011 /* SSH */,
+					A40000000000000000000012 /* SFTP */,
+					A40000000000000000000013 /* Terminal */,
+					A40000000000000000000014 /* Transfer */,
+					A40000000000000000000015 /* Security */,
+					XG40000000000000000000002 /* Agent */,
+				);
+				path = Services;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000002 /* Agent */ = {
+				isa = PBXGroup;
+				children = (
+					XG20000000000000000000004 /* AgentMessage.swift */,
+					XG20000000000000000000005 /* AgentSessionContext.swift */,
+					XG20000000000000000000006 /* AgentConversation.swift */,
+					XG20000000000000000000007 /* AgentConversationStore.swift */,
+					XG20000000000000000000008 /* AgentProvider.swift */,
+					XG20000000000000000000009 /* MockAgentProvider.swift */,
+					XG2000000000000000000000A /* AgentViewModel.swift */,
+				);
+				path = Agent;
+				sourceTree = "<group>";
+			};
 		A40000000000000000000006 /* Infrastructure */ = {
 			isa = PBXGroup;
 			children = (
@@ -484,6 +534,8 @@
 			P72000000000000000000004 /* CommandHistoryStoreTests.swift */,
 			P72000000000000000000005 /* TerminalRightSidebarStateTests.swift */,
 			P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */,
+			XG2000000000000000000000B /* AgentConversationStoreTests.swift */,
+			XG2000000000000000000000C /* AgentViewModelTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -862,7 +914,17 @@
 				A10000000000000000000025 /* CommandRowActions.swift in Sources */,
 				A10000000000000000000026 /* TerminalRightSidebarView.swift in Sources */,
 				A10000000000000000000027 /* CommandHistorySidebarView.swift in Sources */,
-				A10000000000000000000028 /* SavedCommandsSidebarView.swift in Sources */,
+                                A10000000000000000000028 /* SavedCommandsSidebarView.swift in Sources */,
+                                XG10000000000000000000001 /* AgentSidebarView.swift in Sources */,
+                                XG10000000000000000000002 /* AgentContextHeaderView.swift in Sources */,
+                                XG10000000000000000000003 /* AgentMessageView.swift in Sources */,
+                                XG10000000000000000000004 /* AgentMessage.swift in Sources */,
+                                XG10000000000000000000005 /* AgentSessionContext.swift in Sources */,
+                                XG10000000000000000000006 /* AgentConversation.swift in Sources */,
+                                XG10000000000000000000007 /* AgentConversationStore.swift in Sources */,
+                                XG10000000000000000000008 /* AgentProvider.swift in Sources */,
+                                XG10000000000000000000009 /* MockAgentProvider.swift in Sources */,
+                                XG1000000000000000000000A /* AgentViewModel.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 				E10000000000000000000001 /* RemoteTerminalError.swift in Sources */,
@@ -926,6 +988,8 @@
 				P71000000000000000000004 /* CommandHistoryStoreTests.swift in Sources */,
 				P71000000000000000000005 /* TerminalRightSidebarStateTests.swift in Sources */,
 				P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */,
+                                XG1000000000000000000000B /* AgentConversationStoreTests.swift in Sources */,
+                                XG1000000000000000000000C /* AgentViewModelTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
