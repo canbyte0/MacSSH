@@ -24,6 +24,24 @@ struct SettingsView: View {
     /// MacSSH 1.1 Phase 7：清空命令历史确认。
     @State private var pendingClearHistory = false
 
+    // MacSSH 1.1 Phase 10C：AI Agent 设置区（任务书 §12）。
+    /// Provider 草稿（Phase 10C-D：OpenAI / DeepSeek；切换即原子持久化，
+    /// 防止 provider 与 baseURL 错配把 Key 发往另一服务商服务器）。
+    @State private var agentProviderDraft: AgentProviderSettings.Provider = .openAI
+    /// Model 草稿（非敏感，UserDefaults 持久化经 AgentProviderSettings.save）。
+    @State private var agentModelDraft = ""
+    /// Base URL 草稿（保存侧校验 scheme http/https + host，任务书 §10）。
+    @State private var agentBaseURLDraft = ""
+    /// API Key 草稿（仅存在于本 @State；Save 后立即清空，绝不回填 Keychain
+    /// 内容——任务书 §12 / §13 hard gate）。
+    @State private var agentAPIKeyDraft = ""
+    /// Keychain 中是否已配置 API Key（只读状态，不持有 Key 本体）。
+    @State private var agentKeyConfigured = false
+    /// Base URL 非法提示（保存侧拦截，不写入 UserDefaults）。
+    @State private var agentBaseURLInvalid = false
+    /// Keychain 保存 / 删除失败提示（不静默失败）。
+    @State private var agentKeyActionFailed = false
+
     var body: some View {
         @Bindable var appState = appState
         @Bindable var appearanceController = appState.appearanceController
@@ -145,6 +163,98 @@ struct SettingsView: View {
                 .accessibilityIdentifier("settings.appearanceMode")
             }
 
+            Section("settings.section.agent") {
+                // MacSSH 1.1 Phase 10C-D：Provider Picker（任务书 §10）。
+                // API Key 状态行只反映当前所选 provider 自己的凭据；
+                // 切换经 switchAgentProvider 智能联动 model / baseURL 草稿
+                // 并原子持久化。
+                LabeledContent("agent.settings.provider") {
+                    Picker("agent.settings.provider", selection: $agentProviderDraft) {
+                        ForEach(
+                            AgentProviderSettings.Provider.allCases,
+                            id: \.self
+                        ) { provider in
+                            Text(LocalizedStringKey(provider.localizedNameKey))
+                                .tag(provider)
+                        }
+                    }
+                    .pickerStyle(.menu)
+                    .onChange(of: agentProviderDraft) { _, newProvider in
+                        switchAgentProvider(to: newProvider)
+                    }
+                    .accessibilityIdentifier("settings.agent.provider")
+                }
+                // Model：用户可输入账户可用的任意 model ID；空值保存时回退
+                // provider defaults 集中默认值（任务书 §9：默认值不得散落 View）。
+                LabeledContent("agent.settings.model") {
+                    TextField(
+                        "agent.settings.model.placeholder",
+                        text: $agentModelDraft
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 240)
+                    .accessibilityIdentifier("settings.agent.model")
+                }
+                // Base URL：默认 https://api.openai.com/v1，可改（仍为
+                // OpenAI Responses endpoint 语义，任务书 §10）。
+                LabeledContent("agent.settings.base_url") {
+                    TextField(
+                        "agent.settings.base_url.placeholder",
+                        text: $agentBaseURLDraft
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 240)
+                    .accessibilityIdentifier("settings.agent.baseURL")
+                }
+                if agentBaseURLInvalid {
+                    Text("agent.settings.base_url_invalid")
+                        .font(.footnote)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("settings.agent.baseURLInvalidHint")
+                }
+                Divider()
+                // API Key：SecureField 草稿——保存后立即清空，绝不把 Keychain
+                // 内容回填显示；状态行只区分「已配置 / 未配置」（任务书 §12：
+                // 不显示 sk-… 任何形式的部分 Key）。
+                LabeledContent("agent.settings.api_key") {
+                    SecureField(
+                        "agent.settings.api_key.placeholder",
+                        text: $agentAPIKeyDraft
+                    )
+                    .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: 240)
+                    .accessibilityIdentifier("settings.agent.apiKey")
+                }
+                LabeledContent("agent.settings.api_key.status") {
+                    if agentKeyConfigured {
+                        Text("agent.settings.api_key.configured")
+                    } else {
+                        Text("agent.settings.api_key.not_configured")
+                    }
+                }
+                HStack {
+                    Button {
+                        Task { await saveAgentConfiguration() }
+                    } label: {
+                        Text("agent.settings.api_key.save")
+                    }
+                    .buttonStyle(.bordered)
+                    .accessibilityIdentifier("settings.agent.save")
+
+                    Button(role: .destructive) {
+                        Task { await deleteAgentAPIKey() }
+                    } label: {
+                        Text("agent.settings.api_key.delete")
+                    }
+                    .buttonStyle(.bordered)
+                    .disabled(!agentKeyConfigured)
+                    .accessibilityIdentifier("settings.agent.deleteAPIKey")
+                }
+                Text("agent.settings.api_key.help")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("SSH") {
                 LabeledContent("settings.connection_timeout") {
                     Text("settings.connection_timeout_value")
@@ -187,6 +297,14 @@ struct SettingsView: View {
             L10n.string("settings.title", defaultValue: "Settings", locale: locale)
         )
         .accessibilityIdentifier("workspace.settings")
+        .onAppear {
+            // MacSSH 1.1 Phase 10C：载入非敏感配置草稿 + 刷新 Key 配置状态
+            // （每次进入 Settings 页刷新；语言切换经 .id(language) 重建同样触发）。
+            loadAgentSettingsDrafts()
+            Task {
+                await refreshAgentKeyConfigured()
+            }
+        }
         .alert("known_hosts.forget_title", isPresented: forgetBinding, presenting: pendingForgetID) { _ in
             Button("action.cancel", role: .cancel) {}
             Button("known_hosts.forget", role: .destructive) {
@@ -222,6 +340,136 @@ struct SettingsView: View {
                 locale: locale
             ))
         }
+        // MacSSH 1.1 Phase 10C：API Key 保存 / 删除失败提示（不静默失败）。
+        .alert(
+            L10n.string(
+                "agent.settings.api_key.action_failed_title",
+                defaultValue: "Keychain Error",
+                locale: locale
+            ),
+            isPresented: $agentKeyActionFailed
+        ) {
+            Button("action.ok", role: .cancel) {}
+        } message: {
+            Text("agent.settings.api_key.action_failed_message")
+        }
+    }
+
+    // MARK: - MacSSH 1.1 Phase 10C / 10C-D：AI Agent 设置（任务书 §12 / §13 / §10）
+
+    /// 载入非敏感配置草稿（Provider / Model / Base URL；API Key 草稿
+    /// 始终为空，绝不从 Keychain 回填，任务书 §12）。
+    private func loadAgentSettingsDrafts() {
+        let settings = AgentProviderSettings.load()
+        agentProviderDraft = settings.provider
+        agentModelDraft = settings.model
+        agentBaseURLDraft = settings.baseURL.absoluteString
+        agentBaseURLInvalid = false
+    }
+
+    /// 刷新 Key 配置状态：只读「当前所选 provider 是否已配置」，
+    /// 不持有 Key 本体（Phase 10C-D 任务书 §10 / §11：状态随 provider
+    /// 切换——各 provider 凭据相互独立）。
+    private func refreshAgentKeyConfigured() async {
+        do {
+            let key = try await appState.agentCredentialService.readAPIKey(
+                for: agentProviderDraft
+            )
+            agentKeyConfigured = !(key ?? "").isEmpty
+        } catch {
+            // Keychain 读取失败：保守视为未配置（与 provider 行为一致）。
+            agentKeyConfigured = false
+        }
+    }
+
+    /// Provider 切换（Phase 10C-D 任务书 §6 / §10）：
+    /// 1. 智能切换草稿：model / baseURL 仍为旧 provider 默认值 → 跟随
+    ///    新 provider 默认值；已自定义 → 保留（不得静默覆盖）；
+    /// 2. 原子持久化 provider + 草稿（防止「provider 已切、baseURL 仍
+    ///    指向另一服务商」把 Key 发往错误服务器——任务书 §7 P1 gate）；
+    /// 3. 刷新该 provider 自己的 Key 状态并同步 Agent sidebar
+    ///    （下一次 Send 生效；进行中的请求继续使用启动时快照）。
+    private func switchAgentProvider(to newProvider: AgentProviderSettings.Provider) {
+        let oldProvider = AgentProviderSettings.load().provider
+        guard oldProvider != newProvider else { return }
+
+        let baseURL = AgentProviderSettings.validatedBaseURL(from: agentBaseURLDraft)
+            ?? oldProvider.defaultBaseURL
+        let switched = AgentProviderSettings.switchingDefaults(
+            from: oldProvider,
+            to: newProvider,
+            model: agentModelDraft,
+            baseURL: baseURL
+        )
+        agentModelDraft = switched.model
+        agentBaseURLDraft = switched.baseURL.absoluteString
+        agentBaseURLInvalid = false
+        AgentProviderSettings(
+            provider: newProvider,
+            model: switched.model,
+            baseURL: switched.baseURL
+        ).save()
+
+        Task {
+            await refreshAgentKeyConfigured()
+            await appState.agentViewModel.refreshProviderConfiguration()
+        }
+    }
+
+    /// 保存 Provider 配置（任务书 §13 生命周期）：
+    /// 1. 校验 Base URL（非法 → 提示并中止，不写入）；
+    /// 2. 非敏感配置持久化（UserDefaults，经 AgentProviderSettings.save）；
+    /// 3. API Key 草稿非空时 upsert 进当前所选 provider 的 Keychain
+    ///    account，成功后立即清空草稿；
+    /// 4. 刷新 Key 状态与 AgentViewModel 的 providerState（下一次 Send 生效）。
+    private func saveAgentConfiguration() async {
+        let trimmedModel = agentModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        let model = trimmedModel.isEmpty ? agentProviderDraft.defaultModel : trimmedModel
+        let trimmedBaseURL = agentBaseURLDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let baseURL = AgentProviderSettings.validatedBaseURL(from: trimmedBaseURL) else {
+            agentBaseURLInvalid = true
+            return
+        }
+        agentBaseURLInvalid = false
+        AgentProviderSettings(
+            provider: agentProviderDraft,
+            model: model,
+            baseURL: baseURL
+        ).save()
+
+        let trimmedKey = agentAPIKeyDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmedKey.isEmpty {
+            do {
+                try await appState.agentCredentialService.upsertAPIKey(
+                    trimmedKey,
+                    for: agentProviderDraft
+                )
+            } catch {
+                agentKeyActionFailed = true
+                return
+            }
+            agentAPIKeyDraft = ""
+        }
+        agentModelDraft = model
+        agentBaseURLDraft = baseURL.absoluteString
+        await refreshAgentKeyConfigured()
+        await appState.agentViewModel.refreshProviderConfiguration()
+    }
+
+    /// 删除当前所选 provider 的 API Key（任务书 §13：删除后 provider
+    /// 进入未配置状态，Agent UI 显示需要配置；只删该 provider 自己的
+    /// account，绝不波及其他 provider 凭据——Phase 10C-D 任务书 §11）。
+    private func deleteAgentAPIKey() async {
+        do {
+            try await appState.agentCredentialService.deleteAPIKey(
+                for: agentProviderDraft
+            )
+        } catch {
+            agentKeyActionFailed = true
+            return
+        }
+        await refreshAgentKeyConfigured()
+        await appState.agentViewModel.refreshProviderConfiguration()
     }
 
     private func forget() {

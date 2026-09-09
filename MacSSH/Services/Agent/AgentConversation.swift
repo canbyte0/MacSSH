@@ -55,10 +55,12 @@ final class AgentConversation {
         messages[index].state = .complete
     }
 
-    /// 标记指定消息失败（保留 partial 内容，任务书 §22）。
-    func failMessage(_ messageID: UUID) {
+    /// 标记指定消息失败（保留 partial 内容，任务书 §22）；
+    /// kind 驱动 UI 错误文案（任务书 §20）。
+    func failMessage(_ messageID: UUID, kind: AgentFailureKind = .generic) {
         guard let index = indexOf(messageID) else { return }
         messages[index].state = .failed
+        messages[index].failure = kind
     }
 
     /// 移除指定消息（用于停止时尚未产生任何内容的 assistant 占位——

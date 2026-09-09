@@ -1,11 +1,12 @@
 import Foundation
 import Observation
 
-/// MacSSH 1.1 Phase 10B：Agent Sidebar 视图模型（任务书 §8）。
+/// MacSSH 1.1 Phase 10C：Agent Sidebar 视图模型（任务书 §8 / §15 / §17）。
 ///
-/// 职责：当前 session 对应 conversation、draft、send / stop、mock streaming、
-/// error state、session 切换、closed session cleanup。
-/// 不负责：HTTP / SSH / Tool Router / Keychain（后续 Phase）。
+/// 职责：当前 session 对应 conversation、draft、send / stop、provider 流式
+/// 事件消费、结构化错误态（AgentFailureKind）、notConfigured 状态、
+/// session 切换、closed session cleanup。
+/// 不负责：HTTP / SSH / Tool Router（HTTP 全部在 Provider 层，任务书 §17）。
 ///
 /// target 解析与 `TerminalCommandDispatcher` 同哲学：每次 action 实时读取
 /// active session，不缓存 stale target。
@@ -24,6 +25,11 @@ final class AgentViewModel {
     /// 无 session 时发送被阻止的提示标记（View 按 Locale 渲染文案；
     /// session 恢复或下一次成功 send 时清除）。
     var showsNoSessionNotice = false
+
+    /// Provider 配置就绪状态（任务书 §15）：notConfigured → Send disabled +
+    /// 侧边栏「尚未配置 AI 服务」提示。由 View 在 appear / tab 切换时经
+    /// refreshProviderConfiguration 刷新；Settings 保存 / 删除 Key 后也会刷新。
+    private(set) var providerState: AgentProviderConfigurationState = .ready
 
     init(
         store: AgentConversationStore,
@@ -63,12 +69,19 @@ final class AgentViewModel {
         _ = store.conversation(for: session.id)
     }
 
-    /// 当前是否可发送：有 session、当前 conversation 非生成中、草稿 trim 后非空。
+    /// 当前是否可发送：Provider 已配置、有 session、当前 conversation
+    /// 非生成中、草稿 trim 后非空（任务书 §15：未配置时 Send disabled）。
     var canSend: Bool {
+        guard providerState == .ready else { return false }
         guard let conversation = activeConversation, !conversation.isGenerating else {
             return false
         }
         return !trimmedDraft(of: conversation).isEmpty
+    }
+
+    /// 刷新 Provider 配置就绪状态（Keychain 读取一次）。
+    func refreshProviderConfiguration() async {
+        providerState = await provider.configurationState()
     }
 
     // MARK: - Send（任务书 §14）
@@ -83,6 +96,9 @@ final class AgentViewModel {
             showsNoSessionNotice = true
             return
         }
+        // Provider 未配置：不发起任何请求（任务书 §15；UI 已由 canSend
+        // 禁用，此处为双保险——状态刷新存在窗口期）。
+        guard providerState == .ready else { return }
         let conversation = store.conversation(for: session.id)
         let text = trimmedDraft(of: conversation)
         guard !text.isEmpty else { return }
@@ -122,8 +138,10 @@ final class AgentViewModel {
         context: AgentSessionContext
     ) {
         let assistantID = UUID()
-        // provider 历史快照：包含刚 append 的 user message，不含占位。
-        let history = conversation.messages
+        // provider 历史快照（任务书 §6）：完整多轮历史——含刚 append 的
+        // user message，不含 streaming 占位与 failed 消息（partial 失败
+        // 不是完整对话轮次）；禁止只发最后一条 user message。
+        let history = conversation.messages.filter { $0.state != .failed }
 
         // assistant streaming 占位（任务书 §14 第 5 步）：
         // chunk 经 appendChunk 流式追加到该消息。
@@ -135,9 +153,14 @@ final class AgentViewModel {
         let task = Task { @MainActor [weak self] in
             do {
                 let stream = provider.stream(messages: history, context: context)
-                for try await chunk in stream {
+                for try await event in stream {
                     try Task.checkCancellation()
-                    conversation.appendChunk(chunk, to: assistantID)
+                    switch event {
+                    case .textDelta(let delta):
+                        conversation.appendChunk(delta, to: assistantID)
+                    case .completed:
+                        break
+                    }
                 }
                 if Task.isCancelled {
                     self?.finishCancelled(conversation, assistantID: assistantID)
@@ -146,9 +169,17 @@ final class AgentViewModel {
                 }
             } catch is CancellationError {
                 self?.finishCancelled(conversation, assistantID: assistantID)
+            } catch let error as AgentProviderError {
+                if error == .cancelled {
+                    self?.finishCancelled(conversation, assistantID: assistantID)
+                } else {
+                    // 结构化失败（401/429/网络等）：kind 驱动本地化文案，
+                    // partial 内容保留（任务书 §20 / §22）。
+                    conversation.failMessage(assistantID, kind: error.displayKind)
+                }
             } catch {
-                // mock error hook / 未来 provider 错误：标记 failed（保留 partial）。
-                conversation.failMessage(assistantID)
+                // 未知错误（含 mock /mock-error hook）：收敛为 generic 分类。
+                conversation.failMessage(assistantID, kind: .generic)
             }
             conversation.endGeneration()
         }

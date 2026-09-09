@@ -19,6 +19,12 @@ struct AgentSidebarView: View {
 
             Divider()
 
+            // Provider 未配置提示（任务书 §15）：Send 已禁用，引导用户到 Settings
+            // 配置 API Key；配置后返回本页时 onAppear 会刷新 providerState。
+            if viewModel.providerState == .notConfigured {
+                notConfiguredNotice
+            }
+
             // 无 session 时发送被阻止的 non-fatal 提示（任务书 §14）。
             if viewModel.showsNoSessionNotice && viewModel.activeContext == nil {
                 Text("agent.error.no_session")
@@ -42,9 +48,13 @@ struct AgentSidebarView: View {
         .accessibilityIdentifier("sidebar_right.agent_content")
         .onAppear {
             // 打开 Agent tab / sidebar 切回 Agent：确保当前 session 有 conversation，
-            // 并顺带清理已关闭 session 的残留会话。
+            // 清理已关闭 session 的残留会话，并刷新 Provider 配置就绪状态
+            // （任务书 §15：Settings 中保存 / 删除 Key 后返回本页立即生效）。
             viewModel.ensureConversationForActiveSession()
             viewModel.pruneConversations()
+            Task {
+                await viewModel.refreshProviderConfiguration()
+            }
         }
         .onChange(of: appState.sessionManager.activeSessionID) { _, _ in
             // 切 tab：新 session 的 conversation 按需创建 + 清理失效会话
@@ -57,6 +67,23 @@ struct AgentSidebarView: View {
             // session 的 conversation 并取消其生成任务（任务书 §18）。
             viewModel.pruneConversations()
         }
+    }
+
+    /// 未配置 AI 服务提示（任务书 §15）：明确区分于 generic network error。
+    private var notConfiguredNotice: some View {
+        HStack(alignment: .top, spacing: AppTheme.Spacing.compact / 2) {
+            Image(systemName: "key")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text("agent.provider.not_configured")
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, AppTheme.Spacing.regular)
+        .padding(.vertical, AppTheme.Spacing.compact / 2)
+        .accessibilityIdentifier("agent.provider.not_configured_notice")
     }
 
     // MARK: - 消息列表（任务书 §19）

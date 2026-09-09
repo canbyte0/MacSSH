@@ -22,4 +22,9 @@ enum AppLogger {
 
     /// SSH 连接生命周期日志；只记录阶段变化，禁止写入任何 Secret、Fingerprint 或终端内容。
     static let ssh = Logger(subsystem: subsystem, category: "SSH")
+
+    /// MacSSH 1.1 Phase 10C：Agent 生命周期日志；只记录阶段与 HTTP
+    /// status（任务书 §22），禁止写入 prompt、回复内容、API Key 或
+    /// Authorization。
+    static let agent = Logger(subsystem: subsystem, category: "Agent")
 }

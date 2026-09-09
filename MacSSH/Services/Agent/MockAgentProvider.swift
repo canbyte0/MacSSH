@@ -17,7 +17,7 @@ struct MockAgentProvider: AgentProvider {
     func stream(
         messages: [AgentMessage],
         context: AgentSessionContext
-    ) -> AsyncThrowingStream<String, Error> {
+    ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let producer = Task {
                 do {
@@ -30,8 +30,9 @@ struct MockAgentProvider: AgentProvider {
                         if chunkDelay > .zero {
                             try await Task.sleep(for: chunkDelay)
                         }
-                        continuation.yield(chunk)
+                        continuation.yield(.textDelta(chunk))
                     }
+                    continuation.yield(.completed)
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

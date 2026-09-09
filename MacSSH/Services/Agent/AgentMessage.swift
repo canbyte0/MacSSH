@@ -26,11 +26,21 @@ struct AgentMessage: Identifiable, Equatable, Sendable {
     let role: Role
     var content: String
     var state: State
+    /// 失败分类（仅 `.failed` 状态有意义；驱动 agent.provider.error.*
+    /// 本地化文案，Phase 10C 任务书 §20）。
+    var failure: AgentFailureKind?
 
-    init(id: UUID = UUID(), role: Role, content: String, state: State = .complete) {
+    init(
+        id: UUID = UUID(),
+        role: Role,
+        content: String,
+        state: State = .complete,
+        failure: AgentFailureKind? = nil
+    ) {
         self.id = id
         self.role = role
         self.content = content
         self.state = state
+        self.failure = failure
     }
 }

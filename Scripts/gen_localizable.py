@@ -257,6 +257,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("settings.section.general", "General", "通用"),
     ("settings.section.terminal", "Terminal", "终端"),
     ("settings.section.appearance", "Appearance", "外观"),
+    ("settings.section.agent", "AI Agent", "AI 助手"),
     ("settings.language", "Language", "语言"),
     ("settings.launch_behavior", "Launch behavior", "启动行为"),
     ("settings.open_main_window", "Open main window", "打开主窗口"),
@@ -448,11 +449,11 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("sidebar_right.ungrouped", "Ungrouped", "未分组"),
     ("validation.highlight_text_required", "Highlight text is required", "请输入高亮文本"),
 
-    # ── Agent Sidebar / agent（MacSSH 1.1 Phase 10B）────────────────
+    # ── Agent Sidebar / agent（MacSSH 1.1 Phase 10B / 10C）────────────
     ("agent.title", "Agent", "智能助手"),
     ("agent.input.placeholder", "Ask Agent…", "向 Agent 提问…"),
     ("agent.empty.title", "Ask about this terminal", "询问当前终端"),
-    ("agent.empty.subtitle", "Phase 10B uses a local mock responder.\nNo commands can be executed yet.", "Phase 10B 使用本地模拟回复。\n尚不能执行任何命令。"),
+    ("agent.empty.subtitle", "Ask anything — the Agent replies with text only.\nNo commands can be executed yet.", "随时提问——Agent 仅回复文字。\n尚不能执行任何命令。"),
     ("agent.context.local", "Local", "本地"),
     ("agent.context.ssh", "SSH", "SSH"),
     ("agent.context.unavailable", "Session unavailable", "会话不可用"),
@@ -463,6 +464,37 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("agent.role.user", "You", "我"),
     ("agent.role.assistant", "Agent", "智能助手"),
     ("agent.role.system", "System", "系统"),
+
+    # ── Agent provider 状态 / 错误（MacSSH 1.1 Phase 10C，任务书 §15 / §20 / §36）──
+    ("agent.provider.not_configured", "AI service is not configured. Add an API Key in Settings.", "尚未配置 AI 服务。请在设置中添加 API Key。"),
+    ("agent.provider.error.missing_credential", "AI service is not configured. Add an API Key in Settings.", "尚未配置 AI 服务。请在设置中添加 API Key。"),
+    ("agent.provider.error.authentication", "Authentication failed. Check your API Key.", "认证失败。请检查 API Key。"),
+    ("agent.provider.error.forbidden", "The AI service rejected the request.", "AI 服务拒绝了该请求。"),
+    ("agent.provider.error.rate_limit", "Rate limit reached. Try again later.", "请求频率过高，请稍后再试。"),
+    ("agent.provider.error.server", "The AI service had a problem. Try again later.", "AI 服务出现问题，请稍后再试。"),
+    ("agent.provider.error.network", "Network error. Check your connection.", "网络错误。请检查网络连接。"),
+    ("agent.provider.error.invalid_response", "The AI service returned an unreadable response.", "AI 服务返回了无法解析的响应。"),
+    ("agent.provider.error.incomplete", "The response was cut off before completion. Try again or simplify your request.", "回复在完成前被截断，请重试或简化请求。"),
+
+    # ── Agent Settings（MacSSH 1.1 Phase 10C，任务书 §12 / §36）──────
+    ("agent.settings.provider", "Provider", "服务商"),
+    ("agent.settings.provider.openai", "OpenAI", "OpenAI"),
+    ("agent.settings.provider.deepseek", "DeepSeek", "DeepSeek"),
+    ("agent.settings.model", "Model", "模型"),
+    ("agent.settings.model.placeholder", "Model ID", "模型 ID"),
+    ("agent.settings.base_url", "Base URL", "Base URL"),
+    ("agent.settings.base_url.placeholder", "https://api.openai.com/v1", "https://api.openai.com/v1"),
+    ("agent.settings.base_url_invalid", "Enter a valid http(s) URL.", "请输入合法的 http(s) URL。"),
+    ("agent.settings.api_key", "API Key", "API Key"),
+    ("agent.settings.api_key.placeholder", "Enter API Key", "输入 API Key"),
+    ("agent.settings.api_key.status", "Status", "状态"),
+    ("agent.settings.api_key.configured", "Configured", "已配置"),
+    ("agent.settings.api_key.not_configured", "Not configured", "未配置"),
+    ("agent.settings.api_key.save", "Save", "保存"),
+    ("agent.settings.api_key.delete", "Delete", "删除"),
+    ("agent.settings.api_key.help", "The API Key is stored in the macOS Keychain and never displayed back. The Agent replies with text only — it cannot run commands.", "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 仅回复文字，不会执行任何命令。"),
+    ("agent.settings.api_key.action_failed_title", "Keychain Error", "钥匙串错误"),
+    ("agent.settings.api_key.action_failed_message", "Saving or deleting the API Key failed. Please try again.", "API Key 保存或删除失败，请重试。"),
 ]
 
 def build_catalog() -> dict:

@@ -90,7 +90,14 @@ final class AppState {
     /// 仅由 AppState 装配持有；Agent domain 不侵入 Terminal / SSH service。
     let agentConversationStore: AgentConversationStore
 
-    /// MacSSH 1.1 Phase 10B：Agent Sidebar 视图模型（mock provider，无网络 / 无执行）。
+    /// MacSSH 1.1 Phase 10C：Agent API Key 存取服务（独立 Keychain namespace
+    /// com.macssh.MacSSH.agent，任务书 §11）。由 AppState 单实例持有，
+    /// Settings（保存 / 删除）与 ResolvingAgentProvider（请求时读取一次）
+    /// 共用；Key 绝不进入 UserDefaults / AppState published property。
+    let agentCredentialService: AgentCredentialService
+
+    /// MacSSH 1.1 Phase 10C：Agent Sidebar 视图模型（生产 ResolvingAgentProvider，
+    /// 无 Mock fallback——未配置 Key 时 notConfigured，任务书 §14 hard gate）。
     /// 每次 action 实时读 SessionManager.activeSession，不缓存 stale target。
     let agentViewModel: AgentViewModel
 
@@ -184,14 +191,18 @@ final class AppState {
         self.commandHistoryStore = commandHistoryStore
         self.commandDispatcher = commandDispatcher
 
-        // MacSSH 1.1 Phase 10B：Agent 装配（任务书 §9 最小集成）。
-        // AppState 持有 Store / ViewModel；具体 active session 由 ViewModel
-        // 经闭包实时解析（弱引用 SessionManager，Agent domain 不反向持有），
-        // SessionManager 完全不感知 Agent（不改 Terminal service）。
+        // MacSSH 1.1 Phase 10C：Agent 装配升级（任务书 §14：production 无 Mock）。
+        // AppState 持有 Store / CredentialService / ViewModel；provider 为
+        // ResolvingAgentProvider——每次请求启动时解析一次 Settings + Keychain
+        // 配置快照（任务书 §25 / §26），未配置 Key 时 notConfigured / 抛
+        // missingCredential，绝不 fallback Mock。具体 active session 由
+        // ViewModel 经闭包实时解析（弱引用 SessionManager，Agent domain
+        // 不反向持有），SessionManager 完全不感知 Agent（不改 Terminal service）。
         let agentConversationStore = AgentConversationStore()
+        let agentCredentialService = AgentCredentialService()
         let agentViewModel = AgentViewModel(
             store: agentConversationStore,
-            provider: MockAgentProvider(),
+            provider: ResolvingAgentProvider(credentialService: agentCredentialService),
             activeSessionProvider: { [weak sessionManager] in
                 sessionManager?.activeSession
             },
@@ -200,6 +211,7 @@ final class AppState {
             }
         )
         self.agentConversationStore = agentConversationStore
+        self.agentCredentialService = agentCredentialService
         self.agentViewModel = agentViewModel
 
         // Phase 7 右侧栏 UI preference（UserDefaults 持久化，默认收起 + 默认 history tab）。

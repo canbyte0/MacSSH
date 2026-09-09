@@ -92,6 +92,17 @@
              XG10000000000000000000008 /* AgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000008 /* AgentProvider.swift */; };
              XG10000000000000000000009 /* MockAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000009 /* MockAgentProvider.swift */; };
              XG1000000000000000000000A /* AgentViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000A /* AgentViewModel.swift */; };
+             XG1000000000000000000000D /* AgentEvent.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000D /* AgentEvent.swift */; };
+             XG1000000000000000000000E /* AgentProviderError.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000E /* AgentProviderError.swift */; };
+             XG1000000000000000000000F /* AgentProviderRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000F /* AgentProviderRequest.swift */; };
+             XG10000000000000000000010 /* OpenAIResponsesModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000010 /* OpenAIResponsesModels.swift */; };
+             XG10000000000000000000011 /* OpenAIResponsesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000011 /* OpenAIResponsesProvider.swift */; };
+             XG10000000000000000000012 /* ResolvingAgentProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000012 /* ResolvingAgentProvider.swift */; };
+             XG10000000000000000000013 /* SSEEventParser.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000013 /* SSEEventParser.swift */; };
+             XG10000000000000000000014 /* AgentCredentialService.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000014 /* AgentCredentialService.swift */; };
+             XG10000000000000000000015 /* AgentProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000015 /* AgentProviderSettings.swift */; };
+             XG1000000000000000000001A /* ResponsesProviderCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001A /* ResponsesProviderCore.swift */; };
+             XG1000000000000000000001B /* DeepSeekResponsesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001B /* DeepSeekResponsesProvider.swift */; };
 		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
 		D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000E /* HostKeyChangedDialogView.swift */; };
 		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
@@ -145,6 +156,11 @@
 		P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */; };
              XG1000000000000000000000B /* AgentConversationStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000B /* AgentConversationStoreTests.swift */; };
              XG1000000000000000000000C /* AgentViewModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000000C /* AgentViewModelTests.swift */; };
+             XG10000000000000000000016 /* SSEEventParserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000016 /* SSEEventParserTests.swift */; };
+             XG10000000000000000000017 /* OpenAIResponsesProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000017 /* OpenAIResponsesProviderTests.swift */; };
+             XG10000000000000000000018 /* AgentCredentialServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000018 /* AgentCredentialServiceTests.swift */; };
+             XG10000000000000000000019 /* AgentProviderSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000019 /* AgentProviderSettingsTests.swift */; };
+             XG1000000000000000000001C /* DeepSeekResponsesProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -250,6 +266,22 @@
              XG20000000000000000000008 /* AgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProvider.swift; sourceTree = "<group>"; };
              XG20000000000000000000009 /* MockAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MockAgentProvider.swift; sourceTree = "<group>"; };
              XG2000000000000000000000A /* AgentViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentViewModel.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000D /* AgentEvent.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentEvent.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000E /* AgentProviderError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderError.swift; sourceTree = "<group>"; };
+             XG2000000000000000000000F /* AgentProviderRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderRequest.swift; sourceTree = "<group>"; };
+             XG20000000000000000000010 /* OpenAIResponsesModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIResponsesModels.swift; sourceTree = "<group>"; };
+             XG20000000000000000000011 /* OpenAIResponsesProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIResponsesProvider.swift; sourceTree = "<group>"; };
+             XG20000000000000000000012 /* ResolvingAgentProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResolvingAgentProvider.swift; sourceTree = "<group>"; };
+             XG20000000000000000000013 /* SSEEventParser.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEEventParser.swift; sourceTree = "<group>"; };
+             XG20000000000000000000014 /* AgentCredentialService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCredentialService.swift; sourceTree = "<group>"; };
+             XG20000000000000000000015 /* AgentProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderSettings.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001A /* ResponsesProviderCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesProviderCore.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001B /* DeepSeekResponsesProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekResponsesProvider.swift; sourceTree = "<group>"; };
+             XG20000000000000000000016 /* SSEEventParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEEventParserTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000017 /* OpenAIResponsesProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIResponsesProviderTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000018 /* AgentCredentialServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCredentialServiceTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000019 /* AgentProviderSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderSettingsTests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekResponsesProviderTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
@@ -449,8 +481,35 @@
 					XG20000000000000000000008 /* AgentProvider.swift */,
 					XG20000000000000000000009 /* MockAgentProvider.swift */,
 					XG2000000000000000000000A /* AgentViewModel.swift */,
+					XG20000000000000000000015 /* AgentProviderSettings.swift */,
+					XG40000000000000000000003 /* Provider */,
+					XG40000000000000000000004 /* Security */,
 				);
 				path = Agent;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000003 /* Provider */ = {
+				isa = PBXGroup;
+				children = (
+					XG2000000000000000000000D /* AgentEvent.swift */,
+					XG2000000000000000000000E /* AgentProviderError.swift */,
+					XG2000000000000000000000F /* AgentProviderRequest.swift */,
+					XG20000000000000000000010 /* OpenAIResponsesModels.swift */,
+					XG2000000000000000000001A /* ResponsesProviderCore.swift */,
+					XG2000000000000000000001B /* DeepSeekResponsesProvider.swift */,
+					XG20000000000000000000011 /* OpenAIResponsesProvider.swift */,
+					XG20000000000000000000012 /* ResolvingAgentProvider.swift */,
+					XG20000000000000000000013 /* SSEEventParser.swift */,
+				);
+				path = Provider;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000004 /* Security */ = {
+				isa = PBXGroup;
+				children = (
+					XG20000000000000000000014 /* AgentCredentialService.swift */,
+				);
+				path = Security;
 				sourceTree = "<group>";
 			};
 		A40000000000000000000006 /* Infrastructure */ = {
@@ -536,6 +595,11 @@
 			P72000000000000000000006 /* SavedCommandsSidebarContentTests.swift */,
 			XG2000000000000000000000B /* AgentConversationStoreTests.swift */,
 			XG2000000000000000000000C /* AgentViewModelTests.swift */,
+			XG20000000000000000000016 /* SSEEventParserTests.swift */,
+			XG20000000000000000000017 /* OpenAIResponsesProviderTests.swift */,
+			XG20000000000000000000018 /* AgentCredentialServiceTests.swift */,
+			XG20000000000000000000019 /* AgentProviderSettingsTests.swift */,
+				XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */,
 		);
 		path = SSH;
 		sourceTree = "<group>";
@@ -925,6 +989,17 @@
                                 XG10000000000000000000008 /* AgentProvider.swift in Sources */,
                                 XG10000000000000000000009 /* MockAgentProvider.swift in Sources */,
                                 XG1000000000000000000000A /* AgentViewModel.swift in Sources */,
+                                XG1000000000000000000000D /* AgentEvent.swift in Sources */,
+                                XG1000000000000000000000E /* AgentProviderError.swift in Sources */,
+                                XG1000000000000000000000F /* AgentProviderRequest.swift in Sources */,
+                                XG10000000000000000000010 /* OpenAIResponsesModels.swift in Sources */,
+                                XG10000000000000000000011 /* OpenAIResponsesProvider.swift in Sources */,
+                                XG10000000000000000000012 /* ResolvingAgentProvider.swift in Sources */,
+                                XG10000000000000000000013 /* SSEEventParser.swift in Sources */,
+                                XG10000000000000000000014 /* AgentCredentialService.swift in Sources */,
+                                XG10000000000000000000015 /* AgentProviderSettings.swift in Sources */,
+                                XG1000000000000000000001A /* ResponsesProviderCore.swift in Sources */,
+                                XG1000000000000000000001B /* DeepSeekResponsesProvider.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 				E10000000000000000000001 /* RemoteTerminalError.swift in Sources */,
@@ -990,6 +1065,11 @@
 				P71000000000000000000006 /* SavedCommandsSidebarContentTests.swift in Sources */,
                                 XG1000000000000000000000B /* AgentConversationStoreTests.swift in Sources */,
                                 XG1000000000000000000000C /* AgentViewModelTests.swift in Sources */,
+                                XG10000000000000000000016 /* SSEEventParserTests.swift in Sources */,
+                                XG10000000000000000000017 /* OpenAIResponsesProviderTests.swift in Sources */,
+                                XG10000000000000000000018 /* AgentCredentialServiceTests.swift in Sources */,
+                                XG10000000000000000000019 /* AgentProviderSettingsTests.swift in Sources */,
+					XG1000000000000000000001C /* DeepSeekResponsesProviderTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

@@ -17,10 +17,10 @@ final class AgentViewModelTests: XCTestCase {
         func stream(
             messages: [AgentMessage],
             context: AgentSessionContext
-        ) -> AsyncThrowingStream<String, Error> {
+        ) -> AsyncThrowingStream<AgentEvent, Error> {
             AsyncThrowingStream { continuation in
                 let producer = Task {
-                    continuation.yield("部分内容")
+                    continuation.yield(.textDelta("部分内容"))
                     try? await Task.sleep(for: .seconds(30))
                     continuation.finish()
                 }
@@ -28,6 +28,91 @@ final class AgentViewModelTests: XCTestCase {
                     producer.cancel()
                 }
             }
+        }
+    }
+
+    /// 延迟产出 delta 的 provider：验证「A streaming 中切到 B 后 A 的 delta
+    /// 只进入 A conversation」（任务书 §24 hard gate）。
+    private struct DelayedDeltaProvider: AgentProvider {
+        func stream(
+            messages: [AgentMessage],
+            context: AgentSessionContext
+        ) -> AsyncThrowingStream<AgentEvent, Error> {
+            AsyncThrowingStream { continuation in
+                let producer = Task {
+                    try? await Task.sleep(for: .milliseconds(100))
+                    continuation.yield(.textDelta("A-delta"))
+                    try? await Task.sleep(for: .seconds(30))
+                    continuation.finish()
+                }
+                continuation.onTermination = { _ in
+                    producer.cancel()
+                }
+            }
+        }
+    }
+
+    /// 可脚本化 provider（Phase 10C provider-style fake，任务书 §35）：
+    /// 按调用次数弹出预设结果（成功事件序列或错误）；记录每次收到的
+    /// 完整 messages，供多轮 history 断言。
+    private final class ScriptedAgentProvider: AgentProvider, @unchecked Sendable {
+        struct Call {
+            let messages: [AgentMessage]
+            let context: AgentSessionContext
+        }
+
+        private let lock = NSLock()
+        private var _calls: [Call] = []
+        private var scripts: [Result<[AgentEvent], Error>]
+        var configuration: AgentProviderConfigurationState = .ready
+
+        init(scripts: [Result<[AgentEvent], Error>]) {
+            self.scripts = scripts
+        }
+
+        var calls: [Call] {
+            lock.lock()
+            defer { lock.unlock() }
+            return _calls
+        }
+
+        func stream(
+            messages: [AgentMessage],
+            context: AgentSessionContext
+        ) -> AsyncThrowingStream<AgentEvent, Error> {
+            lock.lock()
+            _calls.append(Call(messages: messages, context: context))
+            let result: Result<[AgentEvent], Error>
+            if scripts.count > 1 {
+                result = scripts.removeFirst()
+            } else if let only = scripts.first {
+                result = only
+            } else {
+                result = .success([.textDelta("reply"), .completed])
+            }
+            lock.unlock()
+
+            return AsyncThrowingStream { continuation in
+                let producer = Task {
+                    switch result {
+                    case .success(let events):
+                        for event in events {
+                            try Task.checkCancellation()
+                            continuation.yield(event)
+                        }
+                        continuation.finish()
+                    case .failure(let error):
+                        continuation.finish(throwing: error)
+                    }
+                }
+                continuation.onTermination = { _ in
+                    producer.cancel()
+                }
+            }
+        }
+
+        func configurationState() async -> AgentProviderConfigurationState {
+            configuration
         }
     }
 
@@ -387,5 +472,223 @@ final class AgentViewModelTests: XCTestCase {
             currentDirectory: "not a url"
         )
         XCTAssertNil(invalidContext.displayDirectory)
+    }
+
+    // MARK: - 多轮 history（Phase 10C 任务书 §6 / §35）
+
+    func testMultiTurnHistoryIsForwardedToProvider() async throws {
+        let provider = ScriptedAgentProvider(scripts: [])
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        // 第一轮：user "我叫 Alice" → assistant "你好 Alice"。
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "我叫 Alice"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        // 第二轮：provider 必须收到完整多轮 history（含刚 append 的 user）。
+        conversation.draft = "我叫什么？"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        XCTAssertEqual(provider.calls.count, 2)
+        let secondCall = try XCTUnwrap(provider.calls.last)
+        XCTAssertEqual(
+            secondCall.messages.map(\.role),
+            [.user, .assistant, .user],
+            "必须发送完整有序多轮 history，禁止只发最后一条 user message"
+        )
+        XCTAssertEqual(secondCall.messages[0].content, "我叫 Alice")
+        XCTAssertEqual(secondCall.messages[1].content, "reply")
+        XCTAssertEqual(secondCall.messages[2].content, "我叫什么？")
+    }
+
+    // MARK: - 结构化失败与恢复（Phase 10C 任务书 §20 / §35）
+
+    func testUnauthorizedFailureMapsKindAndRecovers() async throws {
+        let provider = ScriptedAgentProvider(scripts: [
+            .failure(AgentProviderError.unauthorized),
+            .success([.textDelta("recovered"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "first"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        let failed = try XCTUnwrap(conversation.messages.last)
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.failure, .authentication, "401 必须映射为 authentication 分类")
+        XCTAssertFalse(conversation.isGenerating, "失败后可发送状态必须恢复")
+
+        // 401 后可恢复：下一条消息正常完成。
+        conversation.draft = "second"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        let recovered = try XCTUnwrap(conversation.messages.last)
+        XCTAssertEqual(recovered.state, .complete)
+        XCTAssertEqual(recovered.content, "recovered")
+        XCTAssertEqual(provider.calls.count, 2)
+    }
+
+    func testRateLimitedFailureMapsKindAndRecovers() async throws {
+        let provider = ScriptedAgentProvider(scripts: [
+            .failure(AgentProviderError.rateLimited),
+            .success([.textDelta("recovered"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "first"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        let failed = try XCTUnwrap(conversation.messages.last)
+        XCTAssertEqual(failed.state, .failed)
+        XCTAssertEqual(failed.failure, .rateLimited, "429 必须映射为 rateLimited 分类")
+
+        // 429 后可恢复。
+        conversation.draft = "second"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+        XCTAssertEqual(conversation.messages.last?.state, .complete)
+    }
+
+    func testMissingCredentialFailureMapsKind() async throws {
+        let provider = ScriptedAgentProvider(scripts: [
+            .failure(AgentProviderError.missingCredential),
+        ])
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "hello"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        let failed = try XCTUnwrap(conversation.messages.last)
+        XCTAssertEqual(failed.failure, .missingCredential, "missingCredential 不得伪装成 generic")
+    }
+
+    /// failed 消息不进入后续请求 history（partial 失败不是完整轮次）。
+    func testFailedMessagesExcludedFromNextRequestHistory() async throws {
+        let provider = ScriptedAgentProvider(scripts: [
+            .failure(AgentProviderError.transport("network down")),
+            .success([.textDelta("ok"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "first"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        conversation.draft = "second"
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+
+        let secondCall = try XCTUnwrap(provider.calls.last)
+        XCTAssertEqual(
+            secondCall.messages.map(\.role),
+            [.user, .user],
+            "failed assistant 消息不得进入下一次请求 history"
+        )
+    }
+
+    // MARK: - Provider 配置状态（Phase 10C 任务书 §15 / §35）
+
+    func testNotConfiguredProviderDisablesSend() async throws {
+        let provider = ScriptedAgentProvider(scripts: [])
+        provider.configuration = .notConfigured
+        let box = SessionBox()
+        box.session = makeLocalSession()
+        let viewModel = makeViewModel(provider: provider, box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        await viewModel.refreshProviderConfiguration()
+        XCTAssertEqual(viewModel.providerState, .notConfigured)
+
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = "hello"
+        XCTAssertFalse(viewModel.canSend, "notConfigured 时 canSend 必须为 false")
+
+        viewModel.send()
+        XCTAssertFalse(conversation.isGenerating, "notConfigured 时不得发起任何请求")
+        XCTAssertTrue(provider.calls.isEmpty, "provider 不得被调用")
+
+        // 配置后恢复：refresh → ready → 可发送。
+        provider.configuration = .ready
+        await viewModel.refreshProviderConfiguration()
+        XCTAssertEqual(viewModel.providerState, .ready)
+        XCTAssertTrue(viewModel.canSend)
+
+        viewModel.send()
+        try await XCTUnwrap(conversation.generationTask).value
+        XCTAssertEqual(conversation.messages.last?.content, "reply")
+        XCTAssertEqual(provider.calls.count, 1)
+    }
+
+    // MARK: - A streaming 中切到 B（Phase 10C 任务书 §24 hard gate）
+
+    func testSessionADeltasStayInAAfterSwitchToB() async throws {
+        let box = SessionBox()
+        let sessionA = makeLocalSession()
+        let sessionB = makeLocalSession()
+        box.session = sessionA
+        let viewModel = makeViewModel(provider: DelayedDeltaProvider(), box: box)
+        viewModel.ensureConversationForActiveSession()
+
+        let conversationA = try XCTUnwrap(viewModel.activeConversation)
+        conversationA.draft = "A"
+        viewModel.send()
+        let taskA = try XCTUnwrap(conversationA.generationTask)
+
+        // A 仍在 streaming 时切换到 B。
+        box.session = sessionB
+        viewModel.ensureConversationForActiveSession()
+        let conversationB = try XCTUnwrap(viewModel.activeConversation)
+        XCTAssertFalse(conversationA === conversationB)
+
+        // A 的 delta 在切换之后到达。
+        try await waitUntil { conversationA.messages.last?.content == "A-delta" }
+
+        // B conversation 不得出现 A 的任何 delta（高优先级 target isolation gate）。
+        XCTAssertTrue(conversationB.isEmpty, "A 的 delta 只能追加到 A conversation")
+
+        viewModel.stop()
+        await taskA.value
+        XCTAssertEqual(conversationA.messages.last?.content, "A-delta")
+        XCTAssertEqual(conversationA.messages.last?.state, .complete)
+        XCTAssertTrue(conversationB.isEmpty)
+    }
+
+    // MARK: - 工具（测试辅助）
+
+    private func waitUntil(
+        timeout: TimeInterval = 2,
+        _ condition: @MainActor () -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if condition() { return }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        XCTFail("条件在 \(timeout)s 内未满足")
     }
 }
