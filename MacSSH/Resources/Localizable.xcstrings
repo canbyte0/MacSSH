@@ -483,13 +483,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask anything — the Agent replies with text only.\nNo commands can be executed yet."
+            "value": "Ask anything — the Agent can read the terminal context and files under the current directory (read-only). It cannot run commands."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "随时提问——Agent 仅回复文字。\n尚不能执行任何命令。"
+            "value": "随时提问——Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"
           }
         }
       }
@@ -698,6 +698,40 @@
         }
       }
     },
+    "agent.provider.error.session_unavailable": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The terminal session is no longer available."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "终端会话已不可用。"
+          }
+        }
+      }
+    },
+    "agent.provider.error.tool_round_limit": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The agent stopped after reaching the tool round limit. Try simplifying your request."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "智能助手已达到工具轮次上限并停止。请尝试简化请求。"
+          }
+        }
+      }
+    },
     "agent.provider.not_configured": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -874,13 +908,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The API Key is stored in the macOS Keychain and never displayed back. The Agent replies with text only — it cannot run commands."
+            "value": "The API Key is stored in the macOS Keychain and never displayed back. The Agent can read the terminal context and files under the current directory (read-only). It cannot run commands."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 仅回复文字，不会执行任何命令。"
+            "value": "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"
           }
         }
       }
@@ -1119,6 +1153,159 @@
           "stringUnit": {
             "state": "translated",
             "value": "智能助手"
+          }
+        }
+      }
+    },
+    "agent.tool.get_current_directory": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Get current directory"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "获取当前目录"
+          }
+        }
+      }
+    },
+    "agent.tool.get_terminal_context": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read terminal context"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取终端上下文"
+          }
+        }
+      }
+    },
+    "agent.tool.list_directory": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "List directory"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "列出目录"
+          }
+        }
+      }
+    },
+    "agent.tool.read_file": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Read file"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "读取文件"
+          }
+        }
+      }
+    },
+    "agent.tool.status.cancelled": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelled"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消"
+          }
+        }
+      }
+    },
+    "agent.tool.status.failure": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Failed"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "失败"
+          }
+        }
+      }
+    },
+    "agent.tool.status.running": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Running"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "进行中"
+          }
+        }
+      }
+    },
+    "agent.tool.status.success": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Done"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完成"
+          }
+        }
+      }
+    },
+    "agent.tool.unknown": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tool call"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工具调用"
           }
         }
       }

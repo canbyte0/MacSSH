@@ -117,8 +117,8 @@ final class SSEEventParserTests: XCTestCase {
             event: "response.output_text.delta",
             data: #"{"type":"response.output_text.delta","delta":"Hello, I can"}"#
         )
-        let agentEvent = try OpenAIResponsesStreamMapper.agentEvent(from: event)
-        XCTAssertEqual(agentEvent, .textDelta("Hello, I can"))
+        let mapped = try OpenAIResponsesStreamMapper.mappedEvent(from: event)
+        XCTAssertEqual(mapped, .agent(.textDelta("Hello, I can")))
     }
 
     /// event 名缺失时回退 JSON `type` 字段（OpenAI 默认不带 event: 行）。
@@ -128,8 +128,8 @@ final class SSEEventParserTests: XCTestCase {
             data: #"{"type":"response.output_text.delta","delta":"fallback"}"#
         )
         XCTAssertEqual(
-            try OpenAIResponsesStreamMapper.agentEvent(from: event),
-            .textDelta("fallback")
+            try OpenAIResponsesStreamMapper.mappedEvent(from: event),
+            .agent(.textDelta("fallback"))
         )
     }
 
@@ -139,7 +139,7 @@ final class SSEEventParserTests: XCTestCase {
             event: "response.output_text.delta",
             data: #"{"type":"response.output_text.delta"}"#
         )
-        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.agentEvent(from: event)) { error in
+        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.mappedEvent(from: event)) { error in
             guard case .streamProtocol = error as? AgentProviderError else {
                 return XCTFail("应为 streamProtocol，实际 \(error)")
             }
@@ -153,7 +153,7 @@ final class SSEEventParserTests: XCTestCase {
             event: "response.completed",
             data: #"{"type":"response.completed"}"#
         )
-        XCTAssertEqual(try OpenAIResponsesStreamMapper.agentEvent(from: event), .completed)
+        XCTAssertEqual(try OpenAIResponsesStreamMapper.mappedEvent(from: event), .agent(.completed))
     }
 
     // MARK: - 10. error
@@ -163,7 +163,7 @@ final class SSEEventParserTests: XCTestCase {
             event: "error",
             data: #"{"type":"error","code":"server_error"}"#
         )
-        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.agentEvent(from: event)) { error in
+        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.mappedEvent(from: event)) { error in
             XCTAssertEqual(error as? AgentProviderError, .serverError(statusCode: nil))
         }
     }
@@ -174,7 +174,7 @@ final class SSEEventParserTests: XCTestCase {
             event: "response.failed",
             data: #"{"type":"response.failed"}"#
         )
-        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.agentEvent(from: event)) { error in
+        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.mappedEvent(from: event)) { error in
             XCTAssertEqual(error as? AgentProviderError, .serverError(statusCode: nil))
         }
     }
@@ -184,8 +184,9 @@ final class SSEEventParserTests: XCTestCase {
     func testUnknownEventIsIgnored() throws {
         for name in ["response.created", "response.in_progress", "output_item.added", "custom"] {
             let event = SSEEvent(event: name, data: #"{"type":"\#(name)"}"#)
-            XCTAssertNil(
-                try OpenAIResponsesStreamMapper.agentEvent(from: event),
+            XCTAssertEqual(
+                try OpenAIResponsesStreamMapper.mappedEvent(from: event),
+                .ignored,
                 "未知事件 \(name) 必须忽略"
             )
         }
@@ -195,7 +196,7 @@ final class SSEEventParserTests: XCTestCase {
 
     func testMalformedJSONThrowsInvalidResponse() {
         let event = SSEEvent(event: "response.output_text.delta", data: "not-json")
-        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.agentEvent(from: event)) { error in
+        XCTAssertThrowsError(try OpenAIResponsesStreamMapper.mappedEvent(from: event)) { error in
             guard case .invalidResponse = error as? AgentProviderError else {
                 return XCTFail("应为 invalidResponse，实际 \(error)")
             }

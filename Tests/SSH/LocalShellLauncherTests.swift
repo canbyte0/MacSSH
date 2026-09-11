@@ -53,8 +53,12 @@ final class LocalShellLauncherTests: XCTestCase {
         XCTAssertFalse(AppState(modelContainer: container, userDefaults: defaults).pasteHighlightEnabled)
     }
 
-    /// 控制通道不可用时保留旧安全退路：仅关闭态 zsh 注入启动代理。
-    func testPasteHighlightFallbackIsRestrictedToDisabledLocalZsh() {
+    /// 控制通道不可用时：所有本地 zsh（无论粘贴高亮开关）恒定注入
+    /// ZDOTDIR 启动代理与开关初值——Phase 10D-B1 起 OSC 7 cwd emitter
+    /// 必须在任何配置组合下稳定加载，不再依赖粘贴高亮状态；bash 不注入。
+    /// 关闭态显式传递 `MACSSH_PASTE_HIGHLIGHT_ENABLED=0`：旧实现只注入
+    /// ZDOTDIR 不注入开关值，`.zshenv` 的默认值会把关闭态错误翻成开启。
+    func testPasteHighlightFallbackInjectsStartupAgentForAllLocalZshStates() {
         for shell in ["/bin/zsh", "/bin/bash"] {
             for enabled in [false, true] {
                 let configuration = LocalShellLauncher.resolve(
@@ -66,9 +70,18 @@ final class LocalShellLauncherTests: XCTestCase {
                 )
                 XCTAssertEqual(configuration.executable, "/usr/bin/login")
                 XCTAssertEqual(configuration.args, ["-p", "-f", "tester"])
+                let isZsh = shell == "/bin/zsh"
                 XCTAssertEqual(
                     configuration.environment.contains("ZDOTDIR=/Application With Spaces/ShellIntegration"),
-                    shell == "/bin/zsh" && !enabled
+                    isZsh,
+                    "OSC 7 emitter 必须在粘贴高亮两种状态下都加载"
+                )
+                XCTAssertEqual(
+                    configuration.environment.contains(
+                        "MACSSH_PASTE_HIGHLIGHT_ENABLED=\(enabled ? "1" : "0")"
+                    ),
+                    isZsh,
+                    "两种开关状态都必须显式传递初值"
                 )
             }
         }

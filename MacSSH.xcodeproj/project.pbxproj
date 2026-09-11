@@ -103,6 +103,24 @@
              XG10000000000000000000015 /* AgentProviderSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000015 /* AgentProviderSettings.swift */; };
              XG1000000000000000000001A /* ResponsesProviderCore.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001A /* ResponsesProviderCore.swift */; };
              XG1000000000000000000001B /* DeepSeekResponsesProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001B /* DeepSeekResponsesProvider.swift */; };
+             XG1000000000000000000001D /* AgentToolError.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001D /* AgentToolError.swift */; };
+             XG1000000000000000000001E /* AgentToolPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001E /* AgentToolPolicy.swift */; };
+             XG1000000000000000000001F /* AgentWorkingDirectory.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001F /* AgentWorkingDirectory.swift */; };
+             XG10000000000000000000020 /* AgentReadScope.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000020 /* AgentReadScope.swift */; };
+             XG10000000000000000000021 /* AgentPathResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000021 /* AgentPathResolver.swift */; };
+             XG10000000000000000000026 /* AgentUTF8Truncator.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000026 /* AgentUTF8Truncator.swift */; };
+             XG10000000000000000000027 /* AgentToolModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000027 /* AgentToolModels.swift */; };
+             XG10000000000000000000028 /* AgentLocalFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000028 /* AgentLocalFileService.swift */; };
+             XG10000000000000000000029 /* AgentToolRouter.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000029 /* AgentToolRouter.swift */; };
+             XG1000000000000000000002A /* AgentTerminalContext.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002A /* AgentTerminalContext.swift */; };
+             XG1000000000000000000002B /* AgentTerminalBufferSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002B /* AgentTerminalBufferSource.swift */; };
+             XG1000000000000000000002C /* TerminalRecentOutputSnapshotter.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002C /* TerminalRecentOutputSnapshotter.swift */; };
+             XG1000000000000000000002D /* SwiftTermTerminalBufferSource.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002D /* SwiftTermTerminalBufferSource.swift */; };
+             XG1000000000000000000002E /* TerminalAgentContextProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002E /* TerminalAgentContextProvider.swift */; };
+             XG10000000000000000000034 /* AgentRemoteReadOnlyFileClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000034 /* AgentRemoteReadOnlyFileClient.swift */; };
+             XG10000000000000000000035 /* AgentRemotePathResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000035 /* AgentRemotePathResolver.swift */; };
+             XG10000000000000000000036 /* AgentRemoteReadOnlyFileService.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000036 /* AgentRemoteReadOnlyFileService.swift */; };
+             XG10000000000000000000037 /* AgentRemoteServiceResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000037 /* AgentRemoteServiceResolver.swift */; };
 		D10000000000000000000005 /* HostTrustDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D20000000000000000000009 /* HostTrustDialogView.swift */; };
 		D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000E /* HostKeyChangedDialogView.swift */; };
 		D10000000000000000000009 /* SSHConnectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2000000000000000000000A /* SSHConnectionTests.swift */; };
@@ -161,6 +179,29 @@
              XG10000000000000000000018 /* AgentCredentialServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000018 /* AgentCredentialServiceTests.swift */; };
              XG10000000000000000000019 /* AgentProviderSettingsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000019 /* AgentProviderSettingsTests.swift */; };
              XG1000000000000000000001C /* DeepSeekResponsesProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */; };
+             XG10000000000000000000022 /* AgentCWDTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000022 /* AgentCWDTests.swift */; };
+             XG10000000000000000000023 /* AgentReadScopeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000023 /* AgentReadScopeTests.swift */; };
+             XG10000000000000000000024 /* AgentPathResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000024 /* AgentPathResolverTests.swift */; };
+             XG10000000000000000000025 /* LocalShellOSC7Tests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000025 /* LocalShellOSC7Tests.swift */; };
+             XG1000000000000000000002F /* AgentUTF8TruncatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000002F /* AgentUTF8TruncatorTests.swift */; };
+             XG10000000000000000000030 /* AgentTerminalContextTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000030 /* AgentTerminalContextTests.swift */; };
+             XG10000000000000000000031 /* AgentLocalFileServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000031 /* AgentLocalFileServiceTests.swift */; };
+             XG10000000000000000000032 /* AgentToolRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000032 /* AgentToolRouterTests.swift */; };
+             XG10000000000000000000033 /* AgentProviderToolGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000033 /* AgentProviderToolGateTests.swift */; };
+             XG10000000000000000000038 /* AgentRemotePathResolverTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000038 /* AgentRemotePathResolverTests.swift */; };
+             XG10000000000000000000039 /* AgentRemoteFileServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG20000000000000000000039 /* AgentRemoteFileServiceTests.swift */; };
+             XG1000000000000000000003A /* AgentRemoteRouterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000003A /* AgentRemoteRouterTests.swift */; };
+             XG1000000000000000000003B /* AgentRemoteRealSFTPTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2000000000000000000003B /* AgentRemoteRealSFTPTests.swift */; };
+             XG1C0000000000000000003C /* AgentProviderToolEvents.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C0000000000000000003C /* AgentProviderToolEvents.swift */; };
+             XG1C0000000000000000003D /* ResponsesJSONValue.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C0000000000000000003D /* ResponsesJSONValue.swift */; };
+             XG1C0000000000000000003E /* ResponsesFunctionCallAssembler.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C0000000000000000003E /* ResponsesFunctionCallAssembler.swift */; };
+             XG1C0000000000000000003F /* AgentToolDefinition.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C0000000000000000003F /* AgentToolDefinition.swift */; };
+             XG1C00000000000000000040 /* AgentToolResultSerializer.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000040 /* AgentToolResultSerializer.swift */; };
+             XG1C00000000000000000041 /* AgentToolActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000041 /* AgentToolActivity.swift */; };
+             XG1C00000000000000000042 /* AgentToolCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000042 /* AgentToolCardView.swift */; };
+             XG1C00000000000000000043 /* AgentProviderToolCallingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */; };
+             XG1C00000000000000000044 /* AgentToolLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000044 /* AgentToolLoopTests.swift */; };
+             XG1C00000000000000000045 /* AgentToolResultSerializerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -277,11 +318,52 @@
              XG20000000000000000000015 /* AgentProviderSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderSettings.swift; sourceTree = "<group>"; };
              XG2000000000000000000001A /* ResponsesProviderCore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesProviderCore.swift; sourceTree = "<group>"; };
              XG2000000000000000000001B /* DeepSeekResponsesProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekResponsesProvider.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001D /* AgentToolError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolError.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001E /* AgentToolPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolPolicy.swift; sourceTree = "<group>"; };
+             XG2000000000000000000001F /* AgentWorkingDirectory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentWorkingDirectory.swift; sourceTree = "<group>"; };
+             XG20000000000000000000020 /* AgentReadScope.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReadScope.swift; sourceTree = "<group>"; };
+             XG20000000000000000000021 /* AgentPathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPathResolver.swift; sourceTree = "<group>"; };
+             XG20000000000000000000026 /* AgentUTF8Truncator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUTF8Truncator.swift; sourceTree = "<group>"; };
+             XG20000000000000000000027 /* AgentToolModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolModels.swift; sourceTree = "<group>"; };
+             XG20000000000000000000028 /* AgentLocalFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalFileService.swift; sourceTree = "<group>"; };
+             XG20000000000000000000029 /* AgentToolRouter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolRouter.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002A /* AgentTerminalContext.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalContext.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002B /* AgentTerminalBufferSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalBufferSource.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002C /* TerminalRecentOutputSnapshotter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalRecentOutputSnapshotter.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002D /* SwiftTermTerminalBufferSource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SwiftTermTerminalBufferSource.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002E /* TerminalAgentContextProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalAgentContextProvider.swift; sourceTree = "<group>"; };
+             XG20000000000000000000034 /* AgentRemoteReadOnlyFileClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteReadOnlyFileClient.swift; sourceTree = "<group>"; };
+             XG20000000000000000000035 /* AgentRemotePathResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePathResolver.swift; sourceTree = "<group>"; };
+             XG20000000000000000000036 /* AgentRemoteReadOnlyFileService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteReadOnlyFileService.swift; sourceTree = "<group>"; };
+             XG20000000000000000000037 /* AgentRemoteServiceResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteServiceResolver.swift; sourceTree = "<group>"; };
              XG20000000000000000000016 /* SSEEventParserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSEEventParserTests.swift; sourceTree = "<group>"; };
              XG20000000000000000000017 /* OpenAIResponsesProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OpenAIResponsesProviderTests.swift; sourceTree = "<group>"; };
              XG20000000000000000000018 /* AgentCredentialServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCredentialServiceTests.swift; sourceTree = "<group>"; };
              XG20000000000000000000019 /* AgentProviderSettingsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderSettingsTests.swift; sourceTree = "<group>"; };
              XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeepSeekResponsesProviderTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000022 /* AgentCWDTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCWDTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000023 /* AgentReadScopeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentReadScopeTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000024 /* AgentPathResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentPathResolverTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000025 /* LocalShellOSC7Tests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellOSC7Tests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000002F /* AgentUTF8TruncatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentUTF8TruncatorTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000030 /* AgentTerminalContextTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalContextTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000031 /* AgentLocalFileServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalFileServiceTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000032 /* AgentToolRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolRouterTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000033 /* AgentProviderToolGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderToolGateTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000038 /* AgentRemotePathResolverTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemotePathResolverTests.swift; sourceTree = "<group>"; };
+             XG20000000000000000000039 /* AgentRemoteFileServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteFileServiceTests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000003A /* AgentRemoteRouterTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteRouterTests.swift; sourceTree = "<group>"; };
+             XG2000000000000000000003B /* AgentRemoteRealSFTPTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteRealSFTPTests.swift; sourceTree = "<group>"; };
+             XG2C0000000000000000003C /* AgentProviderToolEvents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderToolEvents.swift; sourceTree = "<group>"; };
+             XG2C0000000000000000003D /* ResponsesJSONValue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesJSONValue.swift; sourceTree = "<group>"; };
+             XG2C0000000000000000003E /* ResponsesFunctionCallAssembler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ResponsesFunctionCallAssembler.swift; sourceTree = "<group>"; };
+             XG2C0000000000000000003F /* AgentToolDefinition.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolDefinition.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000040 /* AgentToolResultSerializer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolResultSerializer.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000041 /* AgentToolActivity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolActivity.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000042 /* AgentToolCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolCardView.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderToolCallingTests.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000044 /* AgentToolLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolLoopTests.swift; sourceTree = "<group>"; };
+             XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolResultSerializerTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
@@ -454,6 +536,7 @@
 					XG20000000000000000000001 /* AgentSidebarView.swift */,
 					XG20000000000000000000002 /* AgentContextHeaderView.swift */,
 					XG20000000000000000000003 /* AgentMessageView.swift */,
+             XG2C00000000000000000042 /* AgentToolCardView.swift */,
 				);
 				path = Agent;
 				sourceTree = "<group>";
@@ -482,10 +565,47 @@
 					XG20000000000000000000009 /* MockAgentProvider.swift */,
 					XG2000000000000000000000A /* AgentViewModel.swift */,
 					XG20000000000000000000015 /* AgentProviderSettings.swift */,
+             XG2C00000000000000000041 /* AgentToolActivity.swift */,
 					XG40000000000000000000003 /* Provider */,
 					XG40000000000000000000004 /* Security */,
+					XG40000000000000000000005 /* Tools */,
+					XG40000000000000000000006 /* Terminal */,
 				);
 				path = Agent;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000005 /* Tools */ = {
+				isa = PBXGroup;
+				children = (
+					XG2000000000000000000001D /* AgentToolError.swift */,
+					XG2000000000000000000001E /* AgentToolPolicy.swift */,
+					XG2000000000000000000001F /* AgentWorkingDirectory.swift */,
+					XG20000000000000000000020 /* AgentReadScope.swift */,
+					XG20000000000000000000021 /* AgentPathResolver.swift */,
+					XG20000000000000000000026 /* AgentUTF8Truncator.swift */,
+					XG20000000000000000000027 /* AgentToolModels.swift */,
+					XG20000000000000000000028 /* AgentLocalFileService.swift */,
+					XG20000000000000000000029 /* AgentToolRouter.swift */,
+					XG20000000000000000000034 /* AgentRemoteReadOnlyFileClient.swift */,
+					XG20000000000000000000035 /* AgentRemotePathResolver.swift */,
+					XG20000000000000000000036 /* AgentRemoteReadOnlyFileService.swift */,
+					XG20000000000000000000037 /* AgentRemoteServiceResolver.swift */,
+             XG2C0000000000000000003F /* AgentToolDefinition.swift */,
+             XG2C00000000000000000040 /* AgentToolResultSerializer.swift */,
+				);
+				path = Tools;
+				sourceTree = "<group>";
+			};
+			XG40000000000000000000006 /* Terminal */ = {
+				isa = PBXGroup;
+				children = (
+					XG2000000000000000000002A /* AgentTerminalContext.swift */,
+					XG2000000000000000000002B /* AgentTerminalBufferSource.swift */,
+					XG2000000000000000000002C /* TerminalRecentOutputSnapshotter.swift */,
+					XG2000000000000000000002D /* SwiftTermTerminalBufferSource.swift */,
+					XG2000000000000000000002E /* TerminalAgentContextProvider.swift */,
+				);
+				path = Terminal;
 				sourceTree = "<group>";
 			};
 			XG40000000000000000000003 /* Provider */ = {
@@ -500,6 +620,9 @@
 					XG20000000000000000000011 /* OpenAIResponsesProvider.swift */,
 					XG20000000000000000000012 /* ResolvingAgentProvider.swift */,
 					XG20000000000000000000013 /* SSEEventParser.swift */,
+             XG2C0000000000000000003C /* AgentProviderToolEvents.swift */,
+             XG2C0000000000000000003D /* ResponsesJSONValue.swift */,
+             XG2C0000000000000000003E /* ResponsesFunctionCallAssembler.swift */,
 				);
 				path = Provider;
 				sourceTree = "<group>";
@@ -600,10 +723,26 @@
 			XG20000000000000000000018 /* AgentCredentialServiceTests.swift */,
 			XG20000000000000000000019 /* AgentProviderSettingsTests.swift */,
 				XG2000000000000000000001C /* DeepSeekResponsesProviderTests.swift */,
-		);
-		path = SSH;
-		sourceTree = "<group>";
-	};
+				XG20000000000000000000022 /* AgentCWDTests.swift */,
+				XG20000000000000000000023 /* AgentReadScopeTests.swift */,
+				XG20000000000000000000024 /* AgentPathResolverTests.swift */,
+				XG20000000000000000000025 /* LocalShellOSC7Tests.swift */,
+				XG2000000000000000000002F /* AgentUTF8TruncatorTests.swift */,
+				XG20000000000000000000030 /* AgentTerminalContextTests.swift */,
+				XG20000000000000000000031 /* AgentLocalFileServiceTests.swift */,
+				XG20000000000000000000032 /* AgentToolRouterTests.swift */,
+				XG20000000000000000000033 /* AgentProviderToolGateTests.swift */,
+				XG20000000000000000000038 /* AgentRemotePathResolverTests.swift */,
+				XG20000000000000000000039 /* AgentRemoteFileServiceTests.swift */,
+				XG2000000000000000000003A /* AgentRemoteRouterTests.swift */,
+				XG2000000000000000000003B /* AgentRemoteRealSFTPTests.swift */,
+				XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */,
+				XG2C00000000000000000044 /* AgentToolLoopTests.swift */,
+				XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */,
+			);
+			path = SSH;
+			sourceTree = "<group>";
+		};
 	D40000000000000000000003 /* Hosts */ = {
 		isa = PBXGroup;
 		children = (
@@ -1000,6 +1139,31 @@
                                 XG10000000000000000000015 /* AgentProviderSettings.swift in Sources */,
                                 XG1000000000000000000001A /* ResponsesProviderCore.swift in Sources */,
                                 XG1000000000000000000001B /* DeepSeekResponsesProvider.swift in Sources */,
+                                XG1000000000000000000001D /* AgentToolError.swift in Sources */,
+                                XG1000000000000000000001E /* AgentToolPolicy.swift in Sources */,
+                                XG1000000000000000000001F /* AgentWorkingDirectory.swift in Sources */,
+                                XG10000000000000000000020 /* AgentReadScope.swift in Sources */,
+                                XG10000000000000000000021 /* AgentPathResolver.swift in Sources */,
+                                XG10000000000000000000026 /* AgentUTF8Truncator.swift in Sources */,
+                                XG10000000000000000000027 /* AgentToolModels.swift in Sources */,
+                                XG10000000000000000000028 /* AgentLocalFileService.swift in Sources */,
+                                XG10000000000000000000029 /* AgentToolRouter.swift in Sources */,
+                                XG1000000000000000000002A /* AgentTerminalContext.swift in Sources */,
+                                XG1000000000000000000002B /* AgentTerminalBufferSource.swift in Sources */,
+                                XG1000000000000000000002C /* TerminalRecentOutputSnapshotter.swift in Sources */,
+                                XG1000000000000000000002D /* SwiftTermTerminalBufferSource.swift in Sources */,
+                                XG1000000000000000000002E /* TerminalAgentContextProvider.swift in Sources */,
+                                XG10000000000000000000034 /* AgentRemoteReadOnlyFileClient.swift in Sources */,
+                                XG10000000000000000000035 /* AgentRemotePathResolver.swift in Sources */,
+                                XG10000000000000000000036 /* AgentRemoteReadOnlyFileService.swift in Sources */,
+                                XG10000000000000000000037 /* AgentRemoteServiceResolver.swift in Sources */,
+             XG1C0000000000000000003C /* AgentProviderToolEvents.swift in Sources */,
+             XG1C0000000000000000003D /* ResponsesJSONValue.swift in Sources */,
+             XG1C0000000000000000003E /* ResponsesFunctionCallAssembler.swift in Sources */,
+             XG1C0000000000000000003F /* AgentToolDefinition.swift in Sources */,
+             XG1C00000000000000000040 /* AgentToolResultSerializer.swift in Sources */,
+             XG1C00000000000000000041 /* AgentToolActivity.swift in Sources */,
+             XG1C00000000000000000042 /* AgentToolCardView.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 				E10000000000000000000001 /* RemoteTerminalError.swift in Sources */,
@@ -1070,6 +1234,22 @@
                                 XG10000000000000000000018 /* AgentCredentialServiceTests.swift in Sources */,
                                 XG10000000000000000000019 /* AgentProviderSettingsTests.swift in Sources */,
 					XG1000000000000000000001C /* DeepSeekResponsesProviderTests.swift in Sources */,
+					XG10000000000000000000022 /* AgentCWDTests.swift in Sources */,
+					XG10000000000000000000023 /* AgentReadScopeTests.swift in Sources */,
+					XG10000000000000000000024 /* AgentPathResolverTests.swift in Sources */,
+					XG10000000000000000000025 /* LocalShellOSC7Tests.swift in Sources */,
+					XG1000000000000000000002F /* AgentUTF8TruncatorTests.swift in Sources */,
+					XG10000000000000000000030 /* AgentTerminalContextTests.swift in Sources */,
+					XG10000000000000000000031 /* AgentLocalFileServiceTests.swift in Sources */,
+					XG10000000000000000000032 /* AgentToolRouterTests.swift in Sources */,
+					XG10000000000000000000033 /* AgentProviderToolGateTests.swift in Sources */,
+					XG10000000000000000000038 /* AgentRemotePathResolverTests.swift in Sources */,
+					XG10000000000000000000039 /* AgentRemoteFileServiceTests.swift in Sources */,
+					XG1000000000000000000003A /* AgentRemoteRouterTests.swift in Sources */,
+					XG1000000000000000000003B /* AgentRemoteRealSFTPTests.swift in Sources */,
+					XG1C00000000000000000043 /* AgentProviderToolCallingTests.swift in Sources */,
+					XG1C00000000000000000044 /* AgentToolLoopTests.swift in Sources */,
+					XG1C00000000000000000045 /* AgentToolResultSerializerTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

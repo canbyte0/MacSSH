@@ -453,7 +453,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("agent.title", "Agent", "智能助手"),
     ("agent.input.placeholder", "Ask Agent…", "向 Agent 提问…"),
     ("agent.empty.title", "Ask about this terminal", "询问当前终端"),
-    ("agent.empty.subtitle", "Ask anything — the Agent replies with text only.\nNo commands can be executed yet.", "随时提问——Agent 仅回复文字。\n尚不能执行任何命令。"),
+    ("agent.empty.subtitle", "Ask anything — the Agent can read the terminal context and files under the current directory (read-only). It cannot run commands.", "随时提问——Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"),
     ("agent.context.local", "Local", "本地"),
     ("agent.context.ssh", "SSH", "SSH"),
     ("agent.context.unavailable", "Session unavailable", "会话不可用"),
@@ -475,6 +475,19 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("agent.provider.error.network", "Network error. Check your connection.", "网络错误。请检查网络连接。"),
     ("agent.provider.error.invalid_response", "The AI service returned an unreadable response.", "AI 服务返回了无法解析的响应。"),
     ("agent.provider.error.incomplete", "The response was cut off before completion. Try again or simplify your request.", "回复在完成前被截断，请重试或简化请求。"),
+    ("agent.provider.error.tool_round_limit", "The agent stopped after reaching the tool round limit. Try simplifying your request.", "智能助手已达到工具轮次上限并停止。请尝试简化请求。"),
+    ("agent.provider.error.session_unavailable", "The terminal session is no longer available.", "终端会话已不可用。"),
+
+    # ── Agent 工具卡片（MacSSH 1.1 Phase 10D-B4，任务书 §38 / §39 / §81）──
+    ("agent.tool.get_terminal_context", "Read terminal context", "读取终端上下文"),
+    ("agent.tool.get_current_directory", "Get current directory", "获取当前目录"),
+    ("agent.tool.list_directory", "List directory", "列出目录"),
+    ("agent.tool.read_file", "Read file", "读取文件"),
+    ("agent.tool.unknown", "Tool call", "工具调用"),
+    ("agent.tool.status.running", "Running", "进行中"),
+    ("agent.tool.status.success", "Done", "完成"),
+    ("agent.tool.status.failure", "Failed", "失败"),
+    ("agent.tool.status.cancelled", "Cancelled", "已取消"),
 
     # ── Agent Settings（MacSSH 1.1 Phase 10C，任务书 §12 / §36）──────
     ("agent.settings.provider", "Provider", "服务商"),
@@ -492,7 +505,7 @@ TRANSLATIONS: list[tuple[str, str, str]] = [
     ("agent.settings.api_key.not_configured", "Not configured", "未配置"),
     ("agent.settings.api_key.save", "Save", "保存"),
     ("agent.settings.api_key.delete", "Delete", "删除"),
-    ("agent.settings.api_key.help", "The API Key is stored in the macOS Keychain and never displayed back. The Agent replies with text only — it cannot run commands.", "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 仅回复文字，不会执行任何命令。"),
+    ("agent.settings.api_key.help", "The API Key is stored in the macOS Keychain and never displayed back. The Agent can read the terminal context and files under the current directory (read-only). It cannot run commands.", "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"),
     ("agent.settings.api_key.action_failed_title", "Keychain Error", "钥匙串错误"),
     ("agent.settings.api_key.action_failed_message", "Saving or deleting the API Key failed. Please try again.", "API Key 保存或删除失败，请重试。"),
 ]

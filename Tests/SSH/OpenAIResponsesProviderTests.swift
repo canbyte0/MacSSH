@@ -216,7 +216,11 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         from provider: AgentProvider
     ) async throws -> [AgentEvent] {
         var events: [AgentEvent] = []
-        for try await event in provider.stream(messages: makeMessages(), context: makeContext()) {
+        for try await event in provider.stream(
+            transcript: makeMessages(),
+            tools: AgentToolCatalog.definitions,
+            context: makeContext()
+        ) {
             events.append(event)
         }
         return events
@@ -319,7 +323,7 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         )
     }
 
-    func testRequestBodyModelStreamOrderedHistoryAndNoTools() async throws {
+    func testRequestBodyModelStreamOrderedHistoryAndTools() async throws {
         installSuccessHandler()
         _ = try await collectEvents(from: makeProvider(session: makeSession()))
 
@@ -358,9 +362,34 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         let assistantParts = try XCTUnwrap(input[2]["content"] as? [[String: Any]])
         XCTAssertEqual(assistantParts.first?["type"] as? String, "output_text")
 
-        // 硬性禁止字段（任务书 §28 hard gate）。
+        // B4 §7–§10 hard gate：tools 只含 4 个 read-only function 工具，
+        // tool_choice 恒为 auto；禁止的 provider 侧工具类型 / 危险名字
+        // 绝不出现在请求体。
+        let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
+        XCTAssertEqual(tools.count, 4, "只允许 4 个 read-only 工具")
+        XCTAssertEqual(
+            Set(tools.compactMap { $0["type"] as? String }),
+            ["function"],
+            "只允许 function tools（禁止 web_search / file_search / computer / code_interpreter / MCP）"
+        )
+        XCTAssertEqual(
+            Set(tools.compactMap { $0["name"] as? String }),
+            Set(AgentToolCatalog.names)
+        )
+        for tool in tools {
+            XCTAssertNotNil(tool["description"] as? String)
+            XCTAssertNotNil(tool["parameters"] as? [String: Any])
+        }
+        XCTAssertEqual(json["tool_choice"] as? String, "auto", "tool_choice 恒为 auto（§8）")
+        XCTAssertNil(json["previous_response_id"], "必须本地重建上下文（§21）")
+        XCTAssertNil(json["conversation"])
+
         let rawBody = String(decoding: requestBody(of: request), as: UTF8.self)
-        for forbidden in ["tools", "tool_choice", "function", "functions", "previous_response_id"] {
+        for forbidden in [
+            "web_search", "file_search", "computer", "code_interpreter",
+            "apply_patch", "run_command", "execute", "shell", "terminal_send",
+            "write_file", "delete_file", "rename_file", "mkdir", "git_status",
+        ] {
             XCTAssertFalse(
                 rawBody.contains("\"\(forbidden)\""),
                 "request body 不得包含 \(forbidden)"
@@ -381,7 +410,11 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         )
         var events: [AgentEvent] = []
         for try await event in makeProvider(session: makeSession())
-            .stream(messages: messages, context: makeContext()) {
+            .stream(
+                transcript: messages,
+                tools: AgentToolCatalog.definitions,
+                context: makeContext()
+            ) {
             events.append(event)
         }
 
@@ -484,7 +517,11 @@ final class OpenAIResponsesProviderTests: XCTestCase {
             (Self.httpResponse(statusCode: 200, url: request.url ?? baseURL), [])
         }
         let provider = makeProvider(session: makeSession())
-        let stream = provider.stream(messages: makeMessages(), context: makeContext())
+        let stream = provider.stream(
+            transcript: makeMessages(),
+            tools: AgentToolCatalog.definitions,
+            context: makeContext()
+        )
 
         let consumer = Task {
             var events: [AgentEvent] = []

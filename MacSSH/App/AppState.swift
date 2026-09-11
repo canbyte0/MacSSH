@@ -191,18 +191,34 @@ final class AppState {
         self.commandHistoryStore = commandHistoryStore
         self.commandDispatcher = commandDispatcher
 
-        // MacSSH 1.1 Phase 10C：Agent 装配升级（任务书 §14：production 无 Mock）。
-        // AppState 持有 Store / CredentialService / ViewModel；provider 为
-        // ResolvingAgentProvider——每次请求启动时解析一次 Settings + Keychain
-        // 配置快照（任务书 §25 / §26），未配置 Key 时 notConfigured / 抛
-        // missingCredential，绝不 fallback Mock。具体 active session 由
-        // ViewModel 经闭包实时解析（弱引用 SessionManager，Agent domain
-        // 不反向持有），SessionManager 完全不感知 Agent（不改 Terminal service）。
+        // MacSSH 1.1 Phase 10C / 10D-B4：Agent 装配升级（任务书 §14：
+        // production 无 Mock）。AppState 持有 Store / CredentialService /
+        // ViewModel；provider 为 ResolvingAgentProvider——generation 启动
+        // 时解析一次 Settings + Keychain 快照（B4 §54/§55），未配置 Key 时
+        // notConfigured / 抛 missingCredential，绝不 fallback Mock。
+        // 具体 active session 由 ViewModel 经闭包实时解析（弱引用
+        // SessionManager，Agent domain 不反向持有），SessionManager 完全
+        // 不感知 Agent（不改 Terminal service）。
+        //
+        // B4 tool loop 接线：AgentToolRouter 只经显式 sessionID 寻址
+        // （TerminalAgentContextProvider），Remote 文件能力经 B3 的
+        // SessionManagerAgentRemoteServiceResolver（existing authenticated
+        // SSHConnection + 既有 SFTP 子系统）——绝无 exec / PTY / 本地
+        // fallback。
         let agentConversationStore = AgentConversationStore()
         let agentCredentialService = AgentCredentialService()
+        let agentRemoteServiceResolver = SessionManagerAgentRemoteServiceResolver(
+            sessionManager: sessionManager
+        )
+        let agentToolRouter = AgentToolRouter(
+            sessionProvider: TerminalAgentContextProvider(sessionManager: sessionManager),
+            remoteServiceResolver: agentRemoteServiceResolver
+        )
         let agentViewModel = AgentViewModel(
             store: agentConversationStore,
             provider: ResolvingAgentProvider(credentialService: agentCredentialService),
+            toolRouter: agentToolRouter,
+            remoteServiceResolver: agentRemoteServiceResolver,
             activeSessionProvider: { [weak sessionManager] in
                 sessionManager?.activeSession
             },

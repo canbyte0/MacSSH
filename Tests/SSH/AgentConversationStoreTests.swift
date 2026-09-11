@@ -45,7 +45,7 @@ final class AgentConversationStoreTests: XCTestCase {
 
         XCTAssertEqual(conversation.messages.count, 1)
         XCTAssertEqual(conversation.messages.first?.role, .user)
-        XCTAssertEqual(conversation.messages.first?.content, "hello")
+        XCTAssertEqual(conversation.messages.first?.text, "hello")
         XCTAssertEqual(conversation.messages.first?.state, .complete)
     }
 
@@ -60,7 +60,7 @@ final class AgentConversationStoreTests: XCTestCase {
         conversation.completeMessage(assistant.id)
 
         XCTAssertEqual(conversation.messages.count, 1)
-        XCTAssertEqual(conversation.messages.first?.content, "这是 chunk")
+        XCTAssertEqual(conversation.messages.first?.text, "这是 chunk")
         XCTAssertEqual(conversation.messages.first?.state, .complete)
     }
 
@@ -73,7 +73,7 @@ final class AgentConversationStoreTests: XCTestCase {
         conversation.appendChunk("partial", to: assistant.id)
         conversation.failMessage(assistant.id)
 
-        XCTAssertEqual(conversation.messages.first?.content, "partial", "失败时 partial 内容必须保留")
+        XCTAssertEqual(conversation.messages.first?.text, "partial", "失败时 partial 内容必须保留")
         XCTAssertEqual(conversation.messages.first?.state, .failed)
     }
 
@@ -99,8 +99,8 @@ final class AgentConversationStoreTests: XCTestCase {
         localConversation.append(AgentMessage(role: .user, content: "local message"))
         remoteConversation.append(AgentMessage(role: .user, content: "remote message"))
 
-        XCTAssertEqual(localConversation.messages.first?.content, "local message")
-        XCTAssertEqual(remoteConversation.messages.first?.content, "remote message")
+        XCTAssertEqual(localConversation.messages.first?.text, "local message")
+        XCTAssertEqual(remoteConversation.messages.first?.text, "remote message")
     }
 
     func testRemoveConversation() {
@@ -127,7 +127,7 @@ final class AgentConversationStoreTests: XCTestCase {
             }
             generationFinished.fulfill()
         }
-        conversation.beginGeneration(task)
+        conversation.beginGeneration(task, generationID: UUID())
         XCTAssertTrue(conversation.isGenerating)
 
         store.removeConversation(for: sessionID)
@@ -144,7 +144,7 @@ final class AgentConversationStoreTests: XCTestCase {
         let conversationB = store.conversation(for: UUID())
 
         let task = Task<Void, Never> {}
-        conversationA.beginGeneration(task)
+        conversationA.beginGeneration(task, generationID: UUID())
 
         XCTAssertTrue(conversationA.isGenerating)
         XCTAssertFalse(conversationB.isGenerating)

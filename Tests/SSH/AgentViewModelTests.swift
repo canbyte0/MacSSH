@@ -15,7 +15,8 @@ final class AgentViewModelTests: XCTestCase {
     /// 先产出一个 chunk 再长期挂起的 provider：验证 Stop 取消与 partial 保留。
     private struct PartialThenSlowProvider: AgentProvider {
         func stream(
-            messages: [AgentMessage],
+            transcript: [AgentMessage],
+            tools: [AgentToolDefinition],
             context: AgentSessionContext
         ) -> AsyncThrowingStream<AgentEvent, Error> {
             AsyncThrowingStream { continuation in
@@ -35,7 +36,8 @@ final class AgentViewModelTests: XCTestCase {
     /// 只进入 A conversation」（任务书 §24 hard gate）。
     private struct DelayedDeltaProvider: AgentProvider {
         func stream(
-            messages: [AgentMessage],
+            transcript: [AgentMessage],
+            tools: [AgentToolDefinition],
             context: AgentSessionContext
         ) -> AsyncThrowingStream<AgentEvent, Error> {
             AsyncThrowingStream { continuation in
@@ -58,6 +60,7 @@ final class AgentViewModelTests: XCTestCase {
     private final class ScriptedAgentProvider: AgentProvider, @unchecked Sendable {
         struct Call {
             let messages: [AgentMessage]
+            let tools: [AgentToolDefinition]
             let context: AgentSessionContext
         }
 
@@ -77,11 +80,12 @@ final class AgentViewModelTests: XCTestCase {
         }
 
         func stream(
-            messages: [AgentMessage],
+            transcript: [AgentMessage],
+            tools: [AgentToolDefinition],
             context: AgentSessionContext
         ) -> AsyncThrowingStream<AgentEvent, Error> {
             lock.lock()
-            _calls.append(Call(messages: messages, context: context))
+            _calls.append(Call(messages: transcript, tools: tools, context: context))
             let result: Result<[AgentEvent], Error>
             if scripts.count > 1 {
                 result = scripts.removeFirst()
@@ -145,6 +149,11 @@ final class AgentViewModelTests: XCTestCase {
         AgentViewModel(
             store: store,
             provider: provider,
+            // 本文件的用例不触发 tool call：router 以空 lookup 装配
+            // （工具路径由 AgentToolLoopTests 专项覆盖）。
+            toolRouter: AgentToolRouter(
+                sessionProvider: TerminalAgentContextProvider(handleLookup: { _ in nil })
+            ),
             activeSessionProvider: { box.session },
             allSessionsProvider: { box.session.map { [$0] } ?? [] }
         )
@@ -165,7 +174,7 @@ final class AgentViewModelTests: XCTestCase {
         await generationTask.value
 
         XCTAssertEqual(conversation.messages.first?.role, .user)
-        XCTAssertEqual(conversation.messages.first?.content, "hello world", "发送前必须 trim 空白")
+        XCTAssertEqual(conversation.messages.first?.text, "hello world", "发送前必须 trim 空白")
         XCTAssertTrue(conversation.draft.isEmpty, "发送后 draft 必须清空")
     }
 
@@ -199,7 +208,7 @@ final class AgentViewModelTests: XCTestCase {
         let assistant = try XCTUnwrap(conversation.messages.last)
         XCTAssertEqual(assistant.role, .assistant)
         XCTAssertEqual(assistant.state, .complete)
-        XCTAssertEqual(assistant.content, MockAgentProvider.replyText)
+        XCTAssertEqual(assistant.text, MockAgentProvider.replyText)
         XCTAssertFalse(conversation.isGenerating)
     }
 
@@ -259,15 +268,15 @@ final class AgentViewModelTests: XCTestCase {
 
         // 等待首个（也是唯一的）chunk 到达。
         let deadline = Date().addingTimeInterval(2)
-        while conversation.messages.last?.content.isEmpty != false, Date() < deadline {
+        while conversation.messages.last?.text.isEmpty != false, Date() < deadline {
             try await Task.sleep(nanoseconds: 10_000_000)
         }
-        XCTAssertEqual(conversation.messages.last?.content, "部分内容")
+        XCTAssertEqual(conversation.messages.last?.text, "部分内容")
 
         viewModel.stop()
         await generationTask.value
 
-        XCTAssertEqual(conversation.messages.last?.content, "部分内容", "已生成的 partial 内容不得删除")
+        XCTAssertEqual(conversation.messages.last?.text, "部分内容", "已生成的 partial 内容不得删除")
         XCTAssertEqual(conversation.messages.last?.state, .complete, "停止后 partial 标记为 complete")
         XCTAssertFalse(conversation.isGenerating)
     }
@@ -298,7 +307,7 @@ final class AgentViewModelTests: XCTestCase {
 
         XCTAssertEqual(conversation.messages.count, 4, "user + failed assistant + user + complete assistant")
         XCTAssertEqual(conversation.messages.last?.state, .complete)
-        XCTAssertEqual(conversation.messages.last?.content, MockAgentProvider.replyText)
+        XCTAssertEqual(conversation.messages.last?.text, MockAgentProvider.replyText)
     }
 
     // MARK: - 并发发送策略（任务书 §16）
@@ -361,8 +370,8 @@ final class AgentViewModelTests: XCTestCase {
         // 切回 Local A："A1" 仍在。
         box.session = sessionA
         XCTAssertEqual(viewModel.activeConversation?.messages.count, 2)
-        XCTAssertEqual(conversationA.messages.first?.content, "A1")
-        XCTAssertEqual(viewModel.activeConversation?.messages.first?.content, "A1")
+        XCTAssertEqual(conversationA.messages.first?.text, "A1")
+        XCTAssertEqual(viewModel.activeConversation?.messages.first?.text, "A1")
     }
 
     // MARK: - 关闭 session cleanup（任务书 §18）
@@ -501,9 +510,9 @@ final class AgentViewModelTests: XCTestCase {
             [.user, .assistant, .user],
             "必须发送完整有序多轮 history，禁止只发最后一条 user message"
         )
-        XCTAssertEqual(secondCall.messages[0].content, "我叫 Alice")
-        XCTAssertEqual(secondCall.messages[1].content, "reply")
-        XCTAssertEqual(secondCall.messages[2].content, "我叫什么？")
+        XCTAssertEqual(secondCall.messages[0].text, "我叫 Alice")
+        XCTAssertEqual(secondCall.messages[1].text, "reply")
+        XCTAssertEqual(secondCall.messages[2].text, "我叫什么？")
     }
 
     // MARK: - 结构化失败与恢复（Phase 10C 任务书 §20 / §35）
@@ -535,7 +544,7 @@ final class AgentViewModelTests: XCTestCase {
 
         let recovered = try XCTUnwrap(conversation.messages.last)
         XCTAssertEqual(recovered.state, .complete)
-        XCTAssertEqual(recovered.content, "recovered")
+        XCTAssertEqual(recovered.text, "recovered")
         XCTAssertEqual(provider.calls.count, 2)
     }
 
@@ -640,7 +649,7 @@ final class AgentViewModelTests: XCTestCase {
 
         viewModel.send()
         try await XCTUnwrap(conversation.generationTask).value
-        XCTAssertEqual(conversation.messages.last?.content, "reply")
+        XCTAssertEqual(conversation.messages.last?.text, "reply")
         XCTAssertEqual(provider.calls.count, 1)
     }
 
@@ -666,14 +675,14 @@ final class AgentViewModelTests: XCTestCase {
         XCTAssertFalse(conversationA === conversationB)
 
         // A 的 delta 在切换之后到达。
-        try await waitUntil { conversationA.messages.last?.content == "A-delta" }
+        try await waitUntil { conversationA.messages.last?.text == "A-delta" }
 
         // B conversation 不得出现 A 的任何 delta（高优先级 target isolation gate）。
         XCTAssertTrue(conversationB.isEmpty, "A 的 delta 只能追加到 A conversation")
 
         viewModel.stop()
         await taskA.value
-        XCTAssertEqual(conversationA.messages.last?.content, "A-delta")
+        XCTAssertEqual(conversationA.messages.last?.text, "A-delta")
         XCTAssertEqual(conversationA.messages.last?.state, .complete)
         XCTAssertTrue(conversationB.isEmpty)
     }

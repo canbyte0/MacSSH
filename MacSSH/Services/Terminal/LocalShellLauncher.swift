@@ -194,18 +194,21 @@ enum LocalShellLauncher {
         // ZLE 内监听每会话独立的控制 FIFO。开启和关闭均可实时更新现有输入行，
         // 不向 PTY 注入命令、不改写用户文件、不影响 SSH 或 bracketed paste。
         //
-        // 控制通道创建失败时保留旧的安全退路：关闭状态仍在新会话启动时应用
-        // `paste:none`；开启状态完全使用 Shell 原生配置。
+        // Phase 10D-B1：ZDOTDIR 恒定注入（与粘贴高亮开关、FIFO 控制通道
+        // 可用性均无关）——`.zshenv` 里的 OSC 7 cwd emitter 必须在任何
+        // 配置组合下稳定加载。`.zshenv` 代理只读取一次用户启动文件并立即
+        // 恢复原生目录，用户 `.zshenv`/`.zprofile`/`.zshrc`/`.zlogin` 链
+        // 不受影响。控制通道可用时 ZLE 内可实时切换粘贴高亮；不可用时
+        // 持久化初值一直生效（关闭态正确应用 `paste:none`——旧实现只注入
+        // ZDOTDIR 不注入开关值，`.zshenv` 的默认值会把它错误翻成开启）。
         if URL(fileURLWithPath: fallbackShell).lastPathComponent == "zsh",
            let zshIntegrationDirectory {
+            environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
+            environment.append(
+                "MACSSH_PASTE_HIGHLIGHT_ENABLED=\(pasteHighlightEnabled ? "1" : "0")"
+            )
             if let pasteHighlightControlPath {
-                environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
-                environment.append(
-                    "MACSSH_PASTE_HIGHLIGHT_ENABLED=\(pasteHighlightEnabled ? "1" : "0")"
-                )
                 environment.append("MACSSH_PASTE_HIGHLIGHT_FIFO=\(pasteHighlightControlPath)")
-            } else if !pasteHighlightEnabled {
-                environment.append("ZDOTDIR=\(zshIntegrationDirectory)")
             }
         }
 

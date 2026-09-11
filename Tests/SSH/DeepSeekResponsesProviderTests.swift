@@ -214,7 +214,11 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
         from provider: AgentProvider
     ) async throws -> [AgentEvent] {
         var events: [AgentEvent] = []
-        for try await event in provider.stream(messages: makeMessages(), context: makeContext()) {
+        for try await event in provider.stream(
+            transcript: makeMessages(),
+            tools: AgentToolCatalog.definitions,
+            context: makeContext()
+        ) {
             events.append(event)
         }
         return events
@@ -395,12 +399,26 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
         XCTAssertEqual(try text(of: input[2]), "好的，7319")
         XCTAssertEqual(try text(of: input[3]), "数字是多少？")
 
-        // 硬性禁止字段（任务书 §12 hard gate：DeepSeek 官方虽支持
-        // tool calls，Phase 10C-D 仍禁止）。
+        // B4 §7/§10 hard gate：DeepSeek Responses 与 OpenAI 同构——
+        // tools 只含 4 个 read-only function 工具 + tool_choice=auto；
+        // 禁用字段（server-side state / 危险工具名）绝不出现。
+        let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
+        XCTAssertEqual(tools.count, 4)
+        XCTAssertEqual(
+            Set(tools.compactMap { $0["type"] as? String }),
+            ["function"]
+        )
+        XCTAssertEqual(
+            Set(tools.compactMap { $0["name"] as? String }),
+            Set(AgentToolCatalog.names)
+        )
+        XCTAssertEqual(json["tool_choice"] as? String, "auto")
+
         let rawBody = String(decoding: requestBody(of: request), as: UTF8.self)
         for forbidden in [
-            "tools", "tool_choice", "function", "functions", "web_search",
-            "previous_response_id", "conversation",
+            "web_search", "file_search", "computer", "code_interpreter",
+            "previous_response_id", "conversation", "run_command",
+            "write_file", "delete_file", "mkdir", "git_status",
         ] {
             XCTAssertFalse(
                 rawBody.contains("\"\(forbidden)\""),
@@ -556,7 +574,11 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
             (Self.httpResponse(statusCode: 200, url: request.url ?? baseURL), [])
         }
         let provider = makeProvider(session: makeSession())
-        let stream = provider.stream(messages: makeMessages(), context: makeContext())
+        let stream = provider.stream(
+            transcript: makeMessages(),
+            tools: AgentToolCatalog.definitions,
+            context: makeContext()
+        )
 
         let consumer = Task {
             var events: [AgentEvent] = []

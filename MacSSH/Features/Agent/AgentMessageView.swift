@@ -57,11 +57,12 @@ struct AgentMessageView: View {
 
     /// 展示内容：失败且无 partial 内容时按失败分类显示错误文案
     /// （任务书 §20：结构化错误经 localization 映射，不暴露 raw error）。
+    /// B4：非文本 content（tool card / opaque item）不经本视图渲染。
     private var displayContent: String {
-        if message.state == .failed && message.content.isEmpty {
+        if message.state == .failed && message.text.isEmpty {
             return failureText
         }
-        return message.content
+        return message.text
     }
 
     /// 失败分类 → 本地化文案（agent.provider.error.*，任务书 §36）。
@@ -115,6 +116,18 @@ struct AgentMessageView: View {
                 defaultValue: "The response was cut off before completion. Try again or simplify your request.",
                 locale: locale
             )
+        case .toolRoundLimit:
+            L10n.string(
+                "agent.provider.error.tool_round_limit",
+                defaultValue: "The agent stopped after reaching the tool round limit. Try simplifying your request.",
+                locale: locale
+            )
+        case .sessionUnavailable:
+            L10n.string(
+                "agent.provider.error.session_unavailable",
+                defaultValue: "The terminal session is no longer available.",
+                locale: locale
+            )
         case .generic, nil:
             L10n.string(
                 "agent.error.generic",
@@ -134,7 +147,7 @@ struct AgentMessageView: View {
                 .controlSize(.mini)
         case .failed:
             // 有 partial 内容的失败：内容已展示，此处补一行错误提示。
-            if !message.content.isEmpty {
+            if !message.text.isEmpty {
                 Text(verbatim: failureText)
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
@@ -152,6 +165,9 @@ struct AgentMessageView: View {
             L10n.string("agent.role.assistant", defaultValue: "Agent", locale: locale)
         case .system:
             L10n.string("agent.role.system", defaultValue: "System", locale: locale)
+        case .tool:
+            // tool card 由 AgentToolCardView 渲染；此处仅防御性兜底。
+            L10n.string("agent.tool.unknown", defaultValue: "Tool call", locale: locale)
         }
     }
 }
@@ -163,6 +179,7 @@ private extension AgentMessage.Role {
         case .user: return "user"
         case .assistant: return "assistant"
         case .system: return "system"
+        case .tool: return "tool"
         }
     }
 }

@@ -92,9 +92,18 @@ struct AgentSidebarView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.none) {
-                    ForEach(conversation.messages) { message in
-                        AgentMessageView(message: message)
-                            .id(message.id)
+                    // B4 §37–§41：tool card 与会话文本共享同一有序时间线；
+                    // provider opaque item 不渲染（renderableMessages 过滤）。
+                    ForEach(conversation.renderableMessages) { message in
+                        if let activity = message.toolActivity {
+                            AgentToolCardView(activity: activity)
+                                .id(message.id)
+                                .padding(.horizontal, AppTheme.Spacing.regular)
+                                .padding(.vertical, AppTheme.Spacing.compact / 4)
+                        } else {
+                            AgentMessageView(message: message)
+                                .id(message.id)
+                        }
                     }
                 }
                 .padding(.vertical, AppTheme.Spacing.compact / 2)
@@ -103,7 +112,7 @@ struct AgentSidebarView: View {
             // （任务书 §19 第一版策略）。trigger 含最后一条消息 id + 内容长度，
             // chunk 追加与消息增删都会触发。
             .onChange(of: scrollTrigger(conversation)) { _, _ in
-                if let last = conversation.messages.last {
+                if let last = conversation.renderableMessages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
             }
@@ -111,8 +120,14 @@ struct AgentSidebarView: View {
     }
 
     private func scrollTrigger(_ conversation: AgentConversation) -> String {
-        guard let last = conversation.messages.last else { return "empty" }
-        return "\(last.id):\(last.content.count)"
+        guard let last = conversation.renderableMessages.last else { return "empty" }
+        let contentMarker: String
+        if let activity = last.toolActivity {
+            contentMarker = activity.status.rawMarker
+        } else {
+            contentMarker = "\(last.text.count)"
+        }
+        return "\(last.id):\(contentMarker)"
     }
 
     // MARK: - Empty state（任务书 §21）

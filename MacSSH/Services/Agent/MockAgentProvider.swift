@@ -1,11 +1,13 @@
 import Foundation
 
-/// MacSSH 1.1 Phase 10B：本地 mock 流式回复（任务书 §10）。
+/// MacSSH 1.1 Phase 10B / B4：本地 mock 流式回复（任务书 §10）。
 ///
 /// 只在内存中生成文本：无网络、无 URLSession、无执行能力、无 Keychain。
 /// - 回复按固定 chunk 流式产出，chunk 间隔可注入（测试用 `.zero` 避免 flaky）；
-/// - deterministic test hook：最后一条 user 消息包含 `/mock-error` 时抛错，
-///   用于验证失败 UI 与恢复（任务书 §22）。
+/// - deterministic test hook：最后一条 user **文本**消息包含 `/mock-error`
+///   时抛错，用于验证失败 UI 与恢复（任务书 §22）；
+/// - B4：mock 永不产出 toolCall——工具路径的验证由测试专用 scripted
+///   provider 承担（生产 loop 测试）。
 struct MockAgentProvider: AgentProvider {
     /// 每个 chunk 之间的延迟（生产默认 100ms，测试注入 `.zero`）。
     let chunkDelay: Duration
@@ -15,13 +17,14 @@ struct MockAgentProvider: AgentProvider {
     }
 
     func stream(
-        messages: [AgentMessage],
+        transcript: [AgentMessage],
+        tools: [AgentToolDefinition],
         context: AgentSessionContext
     ) -> AsyncThrowingStream<AgentEvent, Error> {
         AsyncThrowingStream { continuation in
             let producer = Task {
                 do {
-                    if Self.shouldTriggerMockError(messages) {
+                    if Self.shouldTriggerMockError(transcript) {
                         throw AgentMockError.mockFailure
                     }
                     let reply = Self.replyText
@@ -47,16 +50,17 @@ struct MockAgentProvider: AgentProvider {
 
     // MARK: - Mock 文本
 
-    private enum AgentMockError: Error {
+    enum AgentMockError: Error {
         case mockFailure
     }
 
-    /// `/mock-error`：最后一条 user 消息命中即失败（deterministic test hook）。
-    static func shouldTriggerMockError(_ messages: [AgentMessage]) -> Bool {
-        guard let lastUser = messages.last(where: { $0.role == .user }) else {
+    /// `/mock-error`：最后一条 user 文本消息命中即失败（deterministic
+    /// test hook；tool card 等非文本条目不参与判定）。
+    static func shouldTriggerMockError(_ transcript: [AgentMessage]) -> Bool {
+        guard let lastUser = transcript.last(where: { $0.role == .user }) else {
             return false
         }
-        return lastUser.content.contains("/mock-error")
+        return lastUser.text.contains("/mock-error")
     }
 
     /// mock 回复正文：明确告知当前未接真实模型、无执行能力（任务书 §10 示例）。

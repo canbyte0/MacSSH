@@ -16,6 +16,12 @@ enum AgentFailureKind: Sendable, Equatable {
     /// 回复在完成前被服务端标记为 incomplete（如长度上限截断）。
     /// MacSSH 1.1 Phase 10C-D：DeepSeek `response.incomplete` 结构化分类。
     case incomplete
+    /// B4 §26：工具轮次达到 hard cap（10）后模型仍请求工具，
+    /// generation 被结构化终止。
+    case toolRoundLimit
+    /// B4 §28/§43：执行工具时目标终端会话已不可用（关闭 / 断开）——
+    /// 无法继续的错误，generation 安全收尾。
+    case sessionUnavailable
     case generic
 }
 
