@@ -4,10 +4,11 @@ import XCTest
 @testable import MacSSH
 
 /// B4 §4/§5/§7/§8/§9/§50/§52 hard gate：
-/// Provider 请求只暴露静态 allowlist 的 4 个 read-only function 工具。
+/// Provider 请求只暴露静态 allowlist 的 4 个 read-only 工具和
+/// B4 的 run_command function tool。
 ///
 /// - 请求体键集合 = {model, input, stream, tools, tool_choice}；
-/// - tools 恰好 4 个 function、名字来自静态注册表（绝非 reflection /
+/// - tools 恰好 5 个 function、名字来自静态注册表（绝非 reflection /
 ///   动态导出）；
 /// - 禁用工具类型（web_search / file_search / computer / code_interpreter /
 ///   MCP / apply_patch）与危险工具名（run_command / write_file / …）绝不出现；
@@ -62,7 +63,7 @@ final class AgentProviderToolGateTests: XCTestCase {
     // MARK: - §4 静态 allowlist
 
     func testCatalogContainsExactlyFourReadOnlyTools() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 4)
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 5)
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -70,6 +71,7 @@ final class AgentProviderToolGateTests: XCTestCase {
                 "get_current_directory",
                 "list_directory",
                 "read_file",
+                "run_command",
             ]
         )
         // 与执行层静态注册表一一对应（§4：静态枚举派发，非 reflection）。
@@ -77,8 +79,9 @@ final class AgentProviderToolGateTests: XCTestCase {
             Set(AgentToolCatalog.names),
             Set(AgentToolName.allCases.map(\.rawValue))
         )
-        for tool in AgentToolName.allCases {
-            XCTAssertEqual(tool.risk, .readOnly, "本阶段全部 readOnly")
+        XCTAssertEqual(AgentToolName.runCommand.risk, .modifying)
+        for tool in AgentToolName.allCases where tool != .runCommand {
+            XCTAssertEqual(tool.risk, .readOnly, "read-only 工具风险不应改变")
         }
     }
 
@@ -89,7 +92,7 @@ final class AgentProviderToolGateTests: XCTestCase {
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         let tools = try XCTUnwrap(object["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 4)
+        XCTAssertEqual(tools.count, 5)
         for tool in tools {
             XCTAssertEqual(tool["type"] as? String, "function")
             XCTAssertNotNil(tool["name"] as? String)
@@ -120,6 +123,11 @@ final class AgentProviderToolGateTests: XCTestCase {
             case "get_terminal_context", "get_current_directory":
                 XCTAssertTrue(properties.isEmpty, "无参数工具不得声明 properties")
                 XCTAssertNil(parameters["required"])
+            case "run_command":
+                XCTAssertEqual(parameters["required"] as? [String], ["command"])
+                XCTAssertEqual(properties.count, 1)
+                let command = try XCTUnwrap(properties["command"] as? [String: Any])
+                XCTAssertEqual(command["type"] as? String, "string")
             default:
                 XCTFail("未知工具 \(name)")
             }
@@ -134,7 +142,7 @@ final class AgentProviderToolGateTests: XCTestCase {
             String(data: try JSONEncoder().encode(body), encoding: .utf8)
         )
         for prohibited in [
-            "run_command", "execute", "shell", "terminal_send", "send_to_terminal",
+            "execute", "exec", "shell", "terminal_send", "send_to_terminal",
             "write_file", "delete_file", "rename_file", "mkdir", "git_status",
             "chmod", "chown", "truncate", "upload",
         ] {
@@ -148,9 +156,10 @@ final class AgentProviderToolGateTests: XCTestCase {
         }
     }
 
-    func testHumanFacingToolDescriptionsDoNotGrantCommandExecution() {
-        // 描述文本不得暗示可执行命令（模型行为的第一道边界是 definitions）。
-        for tool in AgentToolCatalog.definitions {
+    func testHumanFacingToolDescriptionsDoNotGrantCommandExecution() throws {
+        // read-only 描述不得暗示可执行命令；run_command 必须明确 approval
+        // 与 non-interactive 边界，不能把它伪装成 read-only。
+        for tool in AgentToolCatalog.definitions where tool.name != "run_command" {
             let text = tool.description.lowercased()
             for forbidden in ["run a command", "execute a command", "shell command", "git status"] {
                 XCTAssertFalse(
@@ -159,6 +168,11 @@ final class AgentProviderToolGateTests: XCTestCase {
                 )
             }
         }
+        let runCommand = try XCTUnwrap(
+            AgentToolCatalog.definitions.first { $0.name == "run_command" }
+        )
+        XCTAssertTrue(runCommand.description.contains("explicit user approval"))
+        XCTAssertTrue(runCommand.description.contains("non-interactive"))
     }
 
     // MARK: - §50 普通文本中的伪工具标记绝不解析
@@ -252,9 +266,9 @@ final class AgentProviderToolGateTests: XCTestCase {
             .failure(.invalidArguments)
         )
         XCTAssertEqual(
-            AgentToolCallParsing.parse(name: "run_command", argumentsJSON: #"{"path":"/etc"}"#),
+            AgentToolCallParsing.parse(name: "execute", argumentsJSON: #"{"path":"/etc"}"#),
             .failure(.unknownTool),
-            "§51：未知 / 禁止工具名绝不派发"
+            "§51：未知 / 禁止工具名绝不派发；run_command 本身已是 allowlist 工具"
         )
         XCTAssertEqual(
             AgentToolCallParsing.parse(name: "get_terminal_context", argumentsJSON: "{}"),

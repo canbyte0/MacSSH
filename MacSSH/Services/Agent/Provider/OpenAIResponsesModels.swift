@@ -4,7 +4,8 @@ import Foundation
 ///
 /// 请求 / 流事件模型与传输循环在共享 `ResponsesProviderCore`（OpenAI /
 /// DeepSeek 结构一致）；本文件只保留 OpenAI 默认值与 mapper 薄壳。
-/// B4 请求体约束（§7/§52）：tools 只含 4 个 read-only function 工具，
+/// B4 请求体约束（§7/§52）：tools 只含 4 个 read-only function 工具和
+/// 唯一需要 approval 的 run_command，
 /// tool_choice 恒为 "auto"，绝无 web_search / file_search / computer /
 /// code_interpreter / MCP / apply_patch（由 ProviderTests 断言）。
 enum OpenAIResponsesDefaults {

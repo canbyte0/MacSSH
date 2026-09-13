@@ -96,7 +96,21 @@ struct AgentSidebarView: View {
                     // provider opaque item 不渲染（renderableMessages 过滤）。
                     ForEach(conversation.renderableMessages) { message in
                         if let activity = message.toolActivity {
-                            AgentToolCardView(activity: activity)
+                            AgentToolCardView(
+                                activity: activity,
+                                onApprove: {
+                                    viewModel.approveCommand(
+                                        cardID: message.id,
+                                        sessionID: conversation.sessionID
+                                    )
+                                },
+                                onDeny: {
+                                    viewModel.denyCommand(
+                                        cardID: message.id,
+                                        sessionID: conversation.sessionID
+                                    )
+                                }
+                            )
                                 .id(message.id)
                                 .padding(.horizontal, AppTheme.Spacing.regular)
                                 .padding(.vertical, AppTheme.Spacing.compact / 4)

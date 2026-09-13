@@ -45,4 +45,6 @@ enum AgentToolError: Error, Equatable, Sendable {
     case cancelled
     /// 非预期内部错误（symlink 环、规范化解算失败等）。
     case internalFailure
+    /// 防御性错误：run_command 不允许从 read-only Router 执行。
+    case commandRequiresApproval
 }

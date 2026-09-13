@@ -202,6 +202,36 @@
              XG1C00000000000000000043 /* AgentProviderToolCallingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */; };
              XG1C00000000000000000044 /* AgentToolLoopTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000044 /* AgentToolLoopTests.swift */; };
              XG1C00000000000000000045 /* AgentToolResultSerializerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */; };
+             XG1D00000000000000000001 /* AgentCommandRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000001 /* AgentCommandRequest.swift */; };
+             XG1D00000000000000000002 /* AgentCommandValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000002 /* AgentCommandValidation.swift */; };
+             XG1D00000000000000000003 /* AgentCommandApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000003 /* AgentCommandApproval.swift */; };
+             XG1D00000000000000000004 /* AgentCommandApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000004 /* AgentCommandApprovalCoordinator.swift */; };
+             XG1D00000000000000000005 /* AgentCommandExecutionAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000005 /* AgentCommandExecutionAuthorization.swift */; };
+             XG1F00000000000000000001 /* AgentCommandResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000001 /* AgentCommandResult.swift */; };
+             XG1F00000000000000000002 /* AgentLocalCommandEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000002 /* AgentLocalCommandEnvironment.swift */; };
+             XG1F00000000000000000003 /* AgentLocalCommandExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000003 /* AgentLocalCommandExecutor.swift */; };
+             XG1F00000000000000000004 /* AgentLocalCommandOutputSanitizer.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000004 /* AgentLocalCommandOutputSanitizer.swift */; };
+             XG1F00000000000000000005 /* AgentLocalCommandProcess.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000005 /* AgentLocalCommandProcess.swift */; };
+             XG1H00000000000000000001 /* SSHExecChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2H00000000000000000001 /* SSHExecChannel.swift */; };
+             XG1H00000000000000000002 /* AgentRemoteCommandBuilder.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2H00000000000000000002 /* AgentRemoteCommandBuilder.swift */; };
+             XG1H00000000000000000003 /* AgentRemoteCommandSessionResolver.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2H00000000000000000003 /* AgentRemoteCommandSessionResolver.swift */; };
+             XG1H00000000000000000004 /* AgentRemoteCommandExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2H00000000000000000004 /* AgentRemoteCommandExecutor.swift */; };
+             XG1I00000000000000000001 /* AgentRemoteCommandTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000001 /* AgentRemoteCommandTestSupport.swift */; };
+             XG1I00000000000000000002 /* AgentRemoteCommandBuilderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000002 /* AgentRemoteCommandBuilderTests.swift */; };
+             XG1I00000000000000000003 /* AgentRemoteCommandSSHTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000003 /* AgentRemoteCommandSSHTransportTests.swift */; };
+             XG1I00000000000000000004 /* AgentRemoteCommandExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000004 /* AgentRemoteCommandExecutorTests.swift */; };
+             XG1I00000000000000000005 /* AgentRemoteCommandExecutorCancellationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000005 /* AgentRemoteCommandExecutorCancellationTests.swift */; };
+             XG1I00000000000000000006 /* AgentRemoteCommandExecutorSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000006 /* AgentRemoteCommandExecutorSecurityTests.swift */; };
+             XG1I00000000000000000007 /* AgentRemoteRealExecTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2I00000000000000000007 /* AgentRemoteRealExecTests.swift */; };
+             XG1E00000000000000000001 /* AgentCommandValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000001 /* AgentCommandValidationTests.swift */; };
+             XG1E00000000000000000002 /* AgentCommandRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000002 /* AgentCommandRequestTests.swift */; };
+             XG1E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */; };
+             XG1E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */; };
+             XG1E00000000000000000005 /* AgentCommandSecurityGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */; };
+             XG1G00000000000000000001 /* AgentLocalCommandExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */; };
+             XG1G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */; };
+             XG1G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */; };
+             XG1G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift */; };
 		D10000000000000000000006 /* libssh2.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000006 /* libssh2.a */; };
 		D10000000000000000000007 /* libcrypto.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000007 /* libcrypto.a */; };
 		D10000000000000000000008 /* libssl.a in Frameworks */ = {isa = PBXBuildFile; fileRef = D20000000000000000000008 /* libssl.a */; };
@@ -364,6 +394,36 @@
              XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderToolCallingTests.swift; sourceTree = "<group>"; };
              XG2C00000000000000000044 /* AgentToolLoopTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolLoopTests.swift; sourceTree = "<group>"; };
              XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolResultSerializerTests.swift; sourceTree = "<group>"; };
+             XG2D00000000000000000001 /* AgentCommandRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandRequest.swift; sourceTree = "<group>"; };
+             XG2D00000000000000000002 /* AgentCommandValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandValidation.swift; sourceTree = "<group>"; };
+             XG2D00000000000000000003 /* AgentCommandApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApproval.swift; sourceTree = "<group>"; };
+             XG2D00000000000000000004 /* AgentCommandApprovalCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalCoordinator.swift; sourceTree = "<group>"; };
+             XG2D00000000000000000005 /* AgentCommandExecutionAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandExecutionAuthorization.swift; sourceTree = "<group>"; };
+             XG2F00000000000000000001 /* AgentCommandResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandResult.swift; sourceTree = "<group>"; };
+             XG2F00000000000000000002 /* AgentLocalCommandEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandEnvironment.swift; sourceTree = "<group>"; };
+             XG2F00000000000000000003 /* AgentLocalCommandExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutor.swift; sourceTree = "<group>"; };
+             XG2F00000000000000000004 /* AgentLocalCommandOutputSanitizer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandOutputSanitizer.swift; sourceTree = "<group>"; };
+             XG2F00000000000000000005 /* AgentLocalCommandProcess.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandProcess.swift; sourceTree = "<group>"; };
+             XG2H00000000000000000001 /* SSHExecChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHExecChannel.swift; sourceTree = "<group>"; };
+             XG2H00000000000000000002 /* AgentRemoteCommandBuilder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandBuilder.swift; sourceTree = "<group>"; };
+             XG2H00000000000000000003 /* AgentRemoteCommandSessionResolver.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandSessionResolver.swift; sourceTree = "<group>"; };
+             XG2H00000000000000000004 /* AgentRemoteCommandExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandExecutor.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000001 /* AgentRemoteCommandTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandTestSupport.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000002 /* AgentRemoteCommandBuilderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandBuilderTests.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000003 /* AgentRemoteCommandSSHTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandSSHTransportTests.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000004 /* AgentRemoteCommandExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandExecutorTests.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000005 /* AgentRemoteCommandExecutorCancellationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandExecutorCancellationTests.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000006 /* AgentRemoteCommandExecutorSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteCommandExecutorSecurityTests.swift; sourceTree = "<group>"; };
+             XG2I00000000000000000007 /* AgentRemoteRealExecTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteRealExecTests.swift; sourceTree = "<group>"; };
+             XG2E00000000000000000001 /* AgentCommandValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandValidationTests.swift; sourceTree = "<group>"; };
+             XG2E00000000000000000002 /* AgentCommandRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandRequestTests.swift; sourceTree = "<group>"; };
+             XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalCoordinatorTests.swift; sourceTree = "<group>"; };
+             XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalConcurrencyTests.swift; sourceTree = "<group>"; };
+             XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandSecurityGateTests.swift; sourceTree = "<group>"; };
+             XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorTests.swift; sourceTree = "<group>"; };
+             XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorCancellationTests.swift; sourceTree = "<group>"; };
+             XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorOutputTests.swift; sourceTree = "<group>"; };
+             XG2G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorSecurityTests.swift; sourceTree = "<group>"; };
 		D20000000000000000000005 /* MacSSHLibSSH2BridgingHeader.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = MacSSHLibSSH2BridgingHeader.h; sourceTree = "<group>"; };
 		D20000000000000000000006 /* libssh2.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "libssh2/lib/libssh2.a"; sourceTree = "<group>"; };
 		D20000000000000000000007 /* libcrypto.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = "openssl/lib/libcrypto.a"; sourceTree = "<group>"; };
@@ -570,10 +630,47 @@
 					XG40000000000000000000004 /* Security */,
 					XG40000000000000000000005 /* Tools */,
 					XG40000000000000000000006 /* Terminal */,
+					XG40000000000000000000007 /* Command */,
 				);
 				path = Agent;
 				sourceTree = "<group>";
 			};
+			XG40000000000000000000007 /* Command */ = {
+				isa = PBXGroup;
+				children = (
+					XG2D00000000000000000002 /* AgentCommandValidation.swift */,
+					XG2D00000000000000000001 /* AgentCommandRequest.swift */,
+					XG2D00000000000000000003 /* AgentCommandApproval.swift */,
+					XG2D00000000000000000004 /* AgentCommandApprovalCoordinator.swift */,
+					XG2D00000000000000000005 /* AgentCommandExecutionAuthorization.swift */,
+					XG40000000000000000000008 /* Execution */,
+				);
+				path = Command;
+				sourceTree = "<group>";
+			};
+		XG40000000000000000000008 /* Execution */ = {
+			isa = PBXGroup;
+			children = (
+					XG2F00000000000000000001 /* AgentCommandResult.swift */,
+					XG2F00000000000000000002 /* AgentLocalCommandEnvironment.swift */,
+					XG2F00000000000000000003 /* AgentLocalCommandExecutor.swift */,
+					XG2F00000000000000000004 /* AgentLocalCommandOutputSanitizer.swift */,
+					XG2F00000000000000000005 /* AgentLocalCommandProcess.swift */,
+					XG40000000000000000000009 /* Remote */,
+			);
+			path = Execution;
+			sourceTree = "<group>";
+		};
+		XG40000000000000000000009 /* Remote */ = {
+			isa = PBXGroup;
+			children = (
+					XG2H00000000000000000002 /* AgentRemoteCommandBuilder.swift */,
+					XG2H00000000000000000004 /* AgentRemoteCommandExecutor.swift */,
+					XG2H00000000000000000003 /* AgentRemoteCommandSessionResolver.swift */,
+			);
+			path = Remote;
+			sourceTree = "<group>";
+		};
 			XG40000000000000000000005 /* Tools */ = {
 				isa = PBXGroup;
 				children = (
@@ -739,6 +836,22 @@
 				XG2C00000000000000000043 /* AgentProviderToolCallingTests.swift */,
 				XG2C00000000000000000044 /* AgentToolLoopTests.swift */,
 				XG2C00000000000000000045 /* AgentToolResultSerializerTests.swift */,
+				XG2E00000000000000000001 /* AgentCommandValidationTests.swift */,
+				XG2E00000000000000000002 /* AgentCommandRequestTests.swift */,
+				XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */,
+				XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */,
+				XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */,
+					XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */,
+					XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */,
+					XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */,
+					XG2G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift */,
+					XG2I00000000000000000001 /* AgentRemoteCommandTestSupport.swift */,
+					XG2I00000000000000000002 /* AgentRemoteCommandBuilderTests.swift */,
+					XG2I00000000000000000003 /* AgentRemoteCommandSSHTransportTests.swift */,
+					XG2I00000000000000000004 /* AgentRemoteCommandExecutorTests.swift */,
+					XG2I00000000000000000005 /* AgentRemoteCommandExecutorCancellationTests.swift */,
+					XG2I00000000000000000006 /* AgentRemoteCommandExecutorSecurityTests.swift */,
+					XG2I00000000000000000007 /* AgentRemoteRealExecTests.swift */,
 			);
 			path = SSH;
 			sourceTree = "<group>";
@@ -821,6 +934,7 @@
 				D2000000000000000000000C /* KnownHostService.swift */,
 				E20000000000000000000001 /* RemoteTerminalError.swift */,
 				E20000000000000000000002 /* SSHChannel.swift */,
+				XG2H00000000000000000001 /* SSHExecChannel.swift */,
 				G20000000000000000000005 /* SFTPSession.swift */,
 				L20000000000000000000001 /* SFTPFileOperations.swift */,
 			);
@@ -1164,6 +1278,20 @@
              XG1C00000000000000000040 /* AgentToolResultSerializer.swift in Sources */,
              XG1C00000000000000000041 /* AgentToolActivity.swift in Sources */,
              XG1C00000000000000000042 /* AgentToolCardView.swift in Sources */,
+             XG1D00000000000000000002 /* AgentCommandValidation.swift in Sources */,
+             XG1D00000000000000000001 /* AgentCommandRequest.swift in Sources */,
+             XG1D00000000000000000003 /* AgentCommandApproval.swift in Sources */,
+             XG1D00000000000000000004 /* AgentCommandApprovalCoordinator.swift in Sources */,
+             XG1D00000000000000000005 /* AgentCommandExecutionAuthorization.swift in Sources */,
+             XG1F00000000000000000001 /* AgentCommandResult.swift in Sources */,
+             XG1F00000000000000000002 /* AgentLocalCommandEnvironment.swift in Sources */,
+             XG1F00000000000000000003 /* AgentLocalCommandExecutor.swift in Sources */,
+             XG1F00000000000000000004 /* AgentLocalCommandOutputSanitizer.swift in Sources */,
+             XG1F00000000000000000005 /* AgentLocalCommandProcess.swift in Sources */,
+             XG1H00000000000000000001 /* SSHExecChannel.swift in Sources */,
+             XG1H00000000000000000002 /* AgentRemoteCommandBuilder.swift in Sources */,
+             XG1H00000000000000000003 /* AgentRemoteCommandSessionResolver.swift in Sources */,
+             XG1H00000000000000000004 /* AgentRemoteCommandExecutor.swift in Sources */,
 				D10000000000000000000005 /* HostTrustDialogView.swift in Sources */,
 				D10000000000000000000010 /* HostKeyChangedDialogView.swift in Sources */,
 				E10000000000000000000001 /* RemoteTerminalError.swift in Sources */,
@@ -1250,6 +1378,22 @@
 					XG1C00000000000000000043 /* AgentProviderToolCallingTests.swift in Sources */,
 					XG1C00000000000000000044 /* AgentToolLoopTests.swift in Sources */,
 					XG1C00000000000000000045 /* AgentToolResultSerializerTests.swift in Sources */,
+					XG1E00000000000000000001 /* AgentCommandValidationTests.swift in Sources */,
+					XG1E00000000000000000002 /* AgentCommandRequestTests.swift in Sources */,
+					XG1E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift in Sources */,
+					XG1E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift in Sources */,
+					XG1E00000000000000000005 /* AgentCommandSecurityGateTests.swift in Sources */,
+					XG1G00000000000000000001 /* AgentLocalCommandExecutorTests.swift in Sources */,
+					XG1G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift in Sources */,
+					XG1G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift in Sources */,
+					XG1G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift in Sources */,
+					XG1I00000000000000000001 /* AgentRemoteCommandTestSupport.swift in Sources */,
+					XG1I00000000000000000002 /* AgentRemoteCommandBuilderTests.swift in Sources */,
+					XG1I00000000000000000003 /* AgentRemoteCommandSSHTransportTests.swift in Sources */,
+					XG1I00000000000000000004 /* AgentRemoteCommandExecutorTests.swift in Sources */,
+					XG1I00000000000000000005 /* AgentRemoteCommandExecutorCancellationTests.swift in Sources */,
+					XG1I00000000000000000006 /* AgentRemoteCommandExecutorSecurityTests.swift in Sources */,
+					XG1I00000000000000000007 /* AgentRemoteRealExecTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

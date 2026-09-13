@@ -14,7 +14,8 @@ struct AgentToolDefinition: Sendable, Equatable {
 
 /// 静态 allowlist（§4 hard gate）。
 ///
-/// Provider 每轮请求只看到这里登记的 4 个 read-only 工具：
+/// Provider 每轮请求只看到这里登记的 4 个 read-only 工具和 B4 的
+/// `run_command`：
 /// - 禁止 Swift reflection 动态导出函数；
 /// - 禁止按模型返回的任意 name 动态派发（执行点走 `AgentToolRegistry`
 ///   静态枚举，未知名字一律 `unknownTool` 拒绝）。
@@ -22,7 +23,7 @@ struct AgentToolDefinition: Sendable, Equatable {
 /// 工具描述面向模型（英文），只描述能力与边界，绝不包含路径示例之外的
 /// 本机信息。
 enum AgentToolCatalog: Sendable {
-    /// 恰好 4 个工具（§1 Phase boundary）。
+    /// 恰好 5 个工具（B4 Phase boundary）。
     static let definitions: [AgentToolDefinition] = [
         AgentToolDefinition(
             name: AgentToolName.getTerminalContext.rawValue,
@@ -55,6 +56,14 @@ enum AgentToolCatalog: Sendable {
                 + "terminal's working directory root are rejected.",
             parametersJSON: #"{"type":"object","properties":{"path":{"type":"string"}},"required":["path"],"additionalProperties":false}"#
         ),
+        AgentToolDefinition(
+            name: AgentToolName.runCommand.rawValue,
+            description: "Run one exact non-interactive shell command in the "
+                + "originating terminal session's frozen working directory. "
+                + "Every request requires explicit user approval. stdin is unavailable; "
+                + "the command does not modify the user's interactive terminal state.",
+            parametersJSON: #"{"type":"object","properties":{"command":{"type":"string","description":"The exact non-interactive shell command to run."}},"required":["command"],"additionalProperties":false}"#
+        ),
     ]
 
     /// 全部工具名（供 gate 断言）。
@@ -63,7 +72,7 @@ enum AgentToolCatalog: Sendable {
     /// §52：禁止出现在请求 tool definitions 中的名字（含读操作但依赖
     /// command execution 的 `git_status`）。
     static let prohibitedNames: Set<String> = [
-        "run_command", "execute", "shell", "terminal_send", "send_to_terminal",
+        "execute", "exec", "shell", "terminal_send", "send_to_terminal",
         "pasteText", "write_file", "delete_file", "rename_file", "mkdir",
         "move", "copy", "upload", "chmod", "chown", "truncate", "git_status",
     ]
@@ -78,18 +87,20 @@ enum AgentToolCatalog: Sendable {
 ///
 /// ```text
 /// raw JSON string
-///   → Decodable typed arguments（仅认 path: String）
+///   → Decodable / strict typed arguments（path 或 command）
 ///   → validate（path 工具缺 path / 类型错误 / 非法 JSON）
 ///   → AgentToolRouter（静态注册表派发）
 /// ```
 ///
 /// - 非法 JSON → `.invalidArguments`
 /// - path 工具缺失 path / path 非 String → `.invalidArguments`
+/// - run_command 缺失 command、command 非 String、未知字段或非法 JSON
+///   → `.invalidArguments`
 /// - 未知工具名 → `.unknownTool`
 /// - 无参数工具：arguments 为空串或 `{}` 视为合法；其余键宽容忽略
 ///   （拒绝与否不影响安全——工具本身不接受任何参数）。
 enum AgentToolCallParsing: Sendable {
-    /// 本阶段唯一的 typed arguments 形态（§5：全部工具只允许 path: String）。
+    /// Path 工具的 typed arguments。
     private struct TypedArguments: Decodable {
         let path: String?
     }
@@ -104,9 +115,24 @@ enum AgentToolCallParsing: Sendable {
             return .failure(.unknownTool)
         }
 
-        // 2. raw JSON → Decodable（§6）。
-        let typed: TypedArguments
         let trimmed = argumentsJSON.trimmingCharacters(in: .whitespacesAndNewlines)
+
+        // 2. run_command 采用严格字典校验，不能依赖 Decoder 忽略未知键。
+        if tool == .runCommand {
+            guard
+                let data = trimmed.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data),
+                let dictionary = object as? [String: Any],
+                Set(dictionary.keys) == Set(["command"]),
+                let command = dictionary["command"] as? String
+            else {
+                return .failure(.invalidArguments)
+            }
+            return .success(AgentToolCall(name: name, arguments: ["command": command]))
+        }
+
+        // 3. raw JSON → Decodable（§6）。
+        let typed: TypedArguments
         if trimmed.isEmpty {
             typed = TypedArguments(path: nil)
         } else {
@@ -119,7 +145,7 @@ enum AgentToolCallParsing: Sendable {
             typed = decoded
         }
 
-        // 3. validate：path 工具必须有非空 path（§6：缺失 path → invalidArguments）。
+        // 4. validate：path 工具必须有非空 path（§6：缺失 path → invalidArguments）。
         var arguments: [String: String] = [:]
         switch tool {
         case .getTerminalContext, .getCurrentDirectory:
@@ -129,6 +155,9 @@ enum AgentToolCallParsing: Sendable {
                 return .failure(.invalidArguments)
             }
             arguments["path"] = path
+        case .runCommand:
+            // 已在严格分支中返回；保留穷尽性保护，绝不向 Router 派发裸命令。
+            return .failure(.invalidArguments)
         }
         return .success(AgentToolCall(name: name, arguments: arguments))
     }

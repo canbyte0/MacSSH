@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - 工具名与静态注册表（任务书 §30/§31）
 
-/// B2 注册的四个工具名。
+/// B4 注册的五个工具名。
 ///
 /// 注册表是**静态枚举**：禁止 dynamic reflection、禁止任意字符串 →
 /// selector 派发（§31）。未知名字 → `AgentToolError.unknownTool`。
@@ -11,9 +11,13 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
     case getCurrentDirectory = "get_current_directory"
     case listDirectory = "list_directory"
     case readFile = "read_file"
+    /// 唯一需要逐次用户批准的命令执行能力。
+    case runCommand = "run_command"
 
-    /// 变更风险轴（§11/§30）：本阶段全部 readOnly。
-    var risk: AgentToolRisk { .readOnly }
+    /// 变更风险轴（§11/§30）：run_command 不能被当作 read-only。
+    var risk: AgentToolRisk {
+        self == .runCommand ? .modifying : .readOnly
+    }
 
     /// 数据披露轴（§11/§30）。
     var dataAccessPolicy: AgentDataAccessPolicy {
@@ -22,6 +26,8 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
             return .sessionContext
         case .listDirectory, .readFile:
             return .scopedFileRead
+        case .runCommand:
+            return .commandExecution
         }
     }
 
@@ -32,7 +38,7 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
     /// `unsupportedForSession`，绝不默认放行）。
     var supportsRemoteSession: Bool {
         switch self {
-        case .getTerminalContext, .getCurrentDirectory, .listDirectory, .readFile:
+        case .getTerminalContext, .getCurrentDirectory, .listDirectory, .readFile, .runCommand:
             return true
         }
     }
@@ -65,6 +71,9 @@ struct AgentToolCall: Sendable, Equatable {
     }
 
     var path: String? { arguments["path"] }
+
+    /// run_command 的原始 command；除 request factory 外不做 trim / rewrite。
+    var command: String? { arguments["command"] }
 }
 
 // MARK: - 结果（任务书 §21/§25）

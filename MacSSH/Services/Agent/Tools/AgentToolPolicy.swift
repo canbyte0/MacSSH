@@ -17,6 +17,8 @@ enum AgentDataAccessPolicy: Sendable, Equatable {
     case sessionContext
     /// 读取文件数据前必须先经过 `AgentReadScope` 路径校验。
     case scopedFileRead
+    /// 命令执行不属于 read scope，必须由 ApprovalCoordinator 单独授权。
+    case commandExecution
 }
 
 // 两个 enum 必须独立定义、绝不合并：

@@ -426,6 +426,193 @@
         }
       }
     },
+    "agent.command.approve": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准"
+          }
+        }
+      }
+    },
+    "agent.command.approve.hint": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve this command to start execution."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准后开始执行此命令。"
+          }
+        }
+      }
+    },
+    "agent.command.command": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact command"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "完整命令"
+          }
+        }
+      }
+    },
+    "agent.command.deny": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deny"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
+          }
+        }
+      }
+    },
+    "agent.command.deny.hint": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reject this command before it starts."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在命令开始前拒绝执行。"
+          }
+        }
+      }
+    },
+    "agent.command.disclosure": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "If approved, bounded stdout and stderr will be returned to %@."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准后，有界的 stdout 和 stderr 将返回给 %@。"
+          }
+        }
+      }
+    },
+    "agent.command.provider": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI service"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "AI 服务"
+          }
+        }
+      }
+    },
+    "agent.command.target": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
+          }
+        }
+      }
+    },
+    "agent.command.target.local": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Local"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "本地"
+          }
+        }
+      }
+    },
+    "agent.command.target.remote": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remote SSH"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "远程 SSH"
+          }
+        }
+      }
+    },
+    "agent.command.working_directory": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Working directory"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "工作目录"
+          }
+        }
+      }
+    },
     "agent.context.local": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -483,13 +670,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Ask anything — the Agent can read the terminal context and files under the current directory (read-only). It cannot run commands."
+            "value": "Ask anything — the Agent can read the terminal context and files under the current directory. Commands run in a separate non-interactive process, never in the current interactive Terminal, and every command requires your explicit approval."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "随时提问——Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"
+            "value": "随时提问——Agent 可读取终端上下文与当前目录中的文件。命令会在独立的非交互进程中执行，不会直接输入当前交互式 Terminal，并且每条命令都需要你的明确批准。"
           }
         }
       }
@@ -908,13 +1095,13 @@
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "The API Key is stored in the macOS Keychain and never displayed back. The Agent can read the terminal context and files under the current directory (read-only). It cannot run commands."
+            "value": "The API Key is stored in the macOS Keychain and never displayed back. The Agent can read the terminal context and files under the current directory. Commands run in a separate non-interactive process, never in the current interactive Terminal, and every command requires your explicit approval."
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 可读取终端上下文与当前目录中的文件（只读），但不会执行任何命令。"
+            "value": "API Key 保存在 macOS 钥匙串中，保存后不再回显。Agent 可读取终端上下文与当前目录中的文件。命令会在独立的非交互进程中执行，不会直接输入当前交互式 Terminal，并且每条命令都需要你的明确批准。"
           }
         }
       }
@@ -1225,6 +1412,40 @@
         }
       }
     },
+    "agent.tool.run_command": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Run command"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "执行命令"
+          }
+        }
+      }
+    },
+    "agent.tool.status.awaiting_approval": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Awaiting approval"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "等待批准"
+          }
+        }
+      }
+    },
     "agent.tool.status.cancelled": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -1238,6 +1459,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "已取消"
+          }
+        }
+      }
+    },
+    "agent.tool.status.denied": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Denied"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已拒绝"
           }
         }
       }
@@ -1289,6 +1527,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "完成"
+          }
+        }
+      }
+    },
+    "agent.tool.status.timed_out": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Timed out"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已超时"
           }
         }
       }

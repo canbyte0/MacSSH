@@ -84,6 +84,55 @@ final class LocalizationTests: XCTestCase {
         }
     }
 
+    /// R2 P2-3：Agent 已支持逐次批准的 run_command，空状态与 API Key
+    /// 帮助不得继续声称“不会执行任何命令”。
+    func testAgentCommandDisclosureDescribesApprovalAndIndependentExecution() {
+        let locales = [AppLanguage.simplifiedChinese.locale, AppLanguage.english.locale]
+        for locale in locales {
+            let empty = L10n.string("agent.empty.subtitle", defaultValue: "", locale: locale)
+            let help = L10n.string(
+                "agent.settings.api_key.help",
+                defaultValue: "",
+                locale: locale
+            )
+
+            XCTAssertFalse(empty.contains("不会执行任何命令"))
+            XCTAssertFalse(empty.localizedCaseInsensitiveContains("cannot run commands"))
+            XCTAssertFalse(help.contains("不会执行任何命令"))
+            XCTAssertFalse(help.localizedCaseInsensitiveContains("cannot run commands"))
+
+            let combined = empty + " " + help
+            XCTAssertTrue(
+                combined.contains("明确批准") || combined.localizedCaseInsensitiveContains("explicit approval")
+            )
+            XCTAssertTrue(
+                combined.contains("独立的非交互进程")
+                    || combined.localizedCaseInsensitiveContains("separate non-interactive process")
+            )
+            XCTAssertTrue(
+                combined.contains("当前交互式 Terminal")
+                    || combined.localizedCaseInsensitiveContains("current interactive Terminal")
+            )
+        }
+    }
+
+    /// R2 P2-2：静态 UI contract test。卡片只能 contain 子元素，审批按钮
+    /// 各自拥有稳定标识；完整 AX tree 仍由 live smoke 复验。
+    func testAgentApprovalAccessibilityContractKeepsControlsIndependent() throws {
+        let root = try repositoryRoot()
+        let source = try String(
+            contentsOf: root.appendingPathComponent(
+                "MacSSH/Features/Agent/AgentToolCardView.swift"
+            ),
+            encoding: .utf8
+        )
+
+        XCTAssertTrue(source.contains(".accessibilityElement(children: .contain)"))
+        XCTAssertFalse(source.contains(".accessibilityElement(children: .combine)"))
+        XCTAssertTrue(source.contains("Self.approveAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.denyAccessibilityIdentifier"))
+    }
+
     // MARK: - 动态字符串插值
 
     /// 任务书四十：动态字符串必须使用可本地化 format。

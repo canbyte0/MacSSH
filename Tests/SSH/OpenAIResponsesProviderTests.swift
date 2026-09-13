@@ -362,11 +362,12 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         let assistantParts = try XCTUnwrap(input[2]["content"] as? [[String: Any]])
         XCTAssertEqual(assistantParts.first?["type"] as? String, "output_text")
 
-        // B4 §7–§10 hard gate：tools 只含 4 个 read-only function 工具，
+        // B4 §7–§10 hard gate：tools 只含 4 个 read-only function 工具和
+        // 唯一需要 approval 的 run_command，
         // tool_choice 恒为 auto；禁止的 provider 侧工具类型 / 危险名字
         // 绝不出现在请求体。
         let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 4, "只允许 4 个 read-only 工具")
+        XCTAssertEqual(tools.count, 5, "只允许 5 个 function 工具")
         XCTAssertEqual(
             Set(tools.compactMap { $0["type"] as? String }),
             ["function"],
@@ -387,7 +388,7 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         let rawBody = String(decoding: requestBody(of: request), as: UTF8.self)
         for forbidden in [
             "web_search", "file_search", "computer", "code_interpreter",
-            "apply_patch", "run_command", "execute", "shell", "terminal_send",
+            "apply_patch", "execute", "exec", "shell", "terminal_send",
             "write_file", "delete_file", "rename_file", "mkdir", "git_status",
         ] {
             XCTAssertFalse(

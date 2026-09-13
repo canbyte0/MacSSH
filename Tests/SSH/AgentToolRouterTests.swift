@@ -116,15 +116,15 @@ final class AgentToolRouterTests: XCTestCase {
     // MARK: - 静态注册表（§30/§31）
 
     func testRegistryContainsExactlyFourTools() {
-        XCTAssertEqual(AgentToolRegistry.all.count, 4)
+        XCTAssertEqual(AgentToolRegistry.all.count, 5)
         XCTAssertEqual(AgentToolRegistry.lookup("get_terminal_context"), .getTerminalContext)
         XCTAssertEqual(AgentToolRegistry.lookup("get_current_directory"), .getCurrentDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("list_directory"), .listDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("read_file"), .readFile)
+        XCTAssertEqual(AgentToolRegistry.lookup("run_command"), .runCommand)
     }
 
     func testRegistryRejectsUnknownNames() {
-        XCTAssertNil(AgentToolRegistry.lookup("run_command"))
         XCTAssertNil(AgentToolRegistry.lookup("write_file"))
         XCTAssertNil(AgentToolRegistry.lookup("send_to_terminal"))
         XCTAssertNil(AgentToolRegistry.lookup("read_file "))
@@ -135,15 +135,17 @@ final class AgentToolRouterTests: XCTestCase {
         XCTAssertEqual(AgentToolName.getCurrentDirectory.dataAccessPolicy, .sessionContext)
         XCTAssertEqual(AgentToolName.listDirectory.dataAccessPolicy, .scopedFileRead)
         XCTAssertEqual(AgentToolName.readFile.dataAccessPolicy, .scopedFileRead)
+        XCTAssertEqual(AgentToolName.runCommand.risk, .modifying)
+        XCTAssertEqual(AgentToolName.runCommand.dataAccessPolicy, .commandExecution)
     }
 
-    func testUnknownToolIsRejected() async {
+    func testRunCommandCannotExecuteThroughReadOnlyRouter() async {
         let result = await router.execute(
-            call: AgentToolCall(name: "run_command", arguments: ["path": "/tmp"]),
+            call: AgentToolCall(.runCommand, arguments: ["command": "pwd"]),
             sessionID: sessionA,
             readScope: scopeA
         )
-        XCTAssertEqual(result, .failure(.unknownTool))
+        XCTAssertEqual(result, .failure(.commandRequiresApproval))
     }
 
     // MARK: - scope / session 绑定（§33/§34）

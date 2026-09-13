@@ -148,6 +148,13 @@ actor SSHConnection {
     private let knownHostService: KnownHostService
     private let sessionTeardownOperations: SessionTeardownOperations
 
+    /// Phase 10E-B3：exec channel 的 libssh2 调用边界（生产 `.live`；测试注入
+    /// fake，与 `SessionTeardownOperations` 同款的确定性测试接缝）。
+    ///
+    /// `internal` 供同模块的 `SSHExecChannel.swift` 扩展使用——actor 隔离
+    /// 保证全部调用仍串行发生在本 actor 内。
+    let execChannelOperations: SSHExecChannelOperations
+
     /// 只允许本 actor 访问的 libssh2 session。
     ///
     /// `internal` 供同模块的 `SSHChannel.swift` 扩展（Phase 7 Remote Terminal）
@@ -251,6 +258,24 @@ actor SSHConnection {
     /// `disconnectTask` 单飞保证续体不会重复登记）。
     var sftpFileOperationDrainContinuation: CheckedContinuation<Void, Never>?
 
+    /// Phase 10E-B3：Agent Remote Independent Exec 的 exec channel 登记。
+    ///
+    /// 与 `shellChannel` / `sftpSubsystem` 相同的并发边界：全部 libssh2 调用
+    /// 只发生在本 actor 内（`SSHExecChannel.swift` 扩展）；调用方只持有不透明
+    /// token（`UUID`），绝不把 `LIBSSH2_CHANNEL *` 带出 actor。本登记是
+    /// **句柄所有权与释放次数的唯一 authority**——每个 token 至多一次
+    /// `libssh2_channel_free`，teardown 与 executor 关闭路径不会重复释放。
+    var execChannels: [UUID: SSHExecChannelRecord] = [:]
+
+    /// Phase 10E-B3：exec channel 打开 / 成功 free 的实际调用计数（测试仪表）。
+    /// 断言 `freeCount == openCount` 即可证明无 channel 泄漏 / 无 double-free。
+    var execChannelOpenCount = 0
+    var execChannelFreeCount = 0
+
+    /// Phase 10E-B3 测试接缝（生产恒 nil）：exec channel 的 readiness 等待替换
+    /// （fake session 没有真实 socket；见 `SSHExecChannel.swift`）。
+    var testExecChannelReadinessWait: (@Sendable (TimeInterval) async -> Void)?
+
     /// Phase 9（第二轮整改）：SFTP 操作串行门占用标志。
     ///
     /// vendored libssh2 的 `LIBSSH2_SFTP` 携带**子系统级共享状态**
@@ -342,13 +367,15 @@ actor SSHConnection {
         info: SSHConnectionInfo,
         credentialService: CredentialService = .shared,
         knownHostService: KnownHostService,
-        sessionTeardownOperations: SessionTeardownOperations = .live
+        sessionTeardownOperations: SessionTeardownOperations = .live,
+        execChannelOperations: SSHExecChannelOperations = .live
     ) {
         self.configuration = configuration
         self.info = info
         self.credentialService = credentialService
         self.knownHostService = knownHostService
         self.sessionTeardownOperations = sessionTeardownOperations
+        self.execChannelOperations = execChannelOperations
     }
 
     // MARK: - 连接主流程
@@ -574,6 +601,10 @@ actor SSHConnection {
 
         // 关闭全部 Shell Channel（等待在途打开 / 关闭并循环检查）。
         await closeAllShellChannelsForTeardown()
+
+        // Phase 10E-B3：关闭全部 Agent exec channel（exactly-once free；
+        // 绝不触碰 Shell Channel / SFTP 子系统）。
+        await closeAllExecChannelsForTeardown()
 
         if let ownedSession = session {
             // 尽力发送 disconnect 消息（最多等待 1 秒），失败也不阻塞清理。

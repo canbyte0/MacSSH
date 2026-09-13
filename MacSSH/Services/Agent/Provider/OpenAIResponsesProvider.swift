@@ -18,6 +18,14 @@ struct OpenAIResponsesProvider: AgentProvider {
     /// 注入的 URLSession（测试经 URLProtocol stub 注入，100% offline）。
     let session: URLSession
 
+    var commandProviderMetadata: AgentProviderCommandMetadata {
+        AgentProviderCommandMetadata(
+            provider: .openAI,
+            model: configuration.model,
+            baseURL: configuration.baseURL
+        )
+    }
+
     func stream(
         transcript: [AgentMessage],
         tools: [AgentToolDefinition],

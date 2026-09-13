@@ -210,6 +210,12 @@ final class AppState {
         let agentRemoteServiceResolver = SessionManagerAgentRemoteServiceResolver(
             sessionManager: sessionManager
         )
+        // B4 command executor 只复用 originating Remote session 的已认证
+        // SSHConnection；resolver 按 sessionID 查找，绝不 fallback active tab、
+        // hostname 或自动新建连接。
+        let agentRemoteCommandExecutor = AgentRemoteCommandExecutor(
+            resolver: .live(sessionManager: sessionManager)
+        )
         let agentToolRouter = AgentToolRouter(
             sessionProvider: TerminalAgentContextProvider(sessionManager: sessionManager),
             remoteServiceResolver: agentRemoteServiceResolver
@@ -219,6 +225,7 @@ final class AppState {
             provider: ResolvingAgentProvider(credentialService: agentCredentialService),
             toolRouter: agentToolRouter,
             remoteServiceResolver: agentRemoteServiceResolver,
+            remoteCommandExecutor: agentRemoteCommandExecutor,
             activeSessionProvider: { [weak sessionManager] in
                 sessionManager?.activeSession
             },

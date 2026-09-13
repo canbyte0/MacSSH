@@ -16,6 +16,78 @@ enum AgentToolResultSerializer: Sendable {
     /// 取消 / 未执行的统一结构化输出（§45–§48：call_id 配对恒成立）。
     static let cancelledOutput = #"{"ok":false,"error":"cancelled"}"#
 
+    /// B4 user-denied 输出：只表达权限结果，绝不伪造 stdout / stderr。
+    static let userDeniedOutput = #"{"ok":false,"error":"userDenied"}"#
+
+    // MARK: - run_command 结果
+
+    /// Local / Remote executor 的共享结构化结果。stdout/stderr 已在
+    /// executor 内经过既有 sanitizer 和 256 KiB cap，这里只负责稳定编码。
+    static func serialize(commandResult result: AgentCommandResult) -> String {
+        encodeCommandResult(result, extra: [:])
+    }
+
+    /// Remote 结果保留 provider-neutral 的终止信息，不泄露 libssh2 细节。
+    static func serialize(commandResult result: AgentRemoteCommandResult) -> String {
+        var extra: [String: Any] = [
+            "remote_termination_requested": result.remoteTerminationRequested,
+        ]
+        switch result.termination {
+        case .exitStatus(let status):
+            extra["remote_termination"] = "exit_status"
+            extra["remote_exit_code"] = Int(status)
+        case .exitSignal(let name, _):
+            extra["remote_termination"] = "exit_signal"
+            extra["remote_signal"] = name
+        case .unknown:
+            extra["remote_termination"] = "unknown"
+        }
+        return encodeCommandResult(result.result, extra: extra)
+    }
+
+    /// command domain 校验错误在 approval / executor 之前收敛为稳定名称。
+    static func serialize(error: AgentCommandError) -> String {
+        encodeError(name: commandErrorName(error))
+    }
+
+    /// Local executor infrastructure 错误只向 Provider 暴露稳定分类。
+    static func serialize(error: AgentCommandExecutionError) -> String {
+        switch error {
+        case .authorizationRejected(let error):
+            return encodeError(name: commandErrorName(error))
+        case .remoteExecutionUnsupported:
+            return encodeError(name: "remoteExecutionUnsupported")
+        case .shellUnavailable:
+            return encodeError(name: "executorUnavailable")
+        case .workingDirectoryUnavailable:
+            return encodeError(name: "workingDirectoryUnavailable")
+        case .spawnFailed:
+            return encodeError(name: "executorUnavailable")
+        }
+    }
+
+    /// Remote executor infrastructure 错误只向 Provider 暴露稳定分类。
+    static func serialize(error: AgentRemoteCommandExecutionError) -> String {
+        switch error {
+        case .authorizationRejected(let error):
+            return encodeError(name: commandErrorName(error))
+        case .localExecutionUnsupported:
+            return encodeError(name: "localExecutionUnsupported")
+        case .sessionUnavailable:
+            return encodeError(name: "sessionUnavailable")
+        case .connectionUnavailable:
+            return encodeError(name: "connectionUnavailable")
+        case .channelOpenFailed:
+            return encodeError(name: "channelOpenFailed")
+        case .execRequestRejected:
+            return encodeError(name: "execRequestRejected")
+        case .channelFailure:
+            return encodeError(name: "channelFailure")
+        case .execPayloadTooLarge:
+            return encodeError(name: "execPayloadTooLarge")
+        }
+    }
+
     // MARK: - 成功结果
 
     /// 成功结果 → `{"ok": true, ...}` JSON string。
@@ -60,6 +132,7 @@ enum AgentToolResultSerializer: Sendable {
         case .binaryUnsupported: return "binaryUnsupported"
         case .cancelled: return "cancelled"
         case .internalFailure: return "internalFailure"
+        case .commandRequiresApproval: return "commandRequiresApproval"
         }
     }
 
@@ -178,5 +251,53 @@ enum AgentToolResultSerializer: Sendable {
             return #"{"ok":false,"error":"internalFailure"}"#
         }
         return String(decoding: data, as: UTF8.self)
+    }
+
+    private static func encodeCommandResult(
+        _ result: AgentCommandResult,
+        extra: [String: Any]
+    ) -> String {
+        var object: [String: Any] = [
+            "ok": true,
+            "executed": true,
+            "exit_code": result.exitCode.map { Int($0) } as Any? ?? NSNull(),
+            "stdout": result.stdout,
+            "stderr": result.stderr,
+            "stdout_truncated": result.stdoutTruncated,
+            "stderr_truncated": result.stderrTruncated,
+            "timed_out": result.timedOut,
+            "cancelled": result.cancelled,
+            "binary_output_detected": result.binaryOutputDetected,
+            "non_utf8_detected": result.nonUTF8Detected,
+        ]
+        object.merge(extra) { _, new in new }
+        return encode(object)
+    }
+
+    private static func encodeError(name: String) -> String {
+        encode(["ok": false, "error": name])
+    }
+
+    private static func commandErrorName(_ error: AgentCommandError) -> String {
+        switch error {
+        case .invalidCommand, .commandTooLong:
+            return "invalidArguments"
+        case .cwdUnavailable:
+            return "cwdUnavailable"
+        case .approvalNotFound:
+            return "approvalNotFound"
+        case .approvalNotApproved:
+            return "approvalNotApproved"
+        case .approvalAlreadyResolved:
+            return "approvalAlreadyResolved"
+        case .approvalCancelled:
+            return "approvalCancelled"
+        case .approvalStale:
+            return "authorizationRejected"
+        case .approvalAlreadyClaimed:
+            return "approvalAlreadyClaimed"
+        case .bindingMismatch:
+            return "bindingMismatch"
+        }
     }
 }

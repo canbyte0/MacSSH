@@ -17,8 +17,7 @@ import Observation
 /// - 所有事件写入都经 generation identity guard，late provider events
 ///   绝不落入新 generation 或另一 session。
 ///
-/// target 解析与 `TerminalCommandDispatcher` 同哲学：每次 action 实时读取
-/// active session，不缓存 stale target。
+/// target 解析每次 action 都绑定 origin session，不缓存 stale target。
 @MainActor
 @Observable
 final class AgentViewModel {
@@ -30,6 +29,11 @@ final class AgentViewModel {
     private let provider: AgentProvider
     private let toolRouter: AgentToolRouter
     private let remoteServiceResolver: (any AgentRemoteReadOnlyServiceResolving)?
+    /// B4 审批 authority：UI 只能通过下面的 façade 调用 approve/deny；
+    /// executor 只能通过同一 actor 的 claim/redeem 消费授权。
+    private let approvalCoordinator: AgentCommandApprovalCoordinator
+    private let localCommandExecutor: AgentLocalCommandExecutor
+    private let remoteCommandExecutor: AgentRemoteCommandExecutor
 
     /// 当前 active Terminal session 解析器（每次实时读取）。
     private let activeSessionProvider: @MainActor () -> ManagedTerminalSession?
@@ -56,6 +60,11 @@ final class AgentViewModel {
         provider: AgentProvider,
         toolRouter: AgentToolRouter,
         remoteServiceResolver: (any AgentRemoteReadOnlyServiceResolving)? = nil,
+        approvalCoordinator: AgentCommandApprovalCoordinator = AgentCommandApprovalCoordinator(),
+        localCommandExecutor: AgentLocalCommandExecutor = AgentLocalCommandExecutor(),
+        remoteCommandExecutor: AgentRemoteCommandExecutor = AgentRemoteCommandExecutor(
+            resolver: .unavailable
+        ),
         activeSessionProvider: @escaping @MainActor () -> ManagedTerminalSession?,
         allSessionsProvider: @escaping @MainActor () -> [ManagedTerminalSession],
         handleProvider: @escaping @MainActor (ManagedTerminalSession) -> AgentTerminalSessionHandle = {
@@ -66,6 +75,9 @@ final class AgentViewModel {
         self.provider = provider
         self.toolRouter = toolRouter
         self.remoteServiceResolver = remoteServiceResolver
+        self.approvalCoordinator = approvalCoordinator
+        self.localCommandExecutor = localCommandExecutor
+        self.remoteCommandExecutor = remoteCommandExecutor
         self.activeSessionProvider = activeSessionProvider
         self.allSessionsProvider = allSessionsProvider
         self.handleProvider = handleProvider
@@ -143,19 +155,64 @@ final class AgentViewModel {
     /// 立即取消 task（传播到 provider 流、tool 执行、round 间 continuation）；
     /// partial 内容与 tool card 状态保留；之后仍可发送新消息。
     func stop() {
-        activeConversation?.cancelGeneration()
+        guard let conversation = activeConversation,
+              let generationID = conversation.generationID
+        else { return }
+
+        // 先取消 generation task，保证 Stop 与 claim/redeem/spawn 竞争时
+        // generation 不能继续推进；随后由同一 coordinator actor 失效所有
+        // pending approval，使旧卡的迟到 Approve 永远不能执行。
+        conversation.cancelGeneration()
+        Task {
+            _ = await approvalCoordinator.cancelGeneration(generationID)
+        }
+    }
+
+    // MARK: - Approval façade（B4 UI 只经此处触碰 coordinator）
+
+    /// UI Approve 只改变 coordinator 状态，绝不直接调用 executor。
+    func approveCommand(cardID: UUID, sessionID: UUID) {
+        guard let conversation = store.existingConversation(for: sessionID),
+              let activity = conversation.messages.first(where: { $0.id == cardID })?.toolActivity,
+              activity.status == .awaitingApproval,
+              let approvalID = activity.approvalID
+        else { return }
+
+        Task {
+            _ = await approvalCoordinator.approve(approvalID)
+        }
+    }
+
+    /// UI Deny 只改变 coordinator 状态；`userDenied` tool result 由等待中的
+    /// generation 统一写入，避免按钮路径伪造普通 user message。
+    func denyCommand(cardID: UUID, sessionID: UUID) {
+        guard let conversation = store.existingConversation(for: sessionID),
+              let activity = conversation.messages.first(where: { $0.id == cardID })?.toolActivity,
+              activity.status == .awaitingApproval,
+              let approvalID = activity.approvalID
+        else { return }
+
+        Task {
+            _ = await approvalCoordinator.deny(approvalID)
+        }
     }
 
     // MARK: - Closed session cleanup（任务书 §18，composition 方式）
 
     /// 移除已关闭 session 的 conversation（先取消生成任务）。
     /// 由 AgentSidebarView 在 appear / session 数变化 / active 切换时调用；
-    /// Agent domain 不侵入 SessionManager。
+    /// Agent domain 不侵入 SessionManager。session close 同时失效并清理
+    /// 审批记录，保证旧 UI 卡片无法影响后续 generation。
     func pruneConversations() {
         let validIDs = Set(allSessionsProvider().map(\.id))
+        let approvalCoordinator = self.approvalCoordinator
         for (sessionID, conversation) in store.conversations
         where !validIDs.contains(sessionID) {
             conversation.cancelGeneration()
+            Task {
+                _ = await approvalCoordinator.cancelSession(sessionID)
+                _ = await approvalCoordinator.purgeSession(sessionID)
+            }
             store.removeConversation(for: sessionID)
         }
     }
@@ -172,6 +229,9 @@ final class AgentViewModel {
         let context = Self.context(for: session)
         // §25：origin session 的 cwd 快照（scope / 相对路径基准的唯一来源）。
         let handle = handleProvider(session)
+        // providerSnapshotID 在 generation 创建时生成，并贯穿所有 command
+        // request；Settings / Keychain 的变化不会改变这个 opaque identity。
+        let providerSnapshotID = UUID()
 
         // 第一轮 assistant streaming 占位在 send 的同步路径创建
         // （Phase 10B/10C 已验收行为：send 返回即可见 user + placeholder）。
@@ -188,6 +248,9 @@ final class AgentViewModel {
         let provider = self.provider
         let toolRouter = self.toolRouter
         let remoteServiceResolver = self.remoteServiceResolver
+        let approvalCoordinator = self.approvalCoordinator
+        let localCommandExecutor = self.localCommandExecutor
+        let remoteCommandExecutor = self.remoteCommandExecutor
 
         let task = Task { @MainActor [weak self] in
             // §54/§55：generation 级 provider 快照——整个 tool loop 的
@@ -237,7 +300,12 @@ final class AgentViewModel {
                 sessionID: sessionID,
                 context: context,
                 readScope: readScope,
+                frozenHandle: handle,
+                providerSnapshotID: providerSnapshotID,
                 generationProvider: generationProvider,
+                approvalCoordinator: approvalCoordinator,
+                localCommandExecutor: localCommandExecutor,
+                remoteCommandExecutor: remoteCommandExecutor,
                 toolRouter: toolRouter,
                 firstAssistantID: firstAssistantID
             )
@@ -256,7 +324,12 @@ final class AgentViewModel {
         sessionID: UUID,
         context: AgentSessionContext,
         readScope: AgentReadScope,
+        frozenHandle: AgentTerminalSessionHandle,
+        providerSnapshotID: UUID,
         generationProvider: any AgentProvider,
+        approvalCoordinator: AgentCommandApprovalCoordinator,
+        localCommandExecutor: AgentLocalCommandExecutor,
+        remoteCommandExecutor: AgentRemoteCommandExecutor,
         toolRouter: AgentToolRouter,
         firstAssistantID: UUID
     ) async {
@@ -290,7 +363,10 @@ final class AgentViewModel {
                     AgentMessage(id: assistantID, role: .assistant, content: "", state: .streaming)
                 )
             }
-            var pending: [(call: AgentProviderToolCall, cardID: UUID)] = []
+            // 完整 call 到达后立即按 Provider output order 建立 card；
+            // run_command 的 helper 会先完成 validate/build/register，再发布
+            // awaitingApproval card，保证 card 永远先于 executor side effect。
+            var pending: [PendingToolCall] = []
 
             do {
                 let stream = generationProvider.stream(
@@ -305,14 +381,17 @@ final class AgentViewModel {
                     case .textDelta(let delta):
                         conversation.appendChunk(delta, to: assistantID)
                     case .toolCall(let call):
-                        // §37 privacy hard gate：tool card 必须在执行 /
-                        // 数据外发之前可见（running 状态先 append）。
-                        let card = AgentMessage(
-                            role: .tool,
-                            content: .tool(AgentToolActivity(runningFrom: call))
+                        let cardID = await appendToolCardForProviderCall(
+                            call,
+                            generationID: generationID,
+                            sessionID: sessionID,
+                            frozenHandle: frozenHandle,
+                            providerSnapshotID: providerSnapshotID,
+                            generationProvider: generationProvider,
+                            approvalCoordinator: approvalCoordinator,
+                            conversation: conversation
                         )
-                        conversation.append(card)
-                        pending.append((call, card.id))
+                        pending.append(PendingToolCall(call: call, cardID: cardID))
                     case .providerItem(let item):
                         // §22/§23：opaque 存储（不渲染 / 不日志 / 不解释），
                         // 供后续轮次按 provider scope 回放。
@@ -360,9 +439,14 @@ final class AgentViewModel {
                     try Task.checkCancellation()
                     let outcome = try await executeTool(
                         item.call,
+                        generationID: generationID,
                         cardID: item.cardID,
                         sessionID: sessionID,
                         readScope: readScope,
+                        providerSnapshotID: providerSnapshotID,
+                        approvalCoordinator: approvalCoordinator,
+                        localCommandExecutor: localCommandExecutor,
+                        remoteCommandExecutor: remoteCommandExecutor,
                         toolRouter: toolRouter,
                         conversation: conversation
                     )
@@ -416,18 +500,134 @@ final class AgentViewModel {
         }
     }
 
-    /// 执行单个 tool call 并把结构化结果写回对应 card（§28/§29）。
+    private struct PendingToolCall: Sendable {
+        let call: AgentProviderToolCall
+        let cardID: UUID
+    }
+
+    /// Provider call 到达时建立卡片。run_command 严格执行：validate →
+    /// immutable request → register → visible card；read-only call 则立即
+    /// 发布 running card，保持原有 streaming/Stop 可观察性。
+    private func appendToolCardForProviderCall(
+        _ providerCall: AgentProviderToolCall,
+        generationID: UUID,
+        sessionID: UUID,
+        frozenHandle: AgentTerminalSessionHandle,
+        providerSnapshotID: UUID,
+        generationProvider: any AgentProvider,
+        approvalCoordinator: AgentCommandApprovalCoordinator,
+        conversation: AgentConversation
+    ) async -> UUID {
+        guard providerCall.name == AgentToolName.runCommand.rawValue else {
+            return appendToolCard(
+                AgentToolActivity(runningFrom: providerCall),
+                to: conversation
+            )
+        }
+
+        let parsed: AgentToolCall
+        switch AgentToolCallParsing.parse(
+            name: providerCall.name,
+            argumentsJSON: providerCall.argumentsJSON
+        ) {
+        case .failure(let error):
+            let cardID = appendToolCard(
+                AgentToolActivity(runningFrom: providerCall),
+                to: conversation
+            )
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return cardID
+        case .success(let value):
+            parsed = value
+        }
+
+        guard let command = parsed.command else {
+            let cardID = appendToolCard(
+                AgentToolActivity(runningFrom: providerCall),
+                to: conversation
+            )
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: .invalidArguments),
+                isError: true
+            )
+            return cardID
+        }
+
+        let metadata = generationProvider.commandProviderMetadata
+        let providerBinding = AgentCommandProviderBinding(
+            snapshotID: providerSnapshotID,
+            provider: metadata.provider,
+            model: metadata.model,
+            baseURL: metadata.baseURL
+        )
+        let target: AgentCommandTarget
+        switch frozenHandle.sessionKind {
+        case .local:
+            target = .local(displayName: frozenHandle.displayName)
+        case .remoteSSH:
+            target = .remote(displayName: frozenHandle.displayName)
+        }
+
+        switch AgentCommandRequestFactory.make(
+            generationID: generationID,
+            callID: providerCall.callID,
+            sessionID: sessionID,
+            target: target,
+            command: command,
+            workingDirectory: frozenHandle.workingDirectory,
+            providerBinding: providerBinding
+        ) {
+        case .failure(let error):
+            let cardID = appendToolCard(
+                AgentToolActivity(runningFrom: providerCall),
+                to: conversation
+            )
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return cardID
+        case .success(let request):
+            let approvalID = await approvalCoordinator.register(request)
+            let activity = AgentToolActivity(
+                callID: providerCall.callID,
+                toolName: providerCall.name,
+                argumentsJSON: providerCall.argumentsJSON,
+                displayTarget: nil,
+                approvalID: approvalID,
+                commandRequest: request,
+                status: .awaitingApproval
+            )
+            return appendToolCard(activity, to: conversation)
+        }
+    }
+
+    /// 执行单个 tool call；卡片已由 `appendToolCardForProviderCall` 发布。
     private func executeTool(
         _ providerCall: AgentProviderToolCall,
+        generationID: UUID,
         cardID: UUID,
         sessionID: UUID,
         readScope: AgentReadScope,
+        providerSnapshotID: UUID,
+        approvalCoordinator: AgentCommandApprovalCoordinator,
+        localCommandExecutor: AgentLocalCommandExecutor,
+        remoteCommandExecutor: AgentRemoteCommandExecutor,
         toolRouter: AgentToolRouter,
         conversation: AgentConversation
     ) async throws -> ToolExecutionOutcome {
-        // §6：raw JSON → typed arguments → validate → Router。
-        // 未知工具 / 非法参数在这里收敛为结构化 tool error（模型可见），
-        // 绝不执行、绝不猜测（§51）。
+        // §6：raw JSON → typed arguments → validate。未知工具 / 非法参数在
+        // 这里收敛为结构化 tool error，绝不执行、绝不猜测（§51）。
+        let parsedCall: AgentToolCall
         switch AgentToolCallParsing.parse(
             name: providerCall.name,
             argumentsJSON: providerCall.argumentsJSON
@@ -441,22 +641,102 @@ final class AgentViewModel {
             )
             return .completed
         case .success(let call):
-            let result = await toolRouter.execute(
-                call: call,
+            parsedCall = call
+        }
+
+        if parsedCall.name == AgentToolName.runCommand.rawValue {
+            guard
+                let activity = conversation.messages.first(where: { $0.id == cardID })?.toolActivity,
+                let approvalID = activity.approvalID,
+                let request = activity.commandRequest
+            else {
+                // 参数或 cwd 在 card 创建阶段已失败；这里是防御性 no-op。
+                return .completed
+            }
+            return try await executeRunCommand(
+                cardID: cardID,
+                approvalID: approvalID,
+                request: request,
+                generationID: generationID,
                 sessionID: sessionID,
-                readScope: readScope
+                providerSnapshotID: providerSnapshotID,
+                approvalCoordinator: approvalCoordinator,
+                localCommandExecutor: localCommandExecutor,
+                remoteCommandExecutor: remoteCommandExecutor,
+                conversation: conversation
             )
-            switch result {
-            case .success(let toolResult):
+        }
+
+        let result = await toolRouter.execute(
+            call: parsedCall,
+            sessionID: sessionID,
+            readScope: readScope
+        )
+        switch result {
+        case .success(let toolResult):
+            conversation.updateToolActivity(
+                cardID,
+                status: .success,
+                resultJSON: AgentToolResultSerializer.serialize(toolResult),
+                isError: false
+            )
+            return .completed
+        case .failure(.cancelled):
+            // §46：Stop during tool → 传播取消，绝不转成普通失败。
+            conversation.updateToolActivity(
+                cardID,
+                status: .cancelled,
+                resultJSON: AgentToolResultSerializer.cancelledOutput,
+                isError: true
+            )
+            throw CancellationError()
+        case .failure(.sessionUnavailable):
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: AgentToolError.sessionUnavailable),
+                isError: true
+            )
+            return .fatalSessionUnavailable
+        case .failure(let error):
+            // §28：普通 tool error 是 result，模型可以解释并继续。
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        }
+    }
+
+    /// B4 run_command 完整链：严格 request → register → card → await
+    /// decision → claim → executor redeem → bounded result。
+    private func executeRunCommand(
+        cardID: UUID,
+        approvalID: UUID,
+        request: AgentCommandRequest,
+        generationID: UUID,
+        sessionID: UUID,
+        providerSnapshotID: UUID,
+        approvalCoordinator: AgentCommandApprovalCoordinator,
+        localCommandExecutor: AgentLocalCommandExecutor,
+        remoteCommandExecutor: AgentRemoteCommandExecutor,
+        conversation: AgentConversation
+    ) async throws -> ToolExecutionOutcome {
+
+        do {
+            let decision = try await approvalCoordinator.awaitDecision(approvalID: approvalID)
+            switch decision {
+            case .denied:
                 conversation.updateToolActivity(
                     cardID,
-                    status: .success,
-                    resultJSON: AgentToolResultSerializer.serialize(toolResult),
-                    isError: false
+                    status: .denied,
+                    resultJSON: AgentToolResultSerializer.userDeniedOutput,
+                    isError: true
                 )
                 return .completed
-            case .failure(.cancelled):
-                // §46：Stop during tool → 传播取消，绝不转成普通失败。
+            case .cancelled:
                 conversation.updateToolActivity(
                     cardID,
                     status: .cancelled,
@@ -464,26 +744,138 @@ final class AgentViewModel {
                     isError: true
                 )
                 throw CancellationError()
-            case .failure(.sessionUnavailable):
+            case .approved:
+                try Task.checkCancellation()
+            }
+
+            let authorization = try await approvalCoordinator.claimExecution(
+                approvalID: approvalID,
+                expected: AgentCommandClaimExpectations(
+                    generationID: generationID,
+                    sessionID: sessionID,
+                    providerSnapshotID: providerSnapshotID
+                )
+            )
+
+            // R2 P2-1：claim 成功即代表本次执行已获授权。先同步发布
+            // running，再把 authorization 交给 executor；因此 Local 的
+            // posix_spawn 或 Remote 的 SSH exec side effect 发生前，UI
+            // 已移除 Approve / Deny，用户不会再看到失实的 awaitingApproval。
+            conversation.updateToolActivity(
+                cardID,
+                status: .running,
+                resultJSON: "",
+                isError: false
+            )
+
+            let result: CommandExecutionOutput
+            switch request.target {
+            case .local:
+                let localResult = try await localCommandExecutor.execute(
+                    authorization: authorization,
+                    approvalCoordinator: approvalCoordinator
+                )
+                result = .local(localResult)
+            case .remote:
+                let remoteResult = try await remoteCommandExecutor.execute(
+                    authorization: authorization,
+                    approvalCoordinator: approvalCoordinator
+                )
+                result = .remote(remoteResult)
+            }
+
+            if Task.isCancelled || result.isCancelled {
                 conversation.updateToolActivity(
                     cardID,
-                    status: .failure,
-                    resultJSON: AgentToolResultSerializer.serialize(error: .sessionUnavailable),
+                    status: .cancelled,
+                    resultJSON: AgentToolResultSerializer.cancelledOutput,
                     isError: true
                 )
-                return .fatalSessionUnavailable
-            case .failure(let error):
-                // §28：普通 tool error 是 result（模型可解释 / 询问用户），
-                // 绝不过早杀掉 generation。
-                conversation.updateToolActivity(
-                    cardID,
-                    status: .failure,
-                    resultJSON: AgentToolResultSerializer.serialize(error: error),
-                    isError: true
-                )
-                return .completed
+                throw CancellationError()
+            }
+
+            conversation.updateToolActivity(
+                cardID,
+                status: result.isTimedOut ? .timedOut : .success,
+                resultJSON: result.serialized,
+                isError: false
+            )
+            return .completed
+        } catch is CancellationError {
+            conversation.updateToolActivity(
+                cardID,
+                status: .cancelled,
+                resultJSON: AgentToolResultSerializer.cancelledOutput,
+                isError: true
+            )
+            throw CancellationError()
+        } catch let error as AgentCommandError {
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        } catch let error as AgentCommandExecutionError {
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        } catch let error as AgentRemoteCommandExecutionError {
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        }
+    }
+
+    /// 运行期输出的统一视图，避免 provider loop 直接依赖 Local/Remote
+    /// executor 的不同结果类型。
+    private enum CommandExecutionOutput: Sendable {
+        case local(AgentCommandResult)
+        case remote(AgentRemoteCommandResult)
+
+        var isCancelled: Bool {
+            switch self {
+            case .local(let result): return result.cancelled
+            case .remote(let result): return result.result.cancelled
             }
         }
+
+        var isTimedOut: Bool {
+            switch self {
+            case .local(let result): return result.timedOut
+            case .remote(let result): return result.result.timedOut
+            }
+        }
+
+        var serialized: String {
+            switch self {
+            case .local(let result):
+                return AgentToolResultSerializer.serialize(commandResult: result)
+            case .remote(let result):
+                return AgentToolResultSerializer.serialize(commandResult: result)
+            }
+        }
+    }
+
+    /// 添加单条 tool card，并在返回前使其进入 conversation 时间线。
+    private func appendToolCard(
+        _ activity: AgentToolActivity,
+        to conversation: AgentConversation
+    ) -> UUID {
+        let cardID = UUID()
+        conversation.append(
+            AgentMessage(id: cardID, role: .tool, content: .tool(activity))
+        )
+        return cardID
     }
 
     private enum ToolExecutionOutcome: Equatable {
@@ -523,14 +915,14 @@ final class AgentViewModel {
         }
     }
 
-    /// 把当前 generation 中仍处于 running 的 tool card 收敛为 cancelled
-    /// （§45–§48：未执行 / 未完成的调用绝不留下无结果状态——transcript
-    /// 重建时按 cancelled 输出，call_id 配对恒成立）。
+    /// 把当前 generation 中仍处于 running / awaitingApproval 的 tool card
+    /// 收敛为 cancelled（§45–§48：未执行 / 未完成的调用绝不留下无结果
+    /// 状态——transcript 重建时按 cancelled 输出，call_id 配对恒成立）。
     private func cancelRunningToolCards(in conversation: AgentConversation) {
         for message in conversation.messages {
             guard
                 case .tool(let activity) = message.content,
-                activity.status == .running
+                activity.status == .running || activity.status == .awaitingApproval
             else { continue }
             conversation.updateToolActivity(
                 message.id,

@@ -344,6 +344,19 @@ final class AgentToolLoopTests: XCTestCase {
         return conversation
     }
 
+    /// 启动 generation 但不等待结束，供审批卡片测试观察
+    /// 「先显示、后执行」的硬顺序。
+    private func beginSend(
+        _ text: String,
+        in viewModel: AgentViewModel
+    ) throws -> AgentConversation {
+        viewModel.ensureConversationForActiveSession()
+        let conversation = try XCTUnwrap(viewModel.activeConversation)
+        conversation.draft = text
+        viewModel.send()
+        return conversation
+    }
+
     private func toolCall(
         _ callID: String = "call_1",
         name: String,
@@ -447,6 +460,218 @@ final class AgentToolLoopTests: XCTestCase {
 
         XCTAssertEqual(conversation.messages.last?.text, "文件内容是 content-A")
         XCTAssertEqual(conversation.messages.last?.state, .complete)
+    }
+
+    // MARK: - B4 run_command approval / execution / continuation
+
+    func testRunCommandWaitsForApprovalThenExecutesAndContinues() async throws {
+        let marker = directoryA + "/approved-marker.txt"
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_1",
+                    name: "run_command",
+                    argumentsJSON: "{\"command\":\"printf 'approved' > \(marker)\"}"
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("命令已执行"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("执行命令", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+
+        // Approval Card 出现且用户点击 Approve 之前，不得有 shell side effect。
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker))
+        XCTAssertNotNil(card.toolActivity?.commandRequest)
+        XCTAssertNotNil(card.toolActivity?.approvalID)
+
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updatedCard = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(try String(contentsOfFile: marker, encoding: .utf8), "approved")
+        XCTAssertEqual(updatedCard.toolActivity?.status, .success)
+        let result = try resultJSON(of: updatedCard)
+        XCTAssertEqual(result["ok"] as? Bool, true)
+        XCTAssertEqual(result["executed"] as? Bool, true)
+        XCTAssertEqual(provider.calls.count, 2, "approved result 必须进入同一 frozen provider continuation")
+        XCTAssertTrue(
+            provider.calls[1].transcript.contains {
+                $0.toolActivity?.resultJSON?.contains("\"executed\":true") == true
+            }
+        )
+        XCTAssertEqual(conversation.messages.last?.text, "命令已执行")
+    }
+
+    /// R2 P2-1：Approve 后命令仍在执行时，卡片必须先进入 running，
+    /// 且审批按钮不可再出现；使用 sleep 保持 executor 可观察地挂起。
+    func testRunCommandPublishesRunningBeforeExecutorCompletes() async throws {
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_running",
+                    name: "run_command",
+                    argumentsJSON: #"{"command":"sleep 1; printf 'running-ok'"}"#
+                ),
+                .completed,
+            ]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("观察运行态", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .running
+        }
+
+        XCTAssertTrue(AgentToolCardView.showsApprovalActions(for: .awaitingApproval))
+        XCTAssertFalse(AgentToolCardView.showsApprovalActions(for: .running))
+
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+        XCTAssertEqual(toolCards(in: conversation).first?.toolActivity?.status, .success)
+    }
+
+    /// R2 §30：运行态取消必须走 Composer Stop，卡片收敛为 cancelled，
+    /// 且本轮不会再向 Provider 发起 continuation。
+    func testStopWhileRunningCancelsCommandWithoutProviderContinuation() async throws {
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_stop",
+                    name: "run_command",
+                    argumentsJSON: #"{"command":"sleep 8"}"#
+                ),
+                .completed,
+            ]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("运行中停止", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .running
+        }
+
+        viewModel.stop()
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        XCTAssertEqual(toolCards(in: conversation).first?.toolActivity?.status, .cancelled)
+        XCTAssertEqual(provider.calls.count, 1, "运行中 Stop 后不得发起 Provider continuation")
+    }
+
+    func testRunCommandDenyProducesUserDeniedWithoutExecution() async throws {
+        let marker = directoryA + "/denied-marker.txt"
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_1",
+                    name: "run_command",
+                    argumentsJSON: "{\"command\":\"printf 'denied' > \(marker)\"}"
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("已按你的选择跳过"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("不要执行", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+
+        viewModel.denyCommand(cardID: card.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker), "Deny 必须零 shell side effect")
+        let updatedCard = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updatedCard.toolActivity?.status, .denied)
+        let result = try resultJSON(of: updatedCard)
+        XCTAssertEqual(result["ok"] as? Bool, false)
+        XCTAssertEqual(result["error"] as? String, "userDenied")
+        XCTAssertEqual(provider.calls.count, 2, "userDenied 仍应作为 function_call_output 进入 continuation")
+    }
+
+    func testRunCommandInvalidArgumentsNeverCreatesApproval() async throws {
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_1",
+                    name: "run_command",
+                    argumentsJSON: #"{"command":"printf 'bad'","extra":true}"#
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("参数无效"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try await send("校验命令参数", in: viewModel, box: box)
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+
+        XCTAssertEqual(card.toolActivity?.status, .failure)
+        XCTAssertNil(card.toolActivity?.approvalID, "invalidArguments 必须在 approval 前失败")
+        XCTAssertNil(card.toolActivity?.commandRequest)
+        let result = try resultJSON(of: card)
+        XCTAssertEqual(result["ok"] as? Bool, false)
+        XCTAssertEqual(result["error"] as? String, "invalidArguments")
+    }
+
+    func testStopWhileAwaitingCommandApprovalCancelsWithoutExecution() async throws {
+        let marker = directoryA + "/stopped-marker.txt"
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "command_1",
+                    name: "run_command",
+                    argumentsJSON: "{\"command\":\"printf 'stopped' > \(marker)\"}"
+                ),
+                .completed,
+            ]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("停止命令", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        viewModel.stop()
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: marker))
+        XCTAssertEqual(toolCards(in: conversation).first?.toolActivity?.status, .cancelled)
+        XCTAssertEqual(provider.calls.count, 1, "Stop 后不得发起 continuation")
     }
 
     func testMultipleToolCallsSameRoundExecuteSeriallyInOrder() async throws {
@@ -569,16 +794,16 @@ final class AgentToolLoopTests: XCTestCase {
     func testUnknownToolIsRejectedAsResult() async throws {
         let provider = LoopScriptedProvider(rounds: [
             .events([
-                toolCall(name: "run_command", argumentsJSON: #"{"command":"git status"}"#),
+                toolCall(name: "execute", argumentsJSON: #"{"command":"git status"}"#),
                 .completed,
             ]),
-            .events([.textDelta("我无法执行命令。"), .completed]),
+            .events([.textDelta("我无法处理该工具。"), .completed]),
         ])
         let box = SessionBox()
         box.session = sessions[localSessionA]
         let viewModel = makeViewModel(provider: provider, box: box)
 
-        let conversation = try await send("执行 git status", in: viewModel, box: box)
+        let conversation = try await send("调用未知工具", in: viewModel, box: box)
 
         let cards = toolCards(in: conversation)
         XCTAssertEqual(cards.count, 1, "未知工具必须产生可见 card（绝不静默）")

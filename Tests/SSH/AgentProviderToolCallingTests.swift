@@ -560,9 +560,9 @@ final class AgentProviderToolCallingTests: XCTestCase {
         }
     }
 
-    // MARK: - §51 unknown tool 组装层放行（执行层拒绝）
+    // MARK: - B4 run_command 组装层放行（执行层先走 ApprovalCoordinator）
 
-    func testUnknownToolNameIsAssembledButNeverDispatched() async throws {
+    func testRunCommandNameIsAssembledForApprovalWiring() async throws {
         let sse = #"""
         event: response.output_item.added
         data: {"type":"response.output_item.added","item":{"type":"function_call","id":"fc_1","call_id":"call_1","name":"run_command","arguments":"{\"command\":\"git status\"}"}}
@@ -590,13 +590,16 @@ final class AgentProviderToolCallingTests: XCTestCase {
             ),
             "解析层完整保留 provider 的 call（domain 负责拒绝）"
         )
-        // 执行层静态注册表：hard reject（§51）。
+        // parser 只负责严格参数解析；是否执行由 B4 approval loop 决定。
         XCTAssertEqual(
             AgentToolCallParsing.parse(
                 name: "run_command",
                 argumentsJSON: #"{"command":"git status"}"#
             ),
-            .failure(.unknownTool)
+            .success(AgentToolCall(
+                .runCommand,
+                arguments: ["command": "git status"]
+            ))
         )
     }
 

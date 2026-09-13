@@ -7,6 +7,13 @@ import Foundation
 /// 流式 AgentEvent」。Vendor JSON 线格式（OpenAI / DeepSeek Responses
 /// function tool 布局）由各 provider adapter 收敛，domain 不感知。
 protocol AgentProvider: Sendable {
+    /// 当前不可变 provider 实例的非敏感身份元数据。
+    ///
+    /// B4 将其与 generation 创建时生成的 `snapshotID` 组合成
+    /// `AgentCommandProviderBinding`。这里绝不包含 API Key、Authorization
+    /// header 或其他凭据；凭据仍只留在具体 Provider 实例内部。
+    var commandProviderMetadata: AgentProviderCommandMetadata { get }
+
     /// 流式生成回复：
     /// - `textDelta` 增量产出；
     /// - `toolCall` 携带**完整组装**的调用（§11 hard gate：SSE fragment
@@ -46,6 +53,16 @@ protocol AgentProvider: Sendable {
 }
 
 extension AgentProvider {
+    /// Mock / 测试 Provider 的安全默认身份。生产 OpenAI / DeepSeek
+    /// Provider 会提供自己的精确 metadata。
+    var commandProviderMetadata: AgentProviderCommandMetadata {
+        AgentProviderCommandMetadata(
+            provider: .openAI,
+            model: "test",
+            baseURL: URL(string: "https://provider.invalid")!
+        )
+    }
+
     func configurationState() async -> AgentProviderConfigurationState {
         .ready
     }
@@ -53,6 +70,15 @@ extension AgentProvider {
     func snapshotForGeneration() async throws -> any AgentProvider {
         self
     }
+}
+
+/// Provider generation 的非敏感身份快照。
+///
+/// 该值可以进入命令审批绑定，但绝不能携带 API Key 或任何认证材料。
+struct AgentProviderCommandMetadata: Sendable, Equatable {
+    let provider: AgentProviderSettings.Provider
+    let model: String
+    let baseURL: URL
 }
 
 /// Provider 配置就绪状态（任务书 §15）。

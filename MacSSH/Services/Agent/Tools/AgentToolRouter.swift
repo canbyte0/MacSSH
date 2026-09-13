@@ -83,6 +83,11 @@ final class AgentToolRouter {
                 session: session,
                 readScope: readScope
             )
+        case .runCommand:
+            // 命令执行不属于 read-only Router。B4 的 AgentViewModel 必须
+            // 先建立 immutable request，再经 ApprovalCoordinator 接线；
+            // 任何误调用都只返回结构化错误，绝不触碰 executor。
+            result = .failure(.commandRequiresApproval)
         }
 
         do {
