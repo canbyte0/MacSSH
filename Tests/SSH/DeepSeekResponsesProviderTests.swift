@@ -399,12 +399,13 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
         XCTAssertEqual(try text(of: input[2]), "好的，7319")
         XCTAssertEqual(try text(of: input[3]), "数字是多少？")
 
-        // B4 §7/§10 hard gate：DeepSeek Responses 与 OpenAI 同构——
-        // tools 只含 4 个 read-only function 工具和 run_command
-        // + tool_choice=auto；
+        // B4 §7/§10 hard gate（10F-B4-S1 更新）：DeepSeek Responses 与
+        // OpenAI 同构——tools 含 4 个 read-only function 工具、run_command
+        // 与 send_to_terminal + tool_choice=auto（两 provider schema 必须
+        // 等价，§37）；
         // 禁用字段（server-side state / 危险工具名）绝不出现。
         let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 5)
+        XCTAssertEqual(tools.count, 6)
         XCTAssertEqual(
             Set(tools.compactMap { $0["type"] as? String }),
             ["function"]

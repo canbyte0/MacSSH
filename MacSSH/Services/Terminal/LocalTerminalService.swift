@@ -83,6 +83,9 @@ final class LocalTerminalService: NSObject {
     /// View 只观察该状态对象，不直接控制 PTY 子进程。
     let session: TerminalSession
 
+    /// 与 ManagedTerminalSession 相同的逻辑身份；endpoint 不从活动标签反推。
+    let logicalSessionID: UUID
+
     /// SwiftTerm 官方提供的 AppKit 本地进程终端，内部使用 PTY 和异步 I/O。
     let terminalView: LocalProcessTerminalView
 
@@ -92,11 +95,17 @@ final class LocalTerminalService: NSObject {
     /// 防止 SwiftUI 重建包装层时重复启动 Shell。
     private var hasStarted = false
 
+    /// Local service 只允许一次 PTY incarnation；每次成功 attach 时递增。
+    private var nextInputTargetEpoch: AgentTerminalInputTargetEpoch = 0
+    private var currentMutationEndpoint: AgentLocalTerminalMutationEndpoint?
+    private var endpointPreparationTask: Task<AgentLocalTerminalMutationEndpoint?, Never>?
+
     /// 每个 Local Session 独立持有控制通道，关闭会话时随 Service 一并释放。
     private var pasteHighlightControlChannel: PasteHighlightControlChannel?
 
-    init(session: TerminalSession) {
+    init(session: TerminalSession, logicalSessionID: UUID = UUID()) {
         self.session = session
+        self.logicalSessionID = logicalSessionID
 
         // 计划书要求默认限制为 10,000 行，并使用 xterm-256color 能力。
         //
@@ -181,7 +190,9 @@ final class LocalTerminalService: NSObject {
         if terminalView.process.running {
             session.processState = .running
             AppLogger.terminal.info("Local terminal started with account login shell")
+            scheduleMutationEndpointPreparation()
         } else {
+            invalidateMutationEndpoint()
             closePasteHighlightControlChannel()
             session.processState = .failedToStart
             AppLogger.terminal.error("Local terminal failed to start")
@@ -199,6 +210,7 @@ final class LocalTerminalService: NSObject {
     /// 负责 `waitpid` 回收子进程并推进状态，杜绝僵尸 login 与 UI 停留
     /// running（Phase 3 任务书 49/50/51）。
     func terminate() {
+        invalidateMutationEndpoint()
         guard session.processState == .starting || session.processState == .running else {
             return
         }
@@ -250,6 +262,91 @@ final class LocalTerminalService: NSObject {
                 )
             }
         }
+    }
+
+    // MARK: - Agent Local Endpoint
+
+    /// 返回当前 Local PTY incarnation 的 exact capability。
+    ///
+    /// endpoint 只在 SwiftTerm exclusive transaction 成功取得后创建；这个空
+    /// transaction 是 attach readiness probe，不向 PTY 写入任何字节。由于
+    /// `LocalProcess` 在本服务生命周期内不会重新 start/adopt，创建后的对象
+    /// 永远不会指向替换后的输入 channel。
+    func agentLocalTerminalMutationEndpoint() async -> AgentLocalTerminalMutationEndpoint? {
+        if !hasStarted {
+            startIfNeeded()
+        }
+        if let currentMutationEndpoint {
+            return currentMutationEndpoint
+        }
+        guard session.processState == .running, terminalView.process.running else {
+            return nil
+        }
+        if let endpointPreparationTask {
+            return await endpointPreparationTask.value
+        }
+        scheduleMutationEndpointPreparation()
+        guard let endpointPreparationTask else {
+            return nil
+        }
+        return await endpointPreparationTask.value
+    }
+
+    /// 通过 SwiftTerm 自身的 exclusive API 确认 inputTransport 已 attach。
+    private func scheduleMutationEndpointPreparation() {
+        guard endpointPreparationTask == nil,
+              currentMutationEndpoint == nil,
+              hasStarted,
+              session.processState == .running,
+              terminalView.process.running
+        else {
+            return
+        }
+
+        let process = terminalView.process!
+        let terminalView = self.terminalView
+        let logicalSessionID = self.logicalSessionID
+        endpointPreparationTask = Task { @MainActor [weak self] in
+            defer { self?.endpointPreparationTask = nil }
+
+            do {
+                // 只验证固定 transport 已可取得 transaction，不发送 mutation 内容。
+                try await process.inputTransport.withExclusiveInputTransaction { @Sendable _ in }
+            } catch {
+                return nil
+            }
+
+            guard let self,
+                  self.hasStarted,
+                  self.session.processState == .running,
+                  process.running,
+                  terminalView.process === process
+            else {
+                return nil
+            }
+            if let current = self.currentMutationEndpoint {
+                return current
+            }
+
+            self.nextInputTargetEpoch &+= 1
+            let endpoint = AgentLocalTerminalMutationEndpoint(
+                logicalSessionID: logicalSessionID,
+                inputTargetEpoch: self.nextInputTargetEpoch,
+                endpointToken: AgentTerminalEndpointToken.generate(),
+                process: process,
+                terminalView: terminalView
+            )
+            self.currentMutationEndpoint = endpoint
+            return endpoint
+        }
+    }
+
+    /// termination 开始时撤销当前 capability；旧 endpoint 本身仍绑定旧 authority。
+    private func invalidateMutationEndpoint() {
+        currentMutationEndpoint?.invalidate()
+        currentMutationEndpoint = nil
+        endpointPreparationTask?.cancel()
+        endpointPreparationTask = nil
     }
 
     /// 终端重新进入可见 Workspace 后恢复键盘焦点。
@@ -320,6 +417,7 @@ extension LocalTerminalService: LocalProcessTerminalViewDelegate {
     /// 子进程结束回调可能来自 SwiftTerm 的后台 I/O 队列，统一切回主线程更新 UI 状态。
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
         Task { @MainActor [weak self] in
+            self?.invalidateMutationEndpoint()
             self?.closePasteHighlightControlChannel()
             self?.session.processState = .exited(exitCode)
             AppLogger.terminal.info("Local terminal process terminated")

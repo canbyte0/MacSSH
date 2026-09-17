@@ -1650,11 +1650,727 @@ final class RemoteTerminalTests: XCTestCase {
         return Int64(info.resident_size)
     }
 
-    private static func processCPUSeconds() -> Double {
+private static func processCPUSeconds() -> Double {
         var usage = rusage()
         getrusage(RUSAGE_SELF, &usage)
         let user = Double(usage.ru_utime.tv_sec) + Double(usage.ru_utime.tv_usec) / 1_000_000
         let system = Double(usage.ru_stime.tv_sec) + Double(usage.ru_stime.tv_usec) / 1_000_000
         return user + system
+    }
+}
+
+/// B3-S1 physical write 的 deterministic backend 探针；只记录实际 accepted
+/// prefix，测试不会依赖真实 SSH server，也不会把 payload 写入应用日志。
+private actor B3InputBackendProbe {
+    private var steps: [SSHInteractiveInputTestWriteStep]
+    private var receivedBytes: [UInt8] = []
+
+    init(steps: [SSHInteractiveInputTestWriteStep]) {
+        self.steps = steps
+    }
+
+    func next(bytes: [UInt8], offset: Int) -> SSHInteractiveInputTestWriteStep {
+        let step = steps.isEmpty
+            ? .accepted(bytes.count - offset)
+            : steps.removeFirst()
+
+        if case let .accepted(count) = step {
+            let end = min(bytes.count, offset + max(0, count))
+            if end > offset {
+                receivedBytes.append(contentsOf: bytes[offset..<end])
+            }
+        }
+        return step
+    }
+
+    func snapshot() -> [UInt8] {
+        receivedBytes
+    }
+}
+
+/// 用于制造 physical write / delegate 延迟恢复窗口的异步闸门。
+private actor B3InputGate {
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var hasArrived = false
+
+    func wait() async {
+        guard !released else {
+            return
+        }
+        hasArrived = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+/// 只阻塞第一次调用，后续 transaction write 不会被测试挂钩再次阻塞。
+private actor B3OneShotInputGate {
+    private var consumed = false
+    private var continuation: CheckedContinuation<Void, Never>?
+    private var released = false
+    private(set) var hasArrived = false
+
+    func wait() async {
+        guard !consumed else {
+            return
+        }
+        consumed = true
+        guard !released else {
+            return
+        }
+        hasArrived = true
+        await withCheckedContinuation { continuation in
+            self.continuation = continuation
+        }
+    }
+
+    func release() {
+        released = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+/// Phase 10F-B3-S1：Remote Interactive Input transport foundation 的确定性
+/// contract / ordering / reconnect 测试。真实 SSH 集成仍由既有 Remote suite
+/// 负责；本组测试不生成密钥、不改 sshd、不依赖 live fixture。
+@MainActor
+final class RemoteInteractiveInputTransportTests: XCTestCase {
+    private var knownHostContainer: ModelContainer!
+    private var knownHostService: KnownHostService!
+
+    override func setUp() async throws {
+        continueAfterFailure = false
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        knownHostContainer = try ModelContainer(for: schema, configurations: [configuration])
+        knownHostService = KnownHostService(modelContainer: knownHostContainer)
+    }
+
+    override func tearDown() async throws {
+        knownHostService.removeAll()
+        knownHostService = nil
+        knownHostContainer = nil
+    }
+
+    /// 正数 partial、EAGAIN、fatal error 都必须保留 exact accepted prefix。
+    func testExactAcceptedPrefixAndEAGAINMatrix() async throws {
+        let cases: [(
+            steps: [SSHInteractiveInputTestWriteStep],
+            accepted: Int,
+            error: SSHInteractiveInputTransportError?
+        )] = [
+            (steps: [.failed(.writeFailed)], accepted: 0, error: .writeFailed),
+            (steps: [.accepted(1), .failed(.writeFailed)], accepted: 1, error: .writeFailed),
+            (steps: [.accepted(2), .accepted(1), .failed(.writeFailed)], accepted: 3, error: .writeFailed),
+            (steps: [.accepted(1), .accepted(1), .accepted(2)], accepted: 4, error: nil),
+            (steps: [.accepted(1), .wouldBlock, .accepted(3)], accepted: 4, error: nil)
+        ]
+
+        for testCase in cases {
+            let connection = makeConnection()
+            let probe = B3InputBackendProbe(steps: testCase.steps)
+            await connection.installTestInteractiveInputBackend(
+                { bytes, offset in
+                    await probe.next(bytes: bytes, offset: offset)
+                },
+                readinessWait: {}
+            )
+            let endpointValue = await connection.interactiveInputEndpoint()
+            let endpoint = try XCTUnwrap(endpointValue)
+
+            let result = await endpoint.writeAcknowledged([1, 2, 3, 4])
+            XCTAssertEqual(result.requestedBytes, 4)
+            XCTAssertEqual(result.acceptedBytes, testCase.accepted)
+            XCTAssertEqual(result.error, testCase.error)
+        }
+    }
+
+    /// 取消发生在 positive prefix 后时，剩余 suffix 不得再次调度。
+    func testCancellationPreservesPrefixAndStopsSuffix() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .accepted(2)])
+        let gate = B3InputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await gate.wait()
+        }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let task = Task {
+            await endpoint.writeAcknowledged([10, 11, 12])
+        }
+        try await waitUntil { await gate.hasArrived }
+        task.cancel()
+        await gate.release()
+
+        let result = await task.value
+        XCTAssertEqual(result.acceptedBytes, 1)
+        XCTAssertEqual(result.error, .cancelled)
+        let received = await probe.snapshot()
+        XCTAssertEqual(received, [10])
+    }
+
+    /// positive prefix → EAGAIN → cancellation 也必须结算 prefix，不得调度 suffix。
+    func testCancellationAfterPrefixAndEAGAINPreservesPrefix() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .wouldBlock, .accepted(2)])
+        let readinessGate = B3InputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {
+                await readinessGate.wait()
+            }
+        )
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let task = Task {
+            await endpoint.writeAcknowledged([20, 21, 22])
+        }
+        try await waitUntil { await readinessGate.hasArrived }
+        task.cancel()
+        await readinessGate.release()
+
+        let result = await task.value
+        let received = await probe.snapshot()
+        XCTAssertEqual(result.acceptedBytes, 1)
+        XCTAssertEqual(result.error, .cancelled)
+        XCTAssertEqual(received, [20])
+    }
+
+    /// 普通输入 A/B/C 的 admission 顺序必须与 physical write 顺序一致。
+    func testOrdinaryInputUsesAdmissionFIFO() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [])
+        let firstWriteGate = B3OneShotInputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await firstWriteGate.wait()
+        }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let first = Task { await endpoint.writeAcknowledged([65]) }
+        try await waitUntil { await firstWriteGate.hasArrived }
+
+        let second = Task { await endpoint.writeAcknowledged([66]) }
+        await firstWriteGate.release()
+        try await waitUntil { await probe.snapshot() == [65, 66] }
+
+        let third = Task { await endpoint.writeAcknowledged([67]) }
+        let firstResult = await first.value
+        let secondResult = await second.value
+        let thirdResult = await third.value
+        let received = await probe.snapshot()
+        XCTAssertTrue(firstResult.isSuccess)
+        XCTAssertTrue(secondResult.isSuccess)
+        XCTAssertTrue(thirdResult.isSuccess)
+        XCTAssertEqual(received, [65, 66, 67])
+    }
+
+    /// transaction 内部遇到 EAGAIN 时，普通输入仍只能等待整个 transaction 结束。
+    func testTransactionWritesRemainIsolatedAcrossEAGAIN() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .wouldBlock, .accepted(1)])
+        let readinessGate = B3InputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {
+                await readinessGate.wait()
+            }
+        )
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let transaction = Task {
+            try await connection.withExclusiveInteractiveInputTransaction { transaction in
+                try await transaction.write([66])
+                try await transaction.write([67])
+            }
+        }
+        try await waitUntil { await readinessGate.hasArrived }
+        let ordinary = Task { await endpoint.writeAcknowledged([68]) }
+
+        await readinessGate.release()
+        try await transaction.value
+        let ordinaryResult = await ordinary.value
+        let received = await probe.snapshot()
+        XCTAssertTrue(ordinaryResult.isSuccess)
+        XCTAssertEqual(received, [66, 67, 68])
+    }
+
+    /// transaction 取消后保留已接受 prefix，停止 suffix，并释放被持有的普通输入。
+    func testTransactionCancellationPreservesPrefixAndReleasesOrdinaryFIFO() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .wouldBlock, .accepted(1)])
+        let readinessGate = B3InputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {
+                await readinessGate.wait()
+            }
+        )
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let transaction = Task {
+            do {
+                try await connection.withExclusiveInteractiveInputTransaction { transaction in
+                    try await transaction.write([65, 66])
+                    try await transaction.write([67])
+                }
+                return Optional<SSHInteractiveInputTransportError>.none
+            } catch let error as SSHInteractiveInputTransportError {
+                return Optional(error)
+            } catch {
+                return Optional(SSHInteractiveInputTransportError.writeFailed)
+            }
+        }
+        try await waitUntil { await readinessGate.hasArrived }
+        let ordinary = Task { await endpoint.writeAcknowledged([68]) }
+
+        transaction.cancel()
+        await readinessGate.release()
+
+        let transactionError = await transaction.value
+        let ordinaryResult = await ordinary.value
+        let received = await probe.snapshot()
+        XCTAssertEqual(transactionError, .cancelled)
+        XCTAssertTrue(ordinaryResult.isSuccess)
+        XCTAssertEqual(received, [65, 68])
+    }
+
+    /// A ordinary、pending transaction、D ordinary 的物理顺序必须严格为 A-B-C-D。
+    func testPendingTransactionBlocksLaterOrdinaryInput() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [])
+        let firstWriteGate = B3OneShotInputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await firstWriteGate.wait()
+        }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let ordinaryA = Task {
+            await endpoint.writeAcknowledged([65])
+        }
+        try await waitUntil { await firstWriteGate.hasArrived }
+
+        let transaction = Task {
+            try await connection.withExclusiveInteractiveInputTransaction { transaction in
+                try await transaction.write([66])
+                try await transaction.write([67])
+            }
+        }
+        try await waitUntil { await connection.hasPendingOrActiveInteractiveInputTransaction }
+
+        let ordinaryD = Task {
+            await endpoint.writeAcknowledged([68])
+        }
+        await firstWriteGate.release()
+
+        let ordinaryAResult = await ordinaryA.value
+        XCTAssertTrue(ordinaryAResult.isSuccess)
+        try await transaction.value
+        let ordinaryDResult = await ordinaryD.value
+        XCTAssertTrue(ordinaryDResult.isSuccess)
+        let received = await probe.snapshot()
+        XCTAssertEqual(received, [65, 66, 67, 68])
+    }
+
+    /// 同一 Shell incarnation 至多允许一个 pending/active transaction。
+    func testOnlyOneExclusiveTransactionMayBePendingOrActive() async throws {
+        let connection = makeConnection()
+        let bodyGate = B3InputGate()
+        let probe = B3InputBackendProbe(steps: [])
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+
+        let first = Task {
+            try await connection.withExclusiveInteractiveInputTransaction { _ in
+                await bodyGate.wait()
+            }
+        }
+        try await waitUntil { await connection.hasPendingOrActiveInteractiveInputTransaction }
+
+        do {
+            try await connection.withExclusiveInteractiveInputTransaction { _ in }
+            XCTFail("第二个 pending/active transaction 必须被拒绝")
+        } catch let error as SSHInteractiveInputTransportError {
+            XCTAssertEqual(error, .transactionUnavailable)
+        }
+
+        await bodyGate.release()
+        try await first.value
+        let transactionStillActive = await connection.hasPendingOrActiveInteractiveInputTransaction
+        XCTAssertFalse(transactionStillActive)
+    }
+
+    /// transaction 中 Shell close 后，当前写入保留 exact prefix，队列中的旧普通
+    /// 输入失败，且不会写入 replacement incarnation。
+    func testChannelCloseDuringTransactionSettlesPrefixAndFailsQueuedInput() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .accepted(1)])
+        let bodyGate = B3InputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let transaction = Task {
+            do {
+                try await connection.withExclusiveInteractiveInputTransaction { transaction in
+                    await bodyGate.wait()
+                    try await transaction.write([65, 66])
+                }
+                return Optional<SSHInteractiveInputTransportError>.none
+            } catch let error as SSHInteractiveInputTransportError {
+                return Optional(error)
+            } catch {
+                return Optional(SSHInteractiveInputTransportError.writeFailed)
+            }
+        }
+        try await waitUntil { await connection.hasPendingOrActiveInteractiveInputTransaction }
+        let queuedOrdinary = Task {
+            await endpoint.writeAcknowledged([68])
+        }
+
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await connection.invalidateTestInteractiveInputIncarnation()
+        }
+        await bodyGate.release()
+        let transactionError = await transaction.value
+        let queuedResult = await queuedOrdinary.value
+        let received = await probe.snapshot()
+
+        XCTAssertEqual(transactionError, .channelClosed)
+        XCTAssertEqual(received, [65])
+        XCTAssertEqual(queuedResult.acceptedBytes, 0)
+        XCTAssertEqual(queuedResult.error, .channelClosed)
+    }
+
+    /// 源码安全门：delegate admission 后不得再从 mutable `connection` 选择 target。
+    func testDelegateAdmissionDoesNotLateLookupMutableConnection() throws {
+        let repositoryRoot = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+        let sourceURL = repositoryRoot
+            .appendingPathComponent("MacSSH")
+            .appendingPathComponent("Services")
+            .appendingPathComponent("Terminal")
+            .appendingPathComponent("RemoteTerminalService.swift")
+        let source = try String(contentsOf: sourceURL, encoding: .utf8)
+        let sendStart = try XCTUnwrap(
+            source.range(of: "nonisolated func send(source: TerminalView, data: ArraySlice<UInt8>)")
+        )
+        let sendEnd = try XCTUnwrap(source[sendStart.upperBound...].range(of: "/// SwiftTerm 尺寸变化"))
+        let sendBody = String(source[sendStart.upperBound..<sendEnd.lowerBound])
+
+        XCTAssertTrue(sendBody.contains("inputAdmission.capture()"))
+        XCTAssertTrue(sendBody.contains("endpoint.writeAcknowledged(bytes)"))
+        XCTAssertFalse(sendBody.contains("self.connection"))
+        XCTAssertFalse(sendBody.contains("writeChannelInput"))
+    }
+
+    /// 同一 connection reopen 与不同 connection 都不能接受旧 endpoint。
+    func testIncarnationAndConnectionBinding() async throws {
+        let connectionA = makeConnection()
+        let probeA = B3InputBackendProbe(steps: [])
+        await connectionA.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeA.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        let oldEndpointValue = await connectionA.interactiveInputEndpoint()
+        let oldEndpoint = try XCTUnwrap(oldEndpointValue)
+
+        await connectionA.replaceTestInteractiveInputIncarnation()
+        let reopenedEndpointValue = await connectionA.interactiveInputEndpoint()
+        let reopenedEndpoint = try XCTUnwrap(reopenedEndpointValue)
+        XCTAssertNotEqual(oldEndpoint.incarnation, reopenedEndpoint.incarnation)
+
+        let staleResult = await oldEndpoint.writeAcknowledged([1, 2])
+        XCTAssertEqual(staleResult.acceptedBytes, 0)
+        XCTAssertEqual(staleResult.error, .targetReplaced)
+
+        do {
+            try await oldEndpoint.withExclusiveInteractiveInputTransaction { _ in }
+            XCTFail("旧 endpoint 不得申请 reopen 后的新 transaction")
+        } catch let error as SSHInteractiveInputTransportError {
+            XCTAssertEqual(error, .targetReplaced)
+        }
+
+        let reopenedResult = await reopenedEndpoint.writeAcknowledged([3])
+        XCTAssertTrue(reopenedResult.isSuccess)
+        let reopenedBytes = await probeA.snapshot()
+        XCTAssertEqual(reopenedBytes, [3])
+
+        let connectionB = makeConnection()
+        let probeB = B3InputBackendProbe(steps: [])
+        await connectionB.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeB.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        let endpointBValue = await connectionB.interactiveInputEndpoint()
+        let endpointB = try XCTUnwrap(endpointBValue)
+        XCTAssertEqual(oldEndpoint.generation, endpointB.generation)
+
+        // endpointA 的 actor reference 是 connectionA；connectionB 的 backend
+        // 永远不会收到 endpointA 的 bytes，即使 generation 数字相同。
+        let connectionAResult = await oldEndpoint.writeAcknowledged([4])
+        XCTAssertEqual(connectionAResult.error, .targetReplaced)
+        let connectionBBytes = await probeB.snapshot()
+        XCTAssertEqual(connectionBBytes, [])
+    }
+
+    /// 精确复现 send → 延迟 physical delivery → reattach；新 connection 不得收到旧字节。
+    func testLateDelegateTaskAcrossReattachCannotRetarget() async throws {
+        let connectionA = makeConnection()
+        let connectionB = makeConnection()
+        let probeA = B3InputBackendProbe(steps: [.wouldBlock, .accepted(1)])
+        let probeB = B3InputBackendProbe(steps: [])
+        let deliveryGate = B3InputGate()
+
+        await connectionA.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeA.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {
+                await deliveryGate.wait()
+            }
+        )
+        await connectionB.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeB.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+
+        let endpointAValue = await connectionA.interactiveInputEndpoint()
+        let endpointA = try XCTUnwrap(endpointAValue)
+        let endpointBValue = await connectionB.interactiveInputEndpoint()
+        let endpointB = try XCTUnwrap(endpointBValue)
+        let service = RemoteTerminalService(connection: connectionA, hostname: "A", port: 22)
+        let terminalView = service.terminalView
+        service.installTestInputEndpoint(endpointA)
+
+        let oldBytes: [UInt8] = [65]
+        service.send(source: terminalView, data: oldBytes[...])
+        try await waitUntil { await deliveryGate.hasArrived }
+
+        await service.reattach(connection: connectionB)
+        service.installTestInputEndpoint(endpointB)
+        XCTAssertTrue(service.terminalView === terminalView, "Reconnect 必须复用同一 TerminalView")
+
+        await deliveryGate.release()
+        try await waitUntil { await probeA.snapshot() == [65] }
+        let connectionBBytes = await probeB.snapshot()
+        XCTAssertEqual(connectionBBytes, [])
+    }
+
+    /// 最高风险三类 deterministic 交错各重复至少 50 次，防止只靠单次 timing 通过。
+    func testStressB3OrderingReattachAndReplacementAtLeast50Iterations() async throws {
+        for iteration in 0..<50 {
+            try await runPendingOrderingIteration(iteration)
+            try await runLateDelegateReattachIteration(iteration)
+            try await runReplacementDuringPartialWriteIteration(iteration)
+        }
+    }
+
+    // MARK: - Stress helpers
+
+    private func runPendingOrderingIteration(_ iteration: Int) async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [])
+        let firstGate = B3OneShotInputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await firstGate.wait()
+        }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+
+        let first = Task { await endpoint.writeAcknowledged([65]) }
+        try await waitUntil { await firstGate.hasArrived }
+        let transaction = Task {
+            try await connection.withExclusiveInteractiveInputTransaction { transaction in
+                try await transaction.write([66])
+                try await transaction.write([67])
+            }
+        }
+        try await waitUntil { await connection.hasPendingOrActiveInteractiveInputTransaction }
+        let last = Task { await endpoint.writeAcknowledged([68]) }
+        await firstGate.release()
+
+        let firstResult = await first.value
+        XCTAssertTrue(firstResult.isSuccess, "iteration \(iteration): A")
+        try await transaction.value
+        let lastResult = await last.value
+        XCTAssertTrue(lastResult.isSuccess, "iteration \(iteration): D")
+        let received = await probe.snapshot()
+        XCTAssertEqual(received, [65, 66, 67, 68], "iteration \(iteration): FIFO")
+    }
+
+    private func runLateDelegateReattachIteration(_ iteration: Int) async throws {
+        let connectionA = makeConnection()
+        let connectionB = makeConnection()
+        let probeA = B3InputBackendProbe(steps: [.wouldBlock, .accepted(1)])
+        let probeB = B3InputBackendProbe(steps: [])
+        let gate = B3InputGate()
+        await connectionA.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeA.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {
+                await gate.wait()
+            }
+        )
+        await connectionB.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await probeB.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+
+        let endpointAValue = await connectionA.interactiveInputEndpoint()
+        let endpointA = try XCTUnwrap(endpointAValue)
+        let endpointBValue = await connectionB.interactiveInputEndpoint()
+        let endpointB = try XCTUnwrap(endpointBValue)
+        let service = RemoteTerminalService(connection: connectionA, hostname: "A", port: 22)
+        let view = service.terminalView
+        service.installTestInputEndpoint(endpointA)
+        let bytes: [UInt8] = [65]
+        service.send(source: view, data: bytes[...])
+        try await waitUntil { await gate.hasArrived }
+        await service.reattach(connection: connectionB)
+        service.installTestInputEndpoint(endpointB)
+        await gate.release()
+        try await waitUntil { await probeA.snapshot() == [65] }
+        let connectionBBytes = await probeB.snapshot()
+        XCTAssertEqual(connectionBBytes, [], "iteration \(iteration): old delegate bytes retargeted to B")
+    }
+
+    private func runReplacementDuringPartialWriteIteration(_ iteration: Int) async throws {
+        let connection = makeConnection()
+        let oldProbe = B3InputBackendProbe(steps: [.accepted(1), .accepted(1)])
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await oldProbe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await connection.replaceTestInteractiveInputIncarnation()
+        }
+        let oldEndpointValue = await connection.interactiveInputEndpoint()
+        let oldEndpoint = try XCTUnwrap(oldEndpointValue)
+        let staleResult = await oldEndpoint.writeAcknowledged([1, 2])
+        XCTAssertEqual(staleResult.acceptedBytes, 1, "iteration \(iteration): exact partial prefix")
+        XCTAssertEqual(staleResult.error, .targetReplaced, "iteration \(iteration): stale result")
+
+        let newProbe = B3InputBackendProbe(steps: [])
+        await connection.setTestInteractiveInputAfterPositiveWriteHook(nil)
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in
+                await newProbe.next(bytes: bytes, offset: offset)
+            },
+            readinessWait: {}
+        )
+        let newEndpointValue = await connection.interactiveInputEndpoint()
+        let newEndpoint = try XCTUnwrap(newEndpointValue)
+        let newResult = await newEndpoint.writeAcknowledged([3])
+        XCTAssertTrue(newResult.isSuccess, "iteration \(iteration): new incarnation write")
+        let oldBytes = await oldProbe.snapshot()
+        let newBytes = await newProbe.snapshot()
+        XCTAssertEqual(oldBytes, [1], "iteration \(iteration): old accepted prefix")
+        XCTAssertEqual(newBytes, [3], "iteration \(iteration): replacement channel data")
+    }
+
+    private func makeConnection() -> SSHConnection {
+        let info = SSHConnectionInfo(
+            hostID: UUID(),
+            hostname: "b3-test.invalid",
+            port: 22,
+            username: "tester"
+        )
+        let configuration = SSHConnection.Configuration(
+            hostID: info.hostID,
+            hostname: info.hostname,
+            port: info.port,
+            username: info.username,
+            authenticationType: .password,
+            credentialID: nil,
+            privateKeyPath: nil,
+            privateKeyID: nil
+        )
+        return SSHConnection(
+            configuration: configuration,
+            info: info,
+            knownHostService: knownHostService
+        )
+    }
+
+    private func waitUntil(
+        timeout: TimeInterval = 3,
+        _ predicate: @escaping () async -> Bool
+    ) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if await predicate() {
+                return
+            }
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+        let finalValue = await predicate()
+        XCTAssertTrue(finalValue, "deterministic B3 test gate timed out")
     }
 }

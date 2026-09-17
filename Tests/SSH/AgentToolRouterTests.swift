@@ -115,18 +115,20 @@ final class AgentToolRouterTests: XCTestCase {
 
     // MARK: - 静态注册表（§30/§31）
 
-    func testRegistryContainsExactlyFourTools() {
-        XCTAssertEqual(AgentToolRegistry.all.count, 5)
+    func testRegistryContainsExactlySixTools() {
+        // 10F-B4-S1：静态注册表精确扩大为 6（+ send_to_terminal）。
+        XCTAssertEqual(AgentToolRegistry.all.count, 6)
         XCTAssertEqual(AgentToolRegistry.lookup("get_terminal_context"), .getTerminalContext)
         XCTAssertEqual(AgentToolRegistry.lookup("get_current_directory"), .getCurrentDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("list_directory"), .listDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("read_file"), .readFile)
         XCTAssertEqual(AgentToolRegistry.lookup("run_command"), .runCommand)
+        XCTAssertEqual(AgentToolRegistry.lookup("send_to_terminal"), .sendToTerminal)
     }
 
     func testRegistryRejectsUnknownNames() {
         XCTAssertNil(AgentToolRegistry.lookup("write_file"))
-        XCTAssertNil(AgentToolRegistry.lookup("send_to_terminal"))
+        XCTAssertNil(AgentToolRegistry.lookup("terminal_send"))
         XCTAssertNil(AgentToolRegistry.lookup("read_file "))
     }
 
@@ -137,6 +139,9 @@ final class AgentToolRouterTests: XCTestCase {
         XCTAssertEqual(AgentToolName.readFile.dataAccessPolicy, .scopedFileRead)
         XCTAssertEqual(AgentToolName.runCommand.risk, .modifying)
         XCTAssertEqual(AgentToolName.runCommand.dataAccessPolicy, .commandExecution)
+        // 10F-B4-S1：mutation 不是 read-only，也不是 command execution。
+        XCTAssertEqual(AgentToolName.sendToTerminal.risk, .modifying)
+        XCTAssertEqual(AgentToolName.sendToTerminal.dataAccessPolicy, .terminalMutation)
     }
 
     func testRunCommandCannotExecuteThroughReadOnlyRouter() async {

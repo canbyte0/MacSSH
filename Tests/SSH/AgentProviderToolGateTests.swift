@@ -62,8 +62,8 @@ final class AgentProviderToolGateTests: XCTestCase {
 
     // MARK: - §4 静态 allowlist
 
-    func testCatalogContainsExactlyFourReadOnlyTools() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 5)
+    func testCatalogContainsExactlySixToolsWithFourReadOnlyTools() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 6)
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -72,6 +72,7 @@ final class AgentProviderToolGateTests: XCTestCase {
                 "list_directory",
                 "read_file",
                 "run_command",
+                "send_to_terminal",
             ]
         )
         // 与执行层静态注册表一一对应（§4：静态枚举派发，非 reflection）。
@@ -80,7 +81,9 @@ final class AgentProviderToolGateTests: XCTestCase {
             Set(AgentToolName.allCases.map(\.rawValue))
         )
         XCTAssertEqual(AgentToolName.runCommand.risk, .modifying)
-        for tool in AgentToolName.allCases where tool != .runCommand {
+        XCTAssertEqual(AgentToolName.sendToTerminal.risk, .modifying)
+        for tool in AgentToolName.allCases
+        where tool != .runCommand && tool != .sendToTerminal {
             XCTAssertEqual(tool.risk, .readOnly, "read-only 工具风险不应改变")
         }
     }
@@ -92,7 +95,7 @@ final class AgentProviderToolGateTests: XCTestCase {
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         let tools = try XCTUnwrap(object["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 5)
+        XCTAssertEqual(tools.count, 6)
         for tool in tools {
             XCTAssertEqual(tool["type"] as? String, "function")
             XCTAssertNotNil(tool["name"] as? String)
@@ -128,6 +131,25 @@ final class AgentProviderToolGateTests: XCTestCase {
                 XCTAssertEqual(properties.count, 1)
                 let command = try XCTUnwrap(properties["command"] as? [String: Any])
                 XCTAssertEqual(command["type"] as? String, "string")
+            case "send_to_terminal":
+                // §7/§8：恰好 text: string + submit: boolean，无任何
+                // target / session / epoch / token / mode 字段。
+                XCTAssertEqual(parameters["required"] as? [String], ["text", "submit"])
+                XCTAssertEqual(properties.count, 2)
+                let text = try XCTUnwrap(properties["text"] as? [String: Any])
+                XCTAssertEqual(text["type"] as? String, "string")
+                let submit = try XCTUnwrap(properties["submit"] as? [String: Any])
+                XCTAssertEqual(submit["type"] as? String, "boolean")
+                for forbidden in [
+                    "sessionID", "logicalSessionID", "inputTargetEpoch", "endpointToken",
+                    "hostID", "hostname", "port", "cwd", "shell", "timeout",
+                    "approval", "mode", "terminalKind",
+                ] {
+                    XCTAssertNil(
+                        properties[forbidden],
+                        "send_to_terminal schema 不得暴露目标身份字段 \(forbidden)（§8）"
+                    )
+                }
             default:
                 XCTFail("未知工具 \(name)")
             }
@@ -142,7 +164,7 @@ final class AgentProviderToolGateTests: XCTestCase {
             String(data: try JSONEncoder().encode(body), encoding: .utf8)
         )
         for prohibited in [
-            "execute", "exec", "shell", "terminal_send", "send_to_terminal",
+            "execute", "exec", "shell", "terminal_send",
             "write_file", "delete_file", "rename_file", "mkdir", "git_status",
             "chmod", "chown", "truncate", "upload",
         ] {
@@ -173,6 +195,27 @@ final class AgentProviderToolGateTests: XCTestCase {
         )
         XCTAssertTrue(runCommand.description.contains("explicit user approval"))
         XCTAssertTrue(runCommand.description.contains("non-interactive"))
+
+        // §10/§11：send_to_terminal 描述必须准确说明逐次审批、不捕获输出、
+        // 不等待完成；submit=false 只承诺不追加 Return（绝不描述为
+        // safe / 不执行 / 仅粘贴）。
+        let sendToTerminal = try XCTUnwrap(
+            AgentToolCatalog.definitions.first { $0.name == "send_to_terminal" }
+        )
+        let description = sendToTerminal.description.lowercased()
+        XCTAssertTrue(description.contains("explicit user approval"))
+        XCTAssertTrue(description.contains("does not capture terminal output"))
+        XCTAssertTrue(description.contains("does not wait for command completion"))
+        XCTAssertTrue(description.contains("no extra return is appended"))
+        for misstatement in [
+            "will not execute", "will only paste", "safe to review",
+            "does not execute", "never executes",
+        ] {
+            XCTAssertFalse(
+                description.contains(misstatement),
+                "submit=false 不得描述为不执行 / 仅粘贴（§10/§22）：\(misstatement)"
+            )
+        }
     }
 
     // MARK: - §50 普通文本中的伪工具标记绝不解析

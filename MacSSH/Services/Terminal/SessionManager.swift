@@ -123,10 +123,13 @@ final class SessionManager {
     /// 创建新的 Local Terminal（`+` / ⌘T）：新 Shell + 新 PTY + 新 SwiftTerm。
     @discardableResult
     func createLocalSession() -> ManagedTerminalSession {
+        let logicalSessionID = UUID()
         let service = LocalTerminalService(
-            session: TerminalSession(shellPath: LoginShellResolver.resolve())
+            session: TerminalSession(shellPath: LoginShellResolver.resolve()),
+            logicalSessionID: logicalSessionID
         )
         let session = ManagedTerminalSession(
+            id: logicalSessionID,
             localService: service,
             baseTitle: "Local",
             titleCounter: nextTitleCounter(base: "Local")
@@ -460,7 +463,9 @@ final class SessionManager {
                     let service = RemoteTerminalService(
                         connection: connection,
                         hostname: host.hostname,
-                        port: host.port
+                        port: host.port,
+                        logicalSessionID: session.id,
+                        hostDisplayName: host.name
                     )
                     session.attachRemoteService(service)
                     // MacSSH 1.1 Phase 4：注册新 Remote Terminal 视图
@@ -500,6 +505,23 @@ final class SessionManager {
         // 结束时自行清空。Reconnect 的外层任务只在启动本流程前持有
         // reconnectTask（teardown 阶段），返回时清空。
         session.connectTask = task
+    }
+
+    // MARK: - Agent Remote mutation capability
+
+    /// 在 approval / claim 之前按明确 logical session 取得当前 Remote
+    /// endpoint。side-effect executor 不接受 session ID，也不会在交付时
+    /// 回到 SessionManager 做 active-session lookup。
+    func agentRemoteTerminalMutationEndpoint(
+        forSessionID sessionID: UUID
+    ) -> AgentRemoteTerminalMutationEndpoint? {
+        guard let session = session(withID: sessionID),
+              session.kind == .remoteSSH,
+              let remoteService = session.remoteService
+        else {
+            return nil
+        }
+        return remoteService.agentRemoteTerminalMutationEndpoint()
     }
 
     // MARK: - 标题编号（任务书 13）

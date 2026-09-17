@@ -220,12 +220,34 @@ final class AppState {
             sessionProvider: TerminalAgentContextProvider(sessionManager: sessionManager),
             remoteServiceResolver: agentRemoteServiceResolver
         )
+        // 10F-B4-S1 send_to_terminal 装配：B1 审批 coordinator + 已验收
+        // B2/B3 mutation executor（与 coordinator 共享同一单次消费
+        // authority）+ endpoint resolver（只按 origin sessionID 取回一次
+        // 冻结 capability；绝无 active-tab fallback / 自动重连）。
+        let agentMutationApprovalCoordinator = AgentTerminalMutationApprovalCoordinator()
+        let agentLocalMutationExecutor = AgentLocalTerminalMutationExecutor(
+            approvalCoordinator: agentMutationApprovalCoordinator
+        )
+        let agentRemoteMutationExecutor = AgentRemoteTerminalMutationExecutor(
+            approvalCoordinator: agentMutationApprovalCoordinator
+        )
+        let agentMutationEndpointResolver = SessionManagerTerminalMutationEndpointResolver(
+            sessionManager: sessionManager
+        )
         let agentViewModel = AgentViewModel(
             store: agentConversationStore,
             provider: ResolvingAgentProvider(credentialService: agentCredentialService),
             toolRouter: agentToolRouter,
             remoteServiceResolver: agentRemoteServiceResolver,
             remoteCommandExecutor: agentRemoteCommandExecutor,
+            mutationApprovalCoordinator: agentMutationApprovalCoordinator,
+            localMutationExecutor: agentLocalMutationExecutor,
+            remoteMutationExecutor: agentRemoteMutationExecutor,
+            mutationEndpointProvider: { sessionID in
+                await agentMutationEndpointResolver.endpointCapability(
+                    forSessionID: sessionID
+                )
+            },
             activeSessionProvider: { [weak sessionManager] in
                 sessionManager?.activeSession
             },

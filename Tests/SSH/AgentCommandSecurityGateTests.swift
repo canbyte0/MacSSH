@@ -85,10 +85,10 @@ final class AgentCommandSecurityGateTests: XCTestCase {
         }
     }
 
-    // MARK: - B4：Provider 边界精确扩大一项
+    // MARK: - B4：Provider 边界精确扩大一项（10F-B4-S1：+ send_to_terminal）
 
-    func testCatalogHasExactlyFiveToolsWithOneCommandTool() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 5, "B4 后必须恰 5 个定义")
+    func testCatalogHasExactlySixToolsWithCommandAndMutationTools() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 6, "10F-B4-S1 后必须恰 6 个定义")
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -97,13 +97,17 @@ final class AgentCommandSecurityGateTests: XCTestCase {
                 "list_directory",
                 "read_file",
                 "run_command",
+                "send_to_terminal",
             ]
         )
     }
 
-    func testRunCommandIsAllowlistedButStandaloneMutationToolsRemainProhibited() {
+    func testRunCommandAndSendToTerminalAreAllowlistedButAliasesRemainProhibited() {
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("run_command"))
-        for name in ["execute", "exec", "shell", "terminal_send", "send_to_terminal",
+        XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
+        XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
+        XCTAssertFalse(AgentToolCatalog.names.contains("write_file"))
+        for name in ["execute", "exec", "shell", "terminal_send",
                      "write_file", "delete_file", "rename_file", "mkdir", "chmod"] {
             XCTAssertTrue(AgentToolCatalog.prohibitedNames.contains(name))
             XCTAssertFalse(AgentToolCatalog.names.contains(name))
@@ -137,6 +141,11 @@ final class AgentCommandSecurityGateTests: XCTestCase {
             "AgentCommandRequest",
             "AgentCommandRequestFactory",
             "run_command",
+            // 10F-B4-S1：mutation 审批必须经 B1 专属 coordinator 与
+            // accepted B2/B3 executor；绝不复用 command 类型。
+            "AgentTerminalMutationApprovalCoordinator",
+            "AgentTerminalMutationRequestFactory",
+            "send_to_terminal",
         ] {
             XCTAssertTrue(
                 source.contains(token),
@@ -144,7 +153,8 @@ final class AgentCommandSecurityGateTests: XCTestCase {
             )
         }
         XCTAssertFalse(source.contains("TerminalCommandDispatcher"))
-        XCTAssertFalse(source.contains("send_to_terminal"))
+        // §35：mutation 绝不经 paste / legacy 可变 delegate 通道。
+        XCTAssertFalse(source.contains("pasteText"))
     }
 
     // MARK: - §29：B1 无任何执行 API（domain 契约）

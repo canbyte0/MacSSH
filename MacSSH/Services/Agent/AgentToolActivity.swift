@@ -30,6 +30,9 @@ struct AgentToolActivity: Equatable, Sendable {
         case cancelled
         /// 命令已执行但达到 App-owned timeout，结果仍可继续发送 Provider。
         case timedOut
+        /// 10F-B4-S1 §29/§55：terminal mutation 交付结果为 partial /
+        /// uncertain——已确认前缀副作用存在，loop 停止并要求用户可见。
+        case partial
 
         /// 语言无关的状态标记（accessibility / scroll trigger / 测试断言用）。
         var rawMarker: String {
@@ -41,6 +44,7 @@ struct AgentToolActivity: Equatable, Sendable {
             case .denied: return "denied"
             case .cancelled: return "cancelled"
             case .timedOut: return "timed_out"
+            case .partial: return "partial"
             }
         }
     }
@@ -60,6 +64,9 @@ struct AgentToolActivity: Equatable, Sendable {
     /// B4 的 immutable request；只供本地 UI 显示和 runtime identity guard，
     /// 不进入 Provider transcript 的 tool result。
     let commandRequest: AgentCommandRequest?
+    /// 10F-B4-S1 的 immutable mutation request；只供本地 UI 显示与
+    /// runtime 对账，payload 绝不进入日志或 Provider tool result echo。
+    let mutationRequest: AgentTerminalMutationRequest?
 
     /// 当前状态（UI 渲染依据）。
     var status: Status
@@ -75,6 +82,7 @@ struct AgentToolActivity: Equatable, Sendable {
         displayTarget: String?,
         approvalID: UUID? = nil,
         commandRequest: AgentCommandRequest? = nil,
+        mutationRequest: AgentTerminalMutationRequest? = nil,
         status: Status = .running,
         resultJSON: String? = nil,
         isError: Bool = false
@@ -85,6 +93,7 @@ struct AgentToolActivity: Equatable, Sendable {
         self.displayTarget = displayTarget
         self.approvalID = approvalID
         self.commandRequest = commandRequest
+        self.mutationRequest = mutationRequest
         self.status = status
         self.resultJSON = resultJSON
         self.isError = isError

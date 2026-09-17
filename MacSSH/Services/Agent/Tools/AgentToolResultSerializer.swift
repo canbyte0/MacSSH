@@ -88,6 +88,83 @@ enum AgentToolResultSerializer: Sendable {
         }
     }
 
+    // MARK: - send_to_terminal 结果（10F-B4-S1 §31/§32）
+
+    /// Terminal mutation 交付结果的 sanitized 结构化输出。
+    ///
+    /// 只含 transport 层事实（§31）：status / terminalKind /
+    /// payloadBytesRequested / payloadBytesAccepted / framingBytesAccepted /
+    /// submitBytesAccepted / transportSubmitted。绝不包含终端输出、
+    /// 凭据、endpoint token、指针或 payload 回显；`delivered` 仅表示
+    /// transport 层交付（§28：绝不暗示命令执行 / 完成）。
+    static func serialize(
+        mutationResult result: AgentTerminalMutationDeliveryResult,
+        terminalKind: AgentTerminalSessionKind
+    ) -> String {
+        var object: [String: Any] = [
+            "ok": result.outcome == .delivered,
+            "status": mutationStatusName(result.outcome),
+            "terminalKind": sessionKindName(terminalKind),
+            "payloadBytesRequested": result.payloadBytesRequested,
+            "payloadBytesAccepted": result.payloadBytesAccepted,
+            "framingBytesAccepted": result.framingBytesAccepted,
+            "submitBytesAccepted": result.submitBytesAccepted,
+            "transportSubmitted": Self.transportSubmitted(result),
+        ]
+        if let error = result.error {
+            object["error"] = mutationErrorName(error)
+        }
+        return encode(object)
+    }
+
+    /// Terminal mutation domain 错误 → 稳定分类名。
+    static func serialize(error: AgentTerminalMutationError) -> String {
+        encodeError(name: mutationErrorName(error))
+    }
+
+    private static func mutationStatusName(
+        _ outcome: AgentTerminalMutationDeliveryOutcome
+    ) -> String {
+        switch outcome {
+        case .delivered: return "delivered"
+        case .partial: return "partial"
+        case .failed: return "failed"
+        case .rejected: return "rejected"
+        }
+    }
+
+    /// transportSubmitted：submit=true 且 CR 已被 transport 确认接受。
+    /// submit=false 时没有请求提交字节，恒为 false（§10：只承诺不追加
+    /// Return，绝不暗示「已提交」）。
+    private static func transportSubmitted(
+        _ result: AgentTerminalMutationDeliveryResult
+    ) -> Bool {
+        result.submitBytesRequested > 0
+            && result.submitBytesAccepted == result.submitBytesRequested
+    }
+
+    private static func mutationErrorName(_ error: AgentTerminalMutationError) -> String {
+        switch error {
+        case .invalidArguments: return "invalidArguments"
+        case .payloadTooLarge: return "payloadTooLarge"
+        case .forbiddenControlCharacter: return "forbiddenControlCharacter"
+        case .approvalNotFound: return "approvalNotFound"
+        case .approvalNotApproved: return "approvalNotApproved"
+        case .approvalAlreadyResolved: return "approvalAlreadyResolved"
+        case .approvalCancelled: return "approvalCancelled"
+        case .approvalStale: return "authorizationRejected"
+        case .approvalAlreadyConsumed: return "approvalAlreadyConsumed"
+        case .bindingMismatch: return "bindingMismatch"
+        case .targetReplaced: return "targetReplaced"
+        case .processUnavailable: return "processUnavailable"
+        case .connectionLost: return "connectionLost"
+        case .channelClosed: return "channelClosed"
+        case .writeFailed: return "writeFailed"
+        case .cancelled: return "cancelled"
+        case .transactionUnavailable: return "transactionUnavailable"
+        }
+    }
+
     // MARK: - 成功结果
 
     /// 成功结果 → `{"ok": true, ...}` JSON string。
@@ -133,6 +210,7 @@ enum AgentToolResultSerializer: Sendable {
         case .cancelled: return "cancelled"
         case .internalFailure: return "internalFailure"
         case .commandRequiresApproval: return "commandRequiresApproval"
+        case .terminalMutationRequiresApproval: return "terminalMutationRequiresApproval"
         }
     }
 

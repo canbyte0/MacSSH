@@ -88,6 +88,13 @@ final class AgentToolRouter {
             // 先建立 immutable request，再经 ApprovalCoordinator 接线；
             // 任何误调用都只返回结构化错误，绝不触碰 executor。
             result = .failure(.commandRequiresApproval)
+        case .sendToTerminal:
+            // Interactive terminal mutation 同样不属于 read-only Router
+            // （10F-B4-S1 §36：mutation 边界与 read-only 边界保持可区分、
+            // 可测试）。AgentViewModel 必须先冻结 endpoint snapshot 建立
+            // immutable request，再经 TerminalMutation ApprovalCoordinator
+            // 接线到 accepted executor；误调用只返回结构化错误。
+            result = .failure(.terminalMutationRequiresApproval)
         }
 
         do {

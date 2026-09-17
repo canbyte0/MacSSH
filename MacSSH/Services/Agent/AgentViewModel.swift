@@ -35,6 +35,23 @@ final class AgentViewModel {
     private let localCommandExecutor: AgentLocalCommandExecutor
     private let remoteCommandExecutor: AgentRemoteCommandExecutor
 
+    /// 10F-B4-S1 mutation 审批 authority（B1 已验收状态机；UI façade 同上）。
+    private let mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator
+    private let localMutationExecutor: AgentLocalTerminalMutationExecutor
+    private let remoteMutationExecutor: AgentRemoteTerminalMutationExecutor
+
+    /// 按 origin sessionID 冻结一次 mutation endpoint capability
+    /// （§13：proposal admission 时刻解析；§14：绝不延迟到 Approve /
+    /// executor 启动，绝无 active-tab fallback）。nil = 未接线（测试默认），
+    /// send_to_terminal 提案收敛为结构化 sessionUnavailable 失败。
+    private let mutationEndpointProvider:
+        (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?
+
+    /// cardID → proposal admission 时冻结的 endpoint capability。
+    /// 生命周期与 pending mutation card 一致：proposal 建立时写入，
+    /// 交付终态或 generation 收尾时清除（内存 only，绝不落盘）。
+    private var pendingMutationEndpoints: [UUID: AgentTerminalMutationEndpointCapability] = [:]
+
     /// 当前 active Terminal session 解析器（每次实时读取）。
     private let activeSessionProvider: @MainActor () -> ManagedTerminalSession?
 
@@ -65,6 +82,10 @@ final class AgentViewModel {
         remoteCommandExecutor: AgentRemoteCommandExecutor = AgentRemoteCommandExecutor(
             resolver: .unavailable
         ),
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator = AgentTerminalMutationApprovalCoordinator(),
+        localMutationExecutor: AgentLocalTerminalMutationExecutor? = nil,
+        remoteMutationExecutor: AgentRemoteTerminalMutationExecutor? = nil,
+        mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)? = nil,
         activeSessionProvider: @escaping @MainActor () -> ManagedTerminalSession?,
         allSessionsProvider: @escaping @MainActor () -> [ManagedTerminalSession],
         handleProvider: @escaping @MainActor (ManagedTerminalSession) -> AgentTerminalSessionHandle = {
@@ -78,6 +99,18 @@ final class AgentViewModel {
         self.approvalCoordinator = approvalCoordinator
         self.localCommandExecutor = localCommandExecutor
         self.remoteCommandExecutor = remoteCommandExecutor
+        self.mutationApprovalCoordinator = mutationApprovalCoordinator
+        // executor 必须与审批 authority 共享同一 coordinator（redeem 单次
+        // 消费语义），默认自洽构造；测试可注入 deterministic executor。
+        self.localMutationExecutor = localMutationExecutor
+            ?? AgentLocalTerminalMutationExecutor(
+                approvalCoordinator: mutationApprovalCoordinator
+            )
+        self.remoteMutationExecutor = remoteMutationExecutor
+            ?? AgentRemoteTerminalMutationExecutor(
+                approvalCoordinator: mutationApprovalCoordinator
+            )
+        self.mutationEndpointProvider = mutationEndpointProvider
         self.activeSessionProvider = activeSessionProvider
         self.allSessionsProvider = allSessionsProvider
         self.handleProvider = handleProvider
@@ -162,9 +195,11 @@ final class AgentViewModel {
         // 先取消 generation task，保证 Stop 与 claim/redeem/spawn 竞争时
         // generation 不能继续推进；随后由同一 coordinator actor 失效所有
         // pending approval，使旧卡的迟到 Approve 永远不能执行。
+        // 10F §27/§39：pending terminal mutation 同样立即失效 → 0 字节。
         conversation.cancelGeneration()
         Task {
             _ = await approvalCoordinator.cancelGeneration(generationID)
+            _ = await mutationApprovalCoordinator.cancelGeneration(generationID)
         }
     }
 
@@ -178,8 +213,17 @@ final class AgentViewModel {
               let approvalID = activity.approvalID
         else { return }
 
-        Task {
-            _ = await approvalCoordinator.approve(approvalID)
+        // command 与 terminal mutation 共用 approvalID 字段但分属两个
+        // coordinator：按工具名路由，绝不把 mutation approval 递给
+        // command coordinator（反之亦然）。
+        if activity.toolName == AgentToolName.sendToTerminal.rawValue {
+            Task {
+                _ = await mutationApprovalCoordinator.approve(approvalID)
+            }
+        } else {
+            Task {
+                _ = await approvalCoordinator.approve(approvalID)
+            }
         }
     }
 
@@ -192,8 +236,14 @@ final class AgentViewModel {
               let approvalID = activity.approvalID
         else { return }
 
-        Task {
-            _ = await approvalCoordinator.deny(approvalID)
+        if activity.toolName == AgentToolName.sendToTerminal.rawValue {
+            Task {
+                _ = await mutationApprovalCoordinator.deny(approvalID)
+            }
+        } else {
+            Task {
+                _ = await approvalCoordinator.deny(approvalID)
+            }
         }
     }
 
@@ -206,14 +256,28 @@ final class AgentViewModel {
     func pruneConversations() {
         let validIDs = Set(allSessionsProvider().map(\.id))
         let approvalCoordinator = self.approvalCoordinator
+        let mutationApprovalCoordinator = self.mutationApprovalCoordinator
         for (sessionID, conversation) in store.conversations
         where !validIDs.contains(sessionID) {
             conversation.cancelGeneration()
             Task {
                 _ = await approvalCoordinator.cancelSession(sessionID)
                 _ = await approvalCoordinator.purgeSession(sessionID)
+                _ = await mutationApprovalCoordinator.cancelSession(sessionID)
+                _ = await mutationApprovalCoordinator.purgeSession(sessionID)
             }
+            // 该会话的 pending mutation endpoint 引用随 conversation 一起
+            // 清理（endpoint 对象仍绑定旧 incarnation，其 admission 自会
+            // 被 isAvailable 拒绝；这里只断开 ViewModel 的强引用）。
+            dropPendingMutationEndpoints(forSessionID: sessionID)
             store.removeConversation(for: sessionID)
+        }
+    }
+
+    /// 丢弃某 session 的冻结 endpoint 引用（不触碰 endpoint 对象本身）。
+    private func dropPendingMutationEndpoints(forSessionID sessionID: UUID) {
+        pendingMutationEndpoints = pendingMutationEndpoints.filter {
+            $0.value.logicalSessionID != sessionID
         }
     }
 
@@ -251,6 +315,10 @@ final class AgentViewModel {
         let approvalCoordinator = self.approvalCoordinator
         let localCommandExecutor = self.localCommandExecutor
         let remoteCommandExecutor = self.remoteCommandExecutor
+        let mutationApprovalCoordinator = self.mutationApprovalCoordinator
+        let localMutationExecutor = self.localMutationExecutor
+        let remoteMutationExecutor = self.remoteMutationExecutor
+        let mutationEndpointProvider = self.mutationEndpointProvider
 
         let task = Task { @MainActor [weak self] in
             // §54/§55：generation 级 provider 快照——整个 tool loop 的
@@ -306,6 +374,10 @@ final class AgentViewModel {
                 approvalCoordinator: approvalCoordinator,
                 localCommandExecutor: localCommandExecutor,
                 remoteCommandExecutor: remoteCommandExecutor,
+                mutationApprovalCoordinator: mutationApprovalCoordinator,
+                localMutationExecutor: localMutationExecutor,
+                remoteMutationExecutor: remoteMutationExecutor,
+                mutationEndpointProvider: mutationEndpointProvider,
                 toolRouter: toolRouter,
                 firstAssistantID: firstAssistantID
             )
@@ -330,6 +402,10 @@ final class AgentViewModel {
         approvalCoordinator: AgentCommandApprovalCoordinator,
         localCommandExecutor: AgentLocalCommandExecutor,
         remoteCommandExecutor: AgentRemoteCommandExecutor,
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        localMutationExecutor: AgentLocalTerminalMutationExecutor,
+        remoteMutationExecutor: AgentRemoteTerminalMutationExecutor,
+        mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?,
         toolRouter: AgentToolRouter,
         firstAssistantID: UUID
     ) async {
@@ -389,6 +465,8 @@ final class AgentViewModel {
                             providerSnapshotID: providerSnapshotID,
                             generationProvider: generationProvider,
                             approvalCoordinator: approvalCoordinator,
+                            mutationApprovalCoordinator: mutationApprovalCoordinator,
+                            mutationEndpointProvider: mutationEndpointProvider,
                             conversation: conversation
                         )
                         pending.append(PendingToolCall(call: call, cardID: cardID))
@@ -447,6 +525,9 @@ final class AgentViewModel {
                         approvalCoordinator: approvalCoordinator,
                         localCommandExecutor: localCommandExecutor,
                         remoteCommandExecutor: remoteCommandExecutor,
+                        mutationApprovalCoordinator: mutationApprovalCoordinator,
+                        localMutationExecutor: localMutationExecutor,
+                        remoteMutationExecutor: remoteMutationExecutor,
                         toolRouter: toolRouter,
                         conversation: conversation
                     )
@@ -458,6 +539,19 @@ final class AgentViewModel {
                             conversation,
                             assistantID: assistantID,
                             kind: .sessionUnavailable
+                        )
+                        conversation.endGeneration()
+                        return
+                    }
+                    if outcome == .fatalMutationUncertain {
+                        // 10F-B4-S1 §29：partial / uncertain 交付结果绝不
+                        // 在同一 generation 内自动续 Provider——停止 loop，
+                        // surface 用户可见交付状态（card 已是 partial）。
+                        cancelRunningToolCards(in: conversation)
+                        failGeneration(
+                            conversation,
+                            assistantID: assistantID,
+                            kind: .terminalMutationUncertain
                         )
                         conversation.endGeneration()
                         return
@@ -505,9 +599,10 @@ final class AgentViewModel {
         let cardID: UUID
     }
 
-    /// Provider call 到达时建立卡片。run_command 严格执行：validate →
-    /// immutable request → register → visible card；read-only call 则立即
-    /// 发布 running card，保持原有 streaming/Stop 可观察性。
+    /// Provider call 到达时建立卡片。run_command / send_to_terminal 严格
+    /// 执行：validate → immutable request → register → visible card；
+    /// read-only call 则立即发布 running card，保持原有 streaming/Stop
+    /// 可观察性。
     private func appendToolCardForProviderCall(
         _ providerCall: AgentProviderToolCall,
         generationID: UUID,
@@ -516,8 +611,23 @@ final class AgentViewModel {
         providerSnapshotID: UUID,
         generationProvider: any AgentProvider,
         approvalCoordinator: AgentCommandApprovalCoordinator,
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?,
         conversation: AgentConversation
     ) async -> UUID {
+        if providerCall.name == AgentToolName.sendToTerminal.rawValue {
+            return await appendTerminalMutationCard(
+                providerCall,
+                generationID: generationID,
+                sessionID: sessionID,
+                providerSnapshotID: providerSnapshotID,
+                generationProvider: generationProvider,
+                mutationApprovalCoordinator: mutationApprovalCoordinator,
+                mutationEndpointProvider: mutationEndpointProvider,
+                conversation: conversation
+            )
+        }
+
         guard providerCall.name == AgentToolName.runCommand.rawValue else {
             return appendToolCard(
                 AgentToolActivity(runningFrom: providerCall),
@@ -531,33 +641,23 @@ final class AgentViewModel {
             argumentsJSON: providerCall.argumentsJSON
         ) {
         case .failure(let error):
-            let cardID = appendToolCard(
-                AgentToolActivity(runningFrom: providerCall),
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
                 to: conversation
             )
-            conversation.updateToolActivity(
-                cardID,
-                status: .failure,
-                resultJSON: AgentToolResultSerializer.serialize(error: error),
-                isError: true
-            )
-            return cardID
         case .success(let value):
             parsed = value
         }
 
         guard let command = parsed.command else {
-            let cardID = appendToolCard(
-                AgentToolActivity(runningFrom: providerCall),
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentToolError.invalidArguments
+                ),
                 to: conversation
             )
-            conversation.updateToolActivity(
-                cardID,
-                status: .failure,
-                resultJSON: AgentToolResultSerializer.serialize(error: .invalidArguments),
-                isError: true
-            )
-            return cardID
         }
 
         let metadata = generationProvider.commandProviderMetadata
@@ -585,17 +685,11 @@ final class AgentViewModel {
             providerBinding: providerBinding
         ) {
         case .failure(let error):
-            let cardID = appendToolCard(
-                AgentToolActivity(runningFrom: providerCall),
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
                 to: conversation
             )
-            conversation.updateToolActivity(
-                cardID,
-                status: .failure,
-                resultJSON: AgentToolResultSerializer.serialize(error: error),
-                isError: true
-            )
-            return cardID
         case .success(let request):
             let approvalID = await approvalCoordinator.register(request)
             let activity = AgentToolActivity(
@@ -611,6 +705,119 @@ final class AgentViewModel {
         }
     }
 
+    /// 10F-B4-S1 send_to_terminal proposal（§12/§13/§16）：
+    /// parse → **admission 时刻冻结 endpoint capability**（§13：绝不延迟到
+    /// Approve / executor 启动 / loop resume）→ immutable request →
+    /// register → awaitingApproval card。任何一步失败都发布零副作用失败
+    /// 卡片，绝不触碰 executor / 终端字节。
+    private func appendTerminalMutationCard(
+        _ providerCall: AgentProviderToolCall,
+        generationID: UUID,
+        sessionID: UUID,
+        providerSnapshotID: UUID,
+        generationProvider: any AgentProvider,
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?,
+        conversation: AgentConversation
+    ) async -> UUID {
+        let parsed: AgentToolCall
+        switch AgentToolCallParsing.parse(
+            name: providerCall.name,
+            argumentsJSON: providerCall.argumentsJSON
+        ) {
+        case .failure(let error):
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                to: conversation
+            )
+        case .success(let value):
+            parsed = value
+        }
+
+        guard let arguments = parsed.terminalMutation else {
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentToolError.invalidArguments
+                ),
+                to: conversation
+            )
+        }
+
+        // Endpoint snapshot at admission：按 origin sessionID 解析一次，
+        // 之后整条链固定使用该 capability（绝无 active-tab fallback）。
+        guard let capability = await mutationEndpointProvider?(sessionID) else {
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentToolError.sessionUnavailable
+                ),
+                to: conversation
+            )
+        }
+
+        let metadata = generationProvider.commandProviderMetadata
+        let providerBinding = AgentCommandProviderBinding(
+            snapshotID: providerSnapshotID,
+            provider: metadata.provider,
+            model: metadata.model,
+            baseURL: metadata.baseURL
+        )
+
+        switch AgentTerminalMutationRequestFactory.make(
+            generationID: generationID,
+            callID: providerCall.callID,
+            logicalSessionID: capability.logicalSessionID,
+            targetIdentity: capability.targetIdentity,
+            targetSnapshot: capability.targetSnapshot,
+            text: arguments.text,
+            submit: arguments.submit,
+            providerBinding: providerBinding,
+            createdAt: Date()
+        ) {
+        case .failure(let error):
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                to: conversation
+            )
+        case .success(let request):
+            let approvalID = await mutationApprovalCoordinator.register(request)
+            let activity = AgentToolActivity(
+                callID: providerCall.callID,
+                toolName: providerCall.name,
+                argumentsJSON: providerCall.argumentsJSON,
+                displayTarget: nil,
+                approvalID: approvalID,
+                mutationRequest: request,
+                status: .awaitingApproval
+            )
+            let cardID = appendToolCard(activity, to: conversation)
+            pendingMutationEndpoints[cardID] = capability
+            return cardID
+        }
+    }
+
+    /// 零副作用失败卡片（结构化 tool error；call_id 配对恒成立）。
+    private func appendFailedToolCard(
+        _ providerCall: AgentProviderToolCall,
+        resultJSON: String,
+        to conversation: AgentConversation
+    ) -> UUID {
+        let cardID = appendToolCard(
+            AgentToolActivity(runningFrom: providerCall),
+            to: conversation
+        )
+        conversation.updateToolActivity(
+            cardID,
+            status: .failure,
+            resultJSON: resultJSON,
+            isError: true
+        )
+        return cardID
+    }
+
     /// 执行单个 tool call；卡片已由 `appendToolCardForProviderCall` 发布。
     private func executeTool(
         _ providerCall: AgentProviderToolCall,
@@ -622,6 +829,9 @@ final class AgentViewModel {
         approvalCoordinator: AgentCommandApprovalCoordinator,
         localCommandExecutor: AgentLocalCommandExecutor,
         remoteCommandExecutor: AgentRemoteCommandExecutor,
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        localMutationExecutor: AgentLocalTerminalMutationExecutor,
+        remoteMutationExecutor: AgentRemoteTerminalMutationExecutor,
         toolRouter: AgentToolRouter,
         conversation: AgentConversation
     ) async throws -> ToolExecutionOutcome {
@@ -642,6 +852,29 @@ final class AgentViewModel {
             return .completed
         case .success(let call):
             parsedCall = call
+        }
+
+        if parsedCall.name == AgentToolName.sendToTerminal.rawValue {
+            guard
+                let activity = conversation.messages.first(where: { $0.id == cardID })?.toolActivity,
+                let approvalID = activity.approvalID,
+                let request = activity.mutationRequest
+            else {
+                // 参数 / endpoint 在 card 创建阶段已失败；防御性 no-op。
+                return .completed
+            }
+            return try await executeSendToTerminal(
+                cardID: cardID,
+                approvalID: approvalID,
+                request: request,
+                generationID: generationID,
+                sessionID: sessionID,
+                providerSnapshotID: providerSnapshotID,
+                mutationApprovalCoordinator: mutationApprovalCoordinator,
+                localMutationExecutor: localMutationExecutor,
+                remoteMutationExecutor: remoteMutationExecutor,
+                conversation: conversation
+            )
         }
 
         if parsedCall.name == AgentToolName.runCommand.rawValue {
@@ -836,6 +1069,176 @@ final class AgentViewModel {
         }
     }
 
+    /// 10F-B4-S1 send_to_terminal 完整链（§16 生命周期）：
+    /// waitingForUser（card 已发布）→ await decision → claim → running →
+    /// redeem（executor 内）→ dispatch 冻结 capability → sanitized result。
+    ///
+    /// 安全不变式：
+    /// - 只使用 proposal admission 冻结的 endpoint capability（§13/§14：
+    ///   绝无 active-tab fallback；stale → 0 字节安全失败）；
+    /// - Local 只经 accepted B2 executor，Remote 只经 accepted B3
+    ///   executor（§15/§34/§35：绝不复用命令执行器 / SSH exec 通道 /
+    ///   粘贴 API 或 legacy 命令调度器）；
+    /// - partial / uncertain → `.fatalMutationUncertain`（§29：同一
+    ///   generation 绝不自动续 Provider）。
+    private func executeSendToTerminal(
+        cardID: UUID,
+        approvalID: UUID,
+        request: AgentTerminalMutationRequest,
+        generationID: UUID,
+        sessionID: UUID,
+        providerSnapshotID: UUID,
+        mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        localMutationExecutor: AgentLocalTerminalMutationExecutor,
+        remoteMutationExecutor: AgentRemoteTerminalMutationExecutor,
+        conversation: AgentConversation
+    ) async throws -> ToolExecutionOutcome {
+        // 冻结 capability 必须存在（card 创建失败时卡片本身就是失败态，
+        // 这里绝不会被调用）。
+        guard let capability = pendingMutationEndpoints[cardID] else {
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentTerminalMutationError.targetReplaced
+                ),
+                isError: true
+            )
+            return .completed
+        }
+
+        do {
+            let decision = try await mutationApprovalCoordinator.awaitDecision(
+                approvalID: approvalID
+            )
+            switch decision {
+            case .denied:
+                // §26：Deny → 零终端字节、proposal 失效、稳定 userDenied。
+                pendingMutationEndpoints[cardID] = nil
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .denied,
+                    resultJSON: AgentToolResultSerializer.userDeniedOutput,
+                    isError: true
+                )
+                return .completed
+            case .cancelled:
+                // §27：Stop 使 pending proposal 失效，0 字节。
+                pendingMutationEndpoints[cardID] = nil
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .cancelled,
+                    resultJSON: AgentToolResultSerializer.cancelledOutput,
+                    isError: true
+                )
+                throw CancellationError()
+            case .approved:
+                try Task.checkCancellation()
+            }
+
+            let identity = capability.targetIdentity
+            let authorization: AgentTerminalMutationExecutionAuthorization
+            do {
+                authorization = try await mutationApprovalCoordinator.claimExecution(
+                    approvalID: approvalID,
+                    expected: AgentTerminalMutationClaimExpectations(
+                        generationID: generationID,
+                        logicalSessionID: sessionID,
+                        providerSnapshotID: providerSnapshotID,
+                        inputTargetEpoch: identity.inputTargetEpoch,
+                        endpointToken: identity.endpointToken
+                    )
+                )
+            } catch let error as AgentTerminalMutationError {
+                // §14/§23：targetReplaced（incarnation 漂移）/ bindingMismatch /
+                // approvalCancelled 等 → 零授权、零交付。
+                pendingMutationEndpoints[cardID] = nil
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .failure,
+                    resultJSON: AgentToolResultSerializer.serialize(error: error),
+                    isError: true
+                )
+                return .completed
+            }
+
+            // claim 成功即代表本次交付已获授权。先同步发布 running，
+            // 再进入 executor；因此任何物理写入前 Approve / Deny 已移除
+            // （§24：无双批准窗口）。
+            conversation.updateToolActivity(
+                cardID,
+                status: .running,
+                resultJSON: "",
+                isError: false
+            )
+
+            let result: AgentTerminalMutationDeliveryResult
+            let terminalKind: AgentTerminalSessionKind
+            switch capability {
+            case .local(let endpoint):
+                terminalKind = .local
+                result = await localMutationExecutor.deliver(authorization, to: endpoint)
+            case .remote(let endpoint):
+                terminalKind = .remoteSSH
+                result = await remoteMutationExecutor.deliver(authorization, to: endpoint)
+            }
+            pendingMutationEndpoints[cardID] = nil
+
+            if Task.isCancelled || result.error == .cancelled {
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .cancelled,
+                    resultJSON: AgentToolResultSerializer.cancelledOutput,
+                    isError: true
+                )
+                throw CancellationError()
+            }
+
+            let serialized = AgentToolResultSerializer.serialize(
+                mutationResult: result,
+                terminalKind: terminalKind
+            )
+
+            if result.outcome == .partial
+                || result.terminalInputState == .uncertain {
+                // §29：partial / uncertain 副作用 → 停止 loop，用户可见。
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .partial,
+                    resultJSON: serialized,
+                    isError: true
+                )
+                return .fatalMutationUncertain
+            }
+
+            conversation.updateToolActivity(
+                cardID,
+                status: result.outcome == .delivered ? .success : .failure,
+                resultJSON: serialized,
+                isError: result.outcome != .delivered
+            )
+            return .completed
+        } catch is CancellationError {
+            pendingMutationEndpoints[cardID] = nil
+            conversation.updateToolActivity(
+                cardID,
+                status: .cancelled,
+                resultJSON: AgentToolResultSerializer.cancelledOutput,
+                isError: true
+            )
+            throw CancellationError()
+        } catch let error as AgentTerminalMutationError {
+            pendingMutationEndpoints[cardID] = nil
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        }
+    }
+
     /// 运行期输出的统一视图，避免 provider loop 直接依赖 Local/Remote
     /// executor 的不同结果类型。
     private enum CommandExecutionOutput: Sendable {
@@ -881,6 +1284,9 @@ final class AgentViewModel {
     private enum ToolExecutionOutcome: Equatable {
         case completed
         case fatalSessionUnavailable
+        /// 10F-B4-S1 §29：terminal mutation 交付 partial / uncertain——
+        /// 停止 loop（绝不自动续 Provider），副作用状态 surfaced 到卡片。
+        case fatalMutationUncertain
     }
 
     /// 停止后的收尾（任务书 §15 hard gate / B4 §45–§48）：

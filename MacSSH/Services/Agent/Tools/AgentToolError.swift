@@ -47,4 +47,8 @@ enum AgentToolError: Error, Equatable, Sendable {
     case internalFailure
     /// 防御性错误：run_command 不允许从 read-only Router 执行。
     case commandRequiresApproval
+    /// 防御性错误：send_to_terminal 不允许从 read-only Router 执行
+    /// （10F-B4-S1：mutation 必须先建立 immutable request 并经
+    /// TerminalMutation ApprovalCoordinator 接线）。
+    case terminalMutationRequiresApproval
 }

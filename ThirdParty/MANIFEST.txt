@@ -122,7 +122,7 @@ SwiftTerm (SwiftPM dependency)
                         names / SavedCommand / UserDefaults / SwiftData in
                         SwiftTerm.
 
-  Phase 9D patch (parent = Phase 7 patch; current production revision):
+  Phase 9D patch (parent = Phase 7 patch; historical renderer / VS16 baseline):
     Patch branch      : macssh-vs16-one-cell-render-fit
     Patch revision    : 40d473b1fdb456d49cc04b7f253277fcb9ac3987
     Purpose           : Presentation-only uniform-fit for single-cell fallback
@@ -159,7 +159,20 @@ SwiftTerm (SwiftPM dependency)
                         (columnWidth >= 2) path unchanged. Independent Fork
                         Acceptance ACCEPT (0 P1 / 0 P2).
 
-  Production revision: 40d473b1fdb456d49cc04b7f253277fcb9ac3987 (Phase 9D)
+  Phase 10F-B2-S1 patch (parent = Phase 9D historical baseline):
+    Patch branch      : macssh-agent-local-input-transport
+    Patch revision    : 040d1271734694d046b77050b5bfc7aa483423ff
+    Parent            : 40d473b1fdb456d49cc04b7f253277fcb9ac3987
+    Purpose           : Generic Local PTY acknowledged input transport foundation.
+                        Provides shared Local input authority, exact transport
+                        accepted-prefix accounting, an exclusive multi-write
+                        input transaction, ordinary keyboard/paste
+                        non-interleaving, one Local PTY/process incarnation
+                        binding, and close-barrier terminal settlement.
+                        This is generic SwiftTerm transport only; it contains
+                        no Agent/provider/approval semantics.
+
+  Production revision: 040d1271734694d046b77050b5bfc7aa483423ff (Phase 10F-B2-S1)
   Production dependency: remote SwiftPM source-control (exact immutable
                         revision; NOT branch/floating/version-range)
   Local dev checkout: ThirdParty/SwiftTerm-fork (optional local development

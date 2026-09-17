@@ -17,6 +17,13 @@ struct AgentToolCardView: View {
     static let approveAccessibilityIdentifier = "agent.command.approve"
     static let denyAccessibilityIdentifier = "agent.command.deny"
 
+    /// 10F-B4-S1 §23：terminal mutation 审批按钮独立标识。
+    static let terminalApproveAccessibilityIdentifier = "agent.terminal.approve"
+    static let terminalDenyAccessibilityIdentifier = "agent.terminal.deny"
+    static let terminalTargetAccessibilityIdentifier = "agent.terminal.target"
+    static let terminalSubmitAccessibilityIdentifier = "agent.terminal.submit"
+    static let terminalTextAccessibilityIdentifier = "agent.terminal.text"
+
     /// R2：审批动作只在等待审批时存在；运行中由 Composer Stop 负责取消。
     static func showsApprovalActions(for status: AgentToolActivity.Status) -> Bool {
         status == .awaitingApproval
@@ -43,6 +50,8 @@ struct AgentToolCardView: View {
         Group {
             if activity.toolName == AgentToolName.runCommand.rawValue {
                 commandCard
+            } else if activity.toolName == AgentToolName.sendToTerminal.rawValue {
+                mutationCard
             } else {
                 standardCard
             }
@@ -196,6 +205,199 @@ struct AgentToolCardView: View {
         }
     }
 
+    // MARK: - Terminal mutation approval card（10F-B4-S1 §18–§24）
+
+    /// send_to_terminal 卡片：展示冻结的 exact text / submit / target，
+    /// 并披露 §21 警告文案。所有数据来自 activity.mutationRequest 的
+    /// immutable 值——绝不从 active session / Settings 重读。
+    private var mutationCard: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.compact) {
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.compact / 2) {
+                Image(systemName: "text.cursor")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+
+                Text(verbatim: toolLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if let request = activity.mutationRequest {
+                    mutationTargetBadge(for: request)
+                }
+
+                Spacer(minLength: AppTheme.Spacing.compact / 2)
+                statusView
+            }
+
+            if let request = activity.mutationRequest {
+                mutationDetails(request)
+            } else if let target = activity.displayTarget {
+                Text(verbatim: target)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if Self.showsApprovalActions(for: activity.status) {
+                mutationApprovalActions
+            }
+        }
+        .padding(AppTheme.Spacing.compact)
+        .background(commandCardBackground)
+    }
+
+    /// immutable request 的冻结信息：target / submit / exact text /
+    /// §21 disclosure。payload 绝不 trim / rewrite（§19）。
+    @ViewBuilder
+    private func mutationDetails(_ request: AgentTerminalMutationRequest) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.compact / 2) {
+            detailRow(
+                label: L10n.string("agent.terminal.target", defaultValue: "Target", locale: locale),
+                value: mutationTargetName(for: request)
+            )
+            .accessibilityIdentifier(Self.terminalTargetAccessibilityIdentifier)
+
+            detailRow(
+                label: L10n.string(
+                    "agent.terminal.submit",
+                    defaultValue: "Submit (append Return)",
+                    locale: locale
+                ),
+                value: mutationSubmitText(for: request)
+            )
+            .accessibilityIdentifier(Self.terminalSubmitAccessibilityIdentifier)
+
+            Text(L10n.string("agent.terminal.text", defaultValue: "Exact text", locale: locale))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            // 64 KiB 上限允许长 payload；滚动只限制卡片高度，绝不截断 /
+            // 改写实际交付的字节（§19/§20）。
+            ScrollView(.vertical) {
+                Text(verbatim: request.text)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.primary)
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(AppTheme.Spacing.compact / 2)
+            }
+            .frame(maxHeight: 160)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.black.opacity(0.16))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+            )
+            .accessibilityIdentifier(Self.terminalTextAccessibilityIdentifier)
+
+            Text(
+                L10n.string(
+                    "agent.terminal.disclosure",
+                    defaultValue: """
+                        This sends input to the existing interactive terminal. \
+                        The terminal or a running application may act on it immediately. \
+                        If Submit is enabled, MacSSH appends Return after the text. \
+                        Terminal output is not captured by this action.
+                        """,
+                    locale: locale
+                )
+            )
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private func mutationTargetBadge(
+        for request: AgentTerminalMutationRequest
+    ) -> some View {
+        Text(verbatim: mutationTargetKind(for: request))
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.orange.opacity(0.14))
+            )
+    }
+
+    private var mutationApprovalActions: some View {
+        HStack(spacing: AppTheme.Spacing.compact / 2) {
+            Spacer(minLength: 0)
+
+            Button(role: .cancel, action: onDeny) {
+                Text(L10n.string("agent.terminal.deny", defaultValue: "Deny", locale: locale))
+            }
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .accessibilityLabel(
+                L10n.string("agent.terminal.deny", defaultValue: "Deny", locale: locale)
+            )
+            .accessibilityHint(
+                L10n.string(
+                    "agent.terminal.deny.hint",
+                    defaultValue: "Reject this terminal input before anything is sent.",
+                    locale: locale
+                )
+            )
+            .accessibilityIdentifier(Self.terminalDenyAccessibilityIdentifier)
+
+            Button(action: onApprove) {
+                Text(L10n.string("agent.terminal.approve", defaultValue: "Approve", locale: locale))
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .accessibilityLabel(
+                L10n.string("agent.terminal.approve", defaultValue: "Approve", locale: locale)
+            )
+            .accessibilityHint(
+                L10n.string(
+                    "agent.terminal.approve.hint",
+                    defaultValue: "Send this text to the interactive terminal.",
+                    locale: locale
+                )
+            )
+            .accessibilityIdentifier(Self.terminalApproveAccessibilityIdentifier)
+        }
+    }
+
+    private func mutationTargetKind(for request: AgentTerminalMutationRequest) -> String {
+        switch request.targetSnapshot {
+        case .local:
+            return L10n.string("agent.command.target.local", defaultValue: "Local", locale: locale)
+        case .remote:
+            return L10n.string(
+                "agent.command.target.remote",
+                defaultValue: "Remote SSH",
+                locale: locale
+            )
+        }
+    }
+
+    private func mutationTargetName(for request: AgentTerminalMutationRequest) -> String {
+        switch request.targetSnapshot {
+        case .local:
+            return L10n.string("agent.command.target.local", defaultValue: "Local", locale: locale)
+        case .remote(let hostDisplay):
+            return L10n.string(
+                "agent.command.target.remote",
+                defaultValue: "Remote SSH",
+                locale: locale
+            ) + " · " + hostDisplay
+        }
+    }
+
+    private func mutationSubmitText(for request: AgentTerminalMutationRequest) -> String {
+        request.submit
+            ? L10n.string("agent.terminal.submit.yes", defaultValue: "Yes", locale: locale)
+            : L10n.string("agent.terminal.submit.no", defaultValue: "No", locale: locale)
+    }
+
     private func targetBadge(for request: AgentCommandRequest) -> some View {
         Text(verbatim: commandTargetKind(for: request))
             .font(.system(size: 10, weight: .semibold))
@@ -300,6 +502,8 @@ struct AgentToolCardView: View {
             statusTextView.foregroundStyle(.tertiary)
         case .timedOut:
             statusIconText(icon: "clock.badge.exclamationmark", color: .secondary)
+        case .partial:
+            statusIconText(icon: "exclamationmark.triangle.fill", color: .orange)
         }
     }
 
@@ -346,6 +550,12 @@ struct AgentToolCardView: View {
                 defaultValue: "Timed out",
                 locale: locale
             )
+        case .partial:
+            L10n.string(
+                "agent.tool.status.partial",
+                defaultValue: "Partially delivered",
+                locale: locale
+            )
         }
     }
 
@@ -385,6 +595,12 @@ struct AgentToolCardView: View {
                 defaultValue: "Run command",
                 locale: locale
             )
+        case AgentToolName.sendToTerminal.rawValue:
+            return L10n.string(
+                "agent.tool.send_to_terminal",
+                defaultValue: "Send to terminal",
+                locale: locale
+            )
         default:
             return L10n.string("agent.tool.unknown", defaultValue: "Tool call", locale: locale)
                 + " · " + activity.toolName
@@ -403,6 +619,8 @@ struct AgentToolCardView: View {
             return "doc.text"
         case AgentToolName.runCommand.rawValue:
             return "terminal"
+        case AgentToolName.sendToTerminal.rawValue:
+            return "text.cursor"
         default:
             return "wrench.and.screwdriver"
         }

@@ -19,6 +19,10 @@ enum AgentDataAccessPolicy: Sendable, Equatable {
     case scopedFileRead
     /// 命令执行不属于 read scope，必须由 ApprovalCoordinator 单独授权。
     case commandExecution
+    /// Interactive terminal mutation（send_to_terminal）既非 read scope
+    /// 也非独立进程命令：必须经 TerminalMutation approval coordinator
+    /// 逐次授权（10F-B4-S1）。
+    case terminalMutation
 }
 
 // 两个 enum 必须独立定义、绝不合并：

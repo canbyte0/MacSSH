@@ -335,13 +335,15 @@ final class AgentRemoteCommandExecutorSecurityTests: XCTestCase {
         }
     }
 
-    func testProviderBoundaryAdvertisesFiveToolsWithRunCommand() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 5, "B4 后必须恰 5 个定义")
+    func testProviderBoundaryAdvertisesSixToolsWithRunCommandAndMutation() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 6, "10F-B4-S1 后必须恰 6 个定义")
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
-            ["get_terminal_context", "get_current_directory", "list_directory", "read_file", "run_command"]
+            ["get_terminal_context", "get_current_directory", "list_directory",
+             "read_file", "run_command", "send_to_terminal"]
         )
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("run_command"))
+        XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
         XCTAssertEqual(
             AgentToolCallParsing.parse(name: "run_command", argumentsJSON: #"{"command":"ls"}"#),
             .success(AgentToolCall(.runCommand, arguments: ["command": "ls"]))
@@ -349,9 +351,10 @@ final class AgentRemoteCommandExecutorSecurityTests: XCTestCase {
     }
 
     func testStandaloneMutationToolsRemainProhibited() {
+        XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
         for name in [
             "write_file", "delete_file", "rename_file", "mkdir", "chmod",
-            "send_to_terminal", "pasteText", "execute", "shell",
+            "pasteText", "execute", "shell", "terminal_send",
         ] {
             XCTAssertTrue(
                 AgentToolCatalog.prohibitedNames.contains(name),

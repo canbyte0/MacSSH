@@ -15,7 +15,7 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/canbyte0/SwiftTerm.git",
       "state" : {
-        "revision" : "40d473b1fdb456d49cc04b7f253277fcb9ac3987"
+        "revision" : "040d1271734694d046b77050b5bfc7aa483423ff"
       }
     }
   ],

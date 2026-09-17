@@ -207,6 +207,17 @@
              XG1D00000000000000000003 /* AgentCommandApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000003 /* AgentCommandApproval.swift */; };
              XG1D00000000000000000004 /* AgentCommandApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000004 /* AgentCommandApprovalCoordinator.swift */; };
              XG1D00000000000000000005 /* AgentCommandExecutionAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2D00000000000000000005 /* AgentCommandExecutionAuthorization.swift */; };
+             XG1J00000000000000000001 /* AgentTerminalInputTargetIdentity.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000001 /* AgentTerminalInputTargetIdentity.swift */; };
+             XG1J00000000000000000002 /* AgentTerminalMutationValidation.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000002 /* AgentTerminalMutationValidation.swift */; };
+             XG1J00000000000000000003 /* AgentTerminalMutationRequest.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000003 /* AgentTerminalMutationRequest.swift */; };
+             XG1J00000000000000000004 /* AgentTerminalMutationApproval.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000004 /* AgentTerminalMutationApproval.swift */; };
+             XG1J00000000000000000005 /* AgentTerminalMutationApprovalCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000005 /* AgentTerminalMutationApprovalCoordinator.swift */; };
+             XG1J00000000000000000006 /* AgentTerminalMutationExecutionAuthorization.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2J00000000000000000006 /* AgentTerminalMutationExecutionAuthorization.swift */; };
+             XG1L00000000000000000001 /* AgentLocalTerminalMutationEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2L00000000000000000001 /* AgentLocalTerminalMutationEndpoint.swift */; };
+             XG1L00000000000000000002 /* AgentLocalTerminalMutationExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2L00000000000000000002 /* AgentLocalTerminalMutationExecutor.swift */; };
+             XG1N00000000000000000001 /* AgentRemoteTerminalMutationEndpoint.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2N00000000000000000001 /* AgentRemoteTerminalMutationEndpoint.swift */; };
+             XG1N00000000000000000002 /* AgentRemoteTerminalMutationExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2N00000000000000000002 /* AgentRemoteTerminalMutationExecutor.swift */; };
+             XG1Q00000000000000000001 /* AgentTerminalMutationEndpointCapability.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2Q00000000000000000001 /* AgentTerminalMutationEndpointCapability.swift */; };
              XG1F00000000000000000001 /* AgentCommandResult.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000001 /* AgentCommandResult.swift */; };
              XG1F00000000000000000002 /* AgentLocalCommandEnvironment.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000002 /* AgentLocalCommandEnvironment.swift */; };
              XG1F00000000000000000003 /* AgentLocalCommandExecutor.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2F00000000000000000003 /* AgentLocalCommandExecutor.swift */; };
@@ -228,6 +239,16 @@
              XG1E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */; };
              XG1E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */; };
              XG1E00000000000000000005 /* AgentCommandSecurityGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */; };
+             XG1K00000000000000000001 /* AgentTerminalMutationTestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000001 /* AgentTerminalMutationTestSupport.swift */; };
+             XG1K00000000000000000002 /* AgentTerminalMutationRequestTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000002 /* AgentTerminalMutationRequestTests.swift */; };
+             XG1K00000000000000000003 /* AgentTerminalMutationValidationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000003 /* AgentTerminalMutationValidationTests.swift */; };
+             XG1K00000000000000000004 /* AgentTerminalMutationApprovalCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000004 /* AgentTerminalMutationApprovalCoordinatorTests.swift */; };
+             XG1K00000000000000000005 /* AgentTerminalMutationApprovalConcurrencyTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000005 /* AgentTerminalMutationApprovalConcurrencyTests.swift */; };
+             XG1K00000000000000000006 /* AgentTerminalMutationSecurityGateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2K00000000000000000006 /* AgentTerminalMutationSecurityGateTests.swift */; };
+             XG1M00000000000000000001 /* AgentLocalTerminalMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2M00000000000000000001 /* AgentLocalTerminalMutationTests.swift */; };
+             XG1P00000000000000000001 /* AgentRemoteTerminalMutationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2P00000000000000000001 /* AgentRemoteTerminalMutationTests.swift */; };
+             XG1R00000000000000000001 /* AgentProviderSendToTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2R00000000000000000001 /* AgentProviderSendToTerminalTests.swift */; };
+             XG1R00000000000000000002 /* AgentToolLoopSendToTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2R00000000000000000002 /* AgentToolLoopSendToTerminalTests.swift */; };
              XG1G00000000000000000001 /* AgentLocalCommandExecutorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */; };
              XG1G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */; };
              XG1G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */; };
@@ -399,6 +420,17 @@
              XG2D00000000000000000003 /* AgentCommandApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApproval.swift; sourceTree = "<group>"; };
              XG2D00000000000000000004 /* AgentCommandApprovalCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalCoordinator.swift; sourceTree = "<group>"; };
              XG2D00000000000000000005 /* AgentCommandExecutionAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandExecutionAuthorization.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000001 /* AgentTerminalInputTargetIdentity.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalInputTargetIdentity.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000002 /* AgentTerminalMutationValidation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationValidation.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000003 /* AgentTerminalMutationRequest.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationRequest.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000004 /* AgentTerminalMutationApproval.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationApproval.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000005 /* AgentTerminalMutationApprovalCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationApprovalCoordinator.swift; sourceTree = "<group>"; };
+             XG2J00000000000000000006 /* AgentTerminalMutationExecutionAuthorization.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationExecutionAuthorization.swift; sourceTree = "<group>"; };
+             XG2L00000000000000000001 /* AgentLocalTerminalMutationEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalTerminalMutationEndpoint.swift; sourceTree = "<group>"; };
+             XG2L00000000000000000002 /* AgentLocalTerminalMutationExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalTerminalMutationExecutor.swift; sourceTree = "<group>"; };
+             XG2N00000000000000000001 /* AgentRemoteTerminalMutationEndpoint.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTerminalMutationEndpoint.swift; sourceTree = "<group>"; };
+             XG2N00000000000000000002 /* AgentRemoteTerminalMutationExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTerminalMutationExecutor.swift; sourceTree = "<group>"; };
+             XG2Q00000000000000000001 /* AgentTerminalMutationEndpointCapability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationEndpointCapability.swift; sourceTree = "<group>"; };
              XG2F00000000000000000001 /* AgentCommandResult.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandResult.swift; sourceTree = "<group>"; };
              XG2F00000000000000000002 /* AgentLocalCommandEnvironment.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandEnvironment.swift; sourceTree = "<group>"; };
              XG2F00000000000000000003 /* AgentLocalCommandExecutor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutor.swift; sourceTree = "<group>"; };
@@ -420,6 +452,16 @@
              XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalCoordinatorTests.swift; sourceTree = "<group>"; };
              XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandApprovalConcurrencyTests.swift; sourceTree = "<group>"; };
              XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentCommandSecurityGateTests.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000001 /* AgentTerminalMutationTestSupport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationTestSupport.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000002 /* AgentTerminalMutationRequestTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationRequestTests.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000003 /* AgentTerminalMutationValidationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationValidationTests.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000004 /* AgentTerminalMutationApprovalCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationApprovalCoordinatorTests.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000005 /* AgentTerminalMutationApprovalConcurrencyTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationApprovalConcurrencyTests.swift; sourceTree = "<group>"; };
+             XG2K00000000000000000006 /* AgentTerminalMutationSecurityGateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentTerminalMutationSecurityGateTests.swift; sourceTree = "<group>"; };
+             XG2M00000000000000000001 /* AgentLocalTerminalMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalTerminalMutationTests.swift; sourceTree = "<group>"; };
+             XG2P00000000000000000001 /* AgentRemoteTerminalMutationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentRemoteTerminalMutationTests.swift; sourceTree = "<group>"; };
+             XG2R00000000000000000001 /* AgentProviderSendToTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentProviderSendToTerminalTests.swift; sourceTree = "<group>"; };
+             XG2R00000000000000000002 /* AgentToolLoopSendToTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentToolLoopSendToTerminalTests.swift; sourceTree = "<group>"; };
              XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorTests.swift; sourceTree = "<group>"; };
              XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorCancellationTests.swift; sourceTree = "<group>"; };
              XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AgentLocalCommandExecutorOutputTests.swift; sourceTree = "<group>"; };
@@ -631,7 +673,8 @@
 					XG40000000000000000000005 /* Tools */,
 					XG40000000000000000000006 /* Terminal */,
 					XG40000000000000000000007 /* Command */,
-				);
+					XG4000000000000000000000A /* TerminalMutation */,
+					);
 				path = Agent;
 				sourceTree = "<group>";
 			};
@@ -646,6 +689,24 @@
 					XG40000000000000000000008 /* Execution */,
 				);
 				path = Command;
+				sourceTree = "<group>";
+			};
+			XG4000000000000000000000A /* TerminalMutation */ = {
+				isa = PBXGroup;
+				children = (
+					XG2J00000000000000000001 /* AgentTerminalInputTargetIdentity.swift */,
+					XG2J00000000000000000002 /* AgentTerminalMutationValidation.swift */,
+					XG2J00000000000000000003 /* AgentTerminalMutationRequest.swift */,
+					XG2J00000000000000000004 /* AgentTerminalMutationApproval.swift */,
+					XG2J00000000000000000005 /* AgentTerminalMutationApprovalCoordinator.swift */,
+					XG2J00000000000000000006 /* AgentTerminalMutationExecutionAuthorization.swift */,
+					XG2L00000000000000000001 /* AgentLocalTerminalMutationEndpoint.swift */,
+					XG2L00000000000000000002 /* AgentLocalTerminalMutationExecutor.swift */,
+					XG2N00000000000000000001 /* AgentRemoteTerminalMutationEndpoint.swift */,
+					XG2N00000000000000000002 /* AgentRemoteTerminalMutationExecutor.swift */,
+					XG2Q00000000000000000001 /* AgentTerminalMutationEndpointCapability.swift */,
+				);
+				path = TerminalMutation;
 				sourceTree = "<group>";
 			};
 		XG40000000000000000000008 /* Execution */ = {
@@ -841,7 +902,17 @@
 				XG2E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift */,
 				XG2E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift */,
 				XG2E00000000000000000005 /* AgentCommandSecurityGateTests.swift */,
-					XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */,
+				XG2K00000000000000000001 /* AgentTerminalMutationTestSupport.swift */,
+				XG2K00000000000000000002 /* AgentTerminalMutationRequestTests.swift */,
+				XG2K00000000000000000003 /* AgentTerminalMutationValidationTests.swift */,
+				XG2K00000000000000000004 /* AgentTerminalMutationApprovalCoordinatorTests.swift */,
+				XG2K00000000000000000005 /* AgentTerminalMutationApprovalConcurrencyTests.swift */,
+				XG2K00000000000000000006 /* AgentTerminalMutationSecurityGateTests.swift */,
+				XG2M00000000000000000001 /* AgentLocalTerminalMutationTests.swift */,
+				XG2P00000000000000000001 /* AgentRemoteTerminalMutationTests.swift */,
+				XG2R00000000000000000001 /* AgentProviderSendToTerminalTests.swift */,
+				XG2R00000000000000000002 /* AgentToolLoopSendToTerminalTests.swift */,
+				XG2G00000000000000000001 /* AgentLocalCommandExecutorTests.swift */,
 					XG2G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift */,
 					XG2G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift */,
 					XG2G00000000000000000004 /* AgentLocalCommandExecutorSecurityTests.swift */,
@@ -1283,6 +1354,17 @@
              XG1D00000000000000000003 /* AgentCommandApproval.swift in Sources */,
              XG1D00000000000000000004 /* AgentCommandApprovalCoordinator.swift in Sources */,
              XG1D00000000000000000005 /* AgentCommandExecutionAuthorization.swift in Sources */,
+             XG1J00000000000000000001 /* AgentTerminalInputTargetIdentity.swift in Sources */,
+             XG1J00000000000000000002 /* AgentTerminalMutationValidation.swift in Sources */,
+             XG1J00000000000000000003 /* AgentTerminalMutationRequest.swift in Sources */,
+             XG1J00000000000000000004 /* AgentTerminalMutationApproval.swift in Sources */,
+             XG1J00000000000000000005 /* AgentTerminalMutationApprovalCoordinator.swift in Sources */,
+             XG1J00000000000000000006 /* AgentTerminalMutationExecutionAuthorization.swift in Sources */,
+             XG1L00000000000000000001 /* AgentLocalTerminalMutationEndpoint.swift in Sources */,
+             XG1L00000000000000000002 /* AgentLocalTerminalMutationExecutor.swift in Sources */,
+             XG1N00000000000000000001 /* AgentRemoteTerminalMutationEndpoint.swift in Sources */,
+             XG1N00000000000000000002 /* AgentRemoteTerminalMutationExecutor.swift in Sources */,
+             XG1Q00000000000000000001 /* AgentTerminalMutationEndpointCapability.swift in Sources */,
              XG1F00000000000000000001 /* AgentCommandResult.swift in Sources */,
              XG1F00000000000000000002 /* AgentLocalCommandEnvironment.swift in Sources */,
              XG1F00000000000000000003 /* AgentLocalCommandExecutor.swift in Sources */,
@@ -1383,6 +1465,16 @@
 					XG1E00000000000000000003 /* AgentCommandApprovalCoordinatorTests.swift in Sources */,
 					XG1E00000000000000000004 /* AgentCommandApprovalConcurrencyTests.swift in Sources */,
 					XG1E00000000000000000005 /* AgentCommandSecurityGateTests.swift in Sources */,
+					XG1K00000000000000000001 /* AgentTerminalMutationTestSupport.swift in Sources */,
+					XG1K00000000000000000002 /* AgentTerminalMutationRequestTests.swift in Sources */,
+					XG1K00000000000000000003 /* AgentTerminalMutationValidationTests.swift in Sources */,
+					XG1K00000000000000000004 /* AgentTerminalMutationApprovalCoordinatorTests.swift in Sources */,
+					XG1K00000000000000000005 /* AgentTerminalMutationApprovalConcurrencyTests.swift in Sources */,
+					XG1K00000000000000000006 /* AgentTerminalMutationSecurityGateTests.swift in Sources */,
+					XG1M00000000000000000001 /* AgentLocalTerminalMutationTests.swift in Sources */,
+					XG1P00000000000000000001 /* AgentRemoteTerminalMutationTests.swift in Sources */,
+					XG1R00000000000000000001 /* AgentProviderSendToTerminalTests.swift in Sources */,
+					XG1R00000000000000000002 /* AgentToolLoopSendToTerminalTests.swift in Sources */,
 					XG1G00000000000000000001 /* AgentLocalCommandExecutorTests.swift in Sources */,
 					XG1G00000000000000000002 /* AgentLocalCommandExecutorCancellationTests.swift in Sources */,
 					XG1G00000000000000000003 /* AgentLocalCommandExecutorOutputTests.swift in Sources */,
@@ -1413,7 +1505,7 @@
 			repositoryURL = "https://github.com/canbyte0/SwiftTerm.git";
 			requirement = {
 				kind = revision;
-				revision = 40d473b1fdb456d49cc04b7f253277fcb9ac3987;
+				revision = 040d1271734694d046b77050b5bfc7aa483423ff;
 			};
 		};
 /* End XCRemoteSwiftPackageReference section */

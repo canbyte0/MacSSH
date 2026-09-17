@@ -14,8 +14,8 @@ struct AgentToolDefinition: Sendable, Equatable {
 
 /// 静态 allowlist（§4 hard gate）。
 ///
-/// Provider 每轮请求只看到这里登记的 4 个 read-only 工具和 B4 的
-/// `run_command`：
+/// Provider 每轮请求只看到这里登记的 4 个 read-only 工具、10E-B4 的
+/// `run_command` 和 10F-B4-S1 的 `send_to_terminal`：
 /// - 禁止 Swift reflection 动态导出函数；
 /// - 禁止按模型返回的任意 name 动态派发（执行点走 `AgentToolRegistry`
 ///   静态枚举，未知名字一律 `unknownTool` 拒绝）。
@@ -23,7 +23,7 @@ struct AgentToolDefinition: Sendable, Equatable {
 /// 工具描述面向模型（英文），只描述能力与边界，绝不包含路径示例之外的
 /// 本机信息。
 enum AgentToolCatalog: Sendable {
-    /// 恰好 5 个工具（B4 Phase boundary）。
+    /// 恰好 6 个工具（10F-B4-S1 边界）。
     static let definitions: [AgentToolDefinition] = [
         AgentToolDefinition(
             name: AgentToolName.getTerminalContext.rawValue,
@@ -64,15 +64,31 @@ enum AgentToolCatalog: Sendable {
                 + "the command does not modify the user's interactive terminal state.",
             parametersJSON: #"{"type":"object","properties":{"command":{"type":"string","description":"The exact non-interactive shell command to run."}},"required":["command"],"additionalProperties":false}"#
         ),
+        AgentToolDefinition(
+            name: AgentToolName.sendToTerminal.rawValue,
+            description: "Send text into the user's existing interactive terminal "
+                + "session. The exact text is delivered to that terminal's input; the "
+                + "terminal or a running interactive application may act on it "
+                + "immediately. Every call requires explicit user approval in the "
+                + "MacSSH app before anything is delivered. This tool does not capture "
+                + "terminal output and does not wait for command completion. Set "
+                + "submit to true to have MacSSH append a Return after the text; "
+                + "submit false only means no extra Return is appended — the text may "
+                + "still trigger a running interactive application. Use run_command "
+                + "instead when you need non-interactive execution with captured output.",
+            parametersJSON: #"{"type":"object","properties":{"text":{"type":"string","description":"The exact text to send to the interactive terminal."},"submit":{"type":"boolean","description":"Whether MacSSH appends a Return after the text."}},"required":["text","submit"],"additionalProperties":false}"#
+        ),
     ]
 
     /// 全部工具名（供 gate 断言）。
     static var names: [String] { definitions.map(\.name) }
 
     /// §52：禁止出现在请求 tool definitions 中的名字（含读操作但依赖
-    /// command execution 的 `git_status`）。
+    /// command execution 的 `git_status`）。`send_to_terminal` 已在
+    /// 10F-B4-S1 注册，不再是禁止名；`terminal_send` / `pasteText` /
+    /// `write_file` 等别名与文件写工具仍全部禁止。
     static let prohibitedNames: Set<String> = [
-        "execute", "exec", "shell", "terminal_send", "send_to_terminal",
+        "execute", "exec", "shell", "terminal_send",
         "pasteText", "write_file", "delete_file", "rename_file", "mkdir",
         "move", "copy", "upload", "chmod", "chown", "truncate", "git_status",
     ]
@@ -95,6 +111,8 @@ enum AgentToolCatalog: Sendable {
 /// - 非法 JSON → `.invalidArguments`
 /// - path 工具缺失 path / path 非 String → `.invalidArguments`
 /// - run_command 缺失 command、command 非 String、未知字段或非法 JSON
+///   → `.invalidArguments`
+/// - send_to_terminal 非 `{text: String, submit: Bool}` 精确形态
 ///   → `.invalidArguments`
 /// - 未知工具名 → `.unknownTool`
 /// - 无参数工具：arguments 为空串或 `{}` 视为合法；其余键宽容忽略
@@ -131,6 +149,31 @@ enum AgentToolCallParsing: Sendable {
             return .success(AgentToolCall(name: name, arguments: ["command": command]))
         }
 
+        // 2b. send_to_terminal 同样采用严格字典校验（10F-B4-S1 §38：
+        //     恰好 text: String + submit: Bool，任何多余 / 缺失 / 类型
+        //     错误 / 非法 JSON 一律 invalidArguments；text 内容本身由
+        //     B1 request factory 的 validation 二次把关）。
+        if tool == .sendToTerminal {
+            guard
+                let data = trimmed.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data),
+                let dictionary = object as? [String: Any],
+                Set(dictionary.keys) == Set(["text", "submit"]),
+                let text = dictionary["text"] as? String,
+                let submit = dictionary["submit"] as? Bool
+            else {
+                return .failure(.invalidArguments)
+            }
+            return .success(AgentToolCall(
+                name: name,
+                arguments: ["text": text],
+                terminalMutation: AgentToolTerminalMutationArguments(
+                    text: text,
+                    submit: submit
+                )
+            ))
+        }
+
         // 3. raw JSON → Decodable（§6）。
         let typed: TypedArguments
         if trimmed.isEmpty {
@@ -157,6 +200,9 @@ enum AgentToolCallParsing: Sendable {
             arguments["path"] = path
         case .runCommand:
             // 已在严格分支中返回；保留穷尽性保护，绝不向 Router 派发裸命令。
+            return .failure(.invalidArguments)
+        case .sendToTerminal:
+            // 已在严格分支中返回；保留穷尽性保护。
             return .failure(.invalidArguments)
         }
         return .success(AgentToolCall(name: name, arguments: arguments))

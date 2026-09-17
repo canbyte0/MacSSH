@@ -902,6 +902,23 @@
         }
       }
     },
+    "agent.provider.error.terminal_mutation_uncertain": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The agent stopped: terminal input delivery was incomplete and the terminal state is uncertain."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "代理已停止：终端输入交付不完整，终端状态不确定。"
+          }
+        }
+      }
+    },
     "agent.provider.error.tool_round_limit": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -1327,6 +1344,176 @@
         }
       }
     },
+    "agent.terminal.approve": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Approve"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "批准"
+          }
+        }
+      }
+    },
+    "agent.terminal.approve.hint": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send this text to the interactive terminal."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将该文本发送到交互终端。"
+          }
+        }
+      }
+    },
+    "agent.terminal.deny": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deny"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "拒绝"
+          }
+        }
+      }
+    },
+    "agent.terminal.deny.hint": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Reject this terminal input before anything is sent."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在发送任何内容之前拒绝这次终端输入。"
+          }
+        }
+      }
+    },
+    "agent.terminal.disclosure": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This sends input to the existing interactive terminal. The terminal or a running application may act on it immediately. If Submit is enabled, MacSSH appends Return after the text. Terminal output is not captured by this action."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此操作会把输入发送到现有的交互终端。终端或正在运行的程序可能立即对其作出反应。若启用了「提交」，MacSSH 会在文本之后追加回车。此操作不会捕获终端输出。"
+          }
+        }
+      }
+    },
+    "agent.terminal.submit": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Submit (append Return)"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "提交（追加回车）"
+          }
+        }
+      }
+    },
+    "agent.terminal.submit.no": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "否"
+          }
+        }
+      }
+    },
+    "agent.terminal.submit.yes": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Yes"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "是"
+          }
+        }
+      }
+    },
+    "agent.terminal.target": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Target"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目标"
+          }
+        }
+      }
+    },
+    "agent.terminal.text": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Exact text"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "确切文本"
+          }
+        }
+      }
+    },
     "agent.title": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -1429,6 +1616,23 @@
         }
       }
     },
+    "agent.tool.send_to_terminal": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Send to terminal"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "发送到终端"
+          }
+        }
+      }
+    },
     "agent.tool.status.awaiting_approval": {
       "extractionState": "manual_uploaded",
       "localizations": {
@@ -1493,6 +1697,23 @@
           "stringUnit": {
             "state": "translated",
             "value": "失败"
+          }
+        }
+      }
+    },
+    "agent.tool.status.partial": {
+      "extractionState": "manual_uploaded",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Partially delivered"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "部分交付"
           }
         }
       }

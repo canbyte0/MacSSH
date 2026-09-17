@@ -42,7 +42,7 @@ enum TerminalSessionDisplayState: Equatable {
 @MainActor
 @Observable
 final class ManagedTerminalSession: Identifiable {
-    let id = UUID()
+    let id: UUID
 
     let kind: TerminalSessionKind
 
@@ -136,10 +136,12 @@ final class ManagedTerminalSession: Identifiable {
     private(set) var isClosed = false
 
     init(
+        id: UUID = UUID(),
         localService: LocalTerminalService,
         baseTitle: String,
         titleCounter: Int
     ) {
+        self.id = id
         kind = .local
         self.localService = localService
         self.baseTitle = baseTitle
@@ -151,6 +153,7 @@ final class ManagedTerminalSession: Identifiable {
     }
 
     init(
+        id: UUID = UUID(),
         remoteHostID: UUID,
         hostDisplayName: String,
         hostname: String,
@@ -158,6 +161,7 @@ final class ManagedTerminalSession: Identifiable {
         baseTitle: String,
         titleCounter: Int
     ) {
+        self.id = id
         kind = .remoteSSH
         localService = nil
         self.hostID = remoteHostID

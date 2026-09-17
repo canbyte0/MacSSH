@@ -196,6 +196,37 @@ actor SSHConnection {
     /// 依赖该不变式等待在途打开，并确认没有 Channel 残留后才释放 Session。
     var shellChannelOpenTask: Task<Void, Error>?
 
+    // MARK: Phase 10F-B3-S1：Remote Interactive Input authority
+
+    /// 同一 SSHConnection actor 内的单调 Shell 输入 generation 计数器。
+    ///
+    /// 计数器由 actor 独占；它不从 channel 指针地址推导，也不会跨
+    /// SSHConnection 实例共享。
+    var interactiveInputGenerationCounter: UInt64 = 0
+
+    /// 当前可写 Shell incarnation；PTY / shell request 全部成功前保持 nil。
+    var activeInteractiveInputIncarnation: SSHInteractiveInputIncarnation?
+
+    /// 所有普通写入与 exclusive transaction 共用的一条 admission FIFO。
+    ///
+    /// Tail 只作为调度屏障保存在 actor 内，绝不把 C pointer 带出 actor。
+    var interactiveInputTail: Task<Void, Never>?
+
+    /// 当前 pending/active 的唯一 transaction reservation。
+    var activeInteractiveInputTransaction: UUID?
+
+    /// 测试专用 physical write seam；生产环境恒为 nil，真实路径直接调用
+    /// actor 内拥有的 libssh2 channel。
+    var testInteractiveInputWriteBackend:
+        (@Sendable ([UInt8], Int) async -> SSHInteractiveInputTestWriteStep)?
+
+    /// 测试专用 readiness seam；生产环境恒为 nil，EAGAIN 使用真实 poll。
+    var testInteractiveInputReadinessWait: (@Sendable () async throws -> Void)?
+
+    /// 测试专用 partial-write 后挂钩，用于精确制造 channel replacement 窗口。
+    /// 生产环境恒为 nil，不改变正常 Remote 输入路径。
+    var testInteractiveInputAfterPositiveWriteHook: (@Sendable () async -> Void)?
+
     /// 进行中的 Session 断开任务。
     ///
     /// `disconnect()` 会跨 Channel teardown、disconnect EAGAIN 等多个 await，
@@ -578,6 +609,10 @@ actor SSHConnection {
         // - openInteractiveShell 入口校验立即失败，不再接受新打开；
         // - 在途 Channel 操作在下一个校验点尽快退出。
         disconnectRequested = true
+        // Remote input capability 在 disconnect admission 点立即失效；旧
+        // endpoint 后续只能得到 connectionLost / channelClosed，绝不重定向。
+        activeInteractiveInputIncarnation = nil
+        activeInteractiveInputTransaction = nil
 
         let task = Task {
             await performTrackedDisconnect()

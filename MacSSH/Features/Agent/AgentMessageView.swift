@@ -128,6 +128,12 @@ struct AgentMessageView: View {
                 defaultValue: "The terminal session is no longer available.",
                 locale: locale
             )
+        case .terminalMutationUncertain:
+            L10n.string(
+                "agent.provider.error.terminal_mutation_uncertain",
+                defaultValue: "The agent stopped: terminal input delivery was incomplete and the terminal state is uncertain.",
+                locale: locale
+            )
         case .generic, nil:
             L10n.string(
                 "agent.error.generic",

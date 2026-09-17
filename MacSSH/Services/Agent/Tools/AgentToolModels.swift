@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - 工具名与静态注册表（任务书 §30/§31）
 
-/// B4 注册的五个工具名。
+/// B4 注册的六个工具名（10F-B4-S1 起 `send_to_terminal` 上线）。
 ///
 /// 注册表是**静态枚举**：禁止 dynamic reflection、禁止任意字符串 →
 /// selector 派发（§31）。未知名字 → `AgentToolError.unknownTool`。
@@ -13,10 +13,18 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
     case readFile = "read_file"
     /// 唯一需要逐次用户批准的命令执行能力。
     case runCommand = "run_command"
+    /// 10F-B4-S1：向已存在的交互终端发送文本（逐次批准的 mutation）。
+    case sendToTerminal = "send_to_terminal"
 
-    /// 变更风险轴（§11/§30）：run_command 不能被当作 read-only。
+    /// 变更风险轴（§11/§30）：run_command / send_to_terminal 不能被
+    /// 当作 read-only。
     var risk: AgentToolRisk {
-        self == .runCommand ? .modifying : .readOnly
+        switch self {
+        case .getTerminalContext, .getCurrentDirectory, .listDirectory, .readFile:
+            return .readOnly
+        case .runCommand, .sendToTerminal:
+            return .modifying
+        }
     }
 
     /// 数据披露轴（§11/§30）。
@@ -28,6 +36,8 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
             return .scopedFileRead
         case .runCommand:
             return .commandExecution
+        case .sendToTerminal:
+            return .terminalMutation
         }
     }
 
@@ -38,7 +48,8 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
     /// `unsupportedForSession`，绝不默认放行）。
     var supportsRemoteSession: Bool {
         switch self {
-        case .getTerminalContext, .getCurrentDirectory, .listDirectory, .readFile, .runCommand:
+        case .getTerminalContext, .getCurrentDirectory, .listDirectory,
+             .readFile, .runCommand, .sendToTerminal:
             return true
         }
     }
@@ -55,19 +66,40 @@ enum AgentToolRegistry: Sendable {
 
 // MARK: - 调用（任务书 §34）
 
+/// send_to_terminal 的 typed 参数（10F-B4-S1 §7/§38：恰好
+/// `text: String` + `submit: Bool`，submit 是 Bool 进不了
+/// `[String: String]` arguments，独立承载）。
+struct AgentToolTerminalMutationArguments: Sendable, Equatable {
+    let text: String
+    let submit: Bool
+}
+
 /// 一次工具调用（vendor-neutral：参数本阶段只有路径）。
 struct AgentToolCall: Sendable, Equatable {
     let name: String
     let arguments: [String: String]
+    /// send_to_terminal 的 typed 参数；其余工具为 nil（parse 层产出，
+    /// 执行链不再重读 Provider JSON）。
+    let terminalMutation: AgentToolTerminalMutationArguments?
 
-    init(name: String, arguments: [String: String] = [:]) {
+    init(
+        name: String,
+        arguments: [String: String] = [:],
+        terminalMutation: AgentToolTerminalMutationArguments? = nil
+    ) {
         self.name = name
         self.arguments = arguments
+        self.terminalMutation = terminalMutation
     }
 
-    init(_ name: AgentToolName, arguments: [String: String] = [:]) {
+    init(
+        _ name: AgentToolName,
+        arguments: [String: String] = [:],
+        terminalMutation: AgentToolTerminalMutationArguments? = nil
+    ) {
         self.name = name.rawValue
         self.arguments = arguments
+        self.terminalMutation = terminalMutation
     }
 
     var path: String? { arguments["path"] }

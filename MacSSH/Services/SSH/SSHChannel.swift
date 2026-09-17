@@ -1,6 +1,139 @@
 import Darwin
 import Foundation
 
+/// 精确标识一条已认证 SSH 连接上的一个 Interactive Shell 输入 incarnation。
+///
+/// `generation` 只在同一个 `SSHConnection` actor 内递增；`token` 让同一代次
+/// 的旧对象也不能伪造或复用新的输入 authority。该值不包含、也不暴露任何
+/// libssh2 session/channel 指针。
+struct SSHInteractiveInputIncarnation: Hashable, Sendable {
+    let generation: UInt64
+    fileprivate let token: UUID
+
+    fileprivate init(generation: UInt64) {
+        self.generation = generation
+        self.token = UUID()
+    }
+}
+
+/// Remote Interactive Shell 输入传输的稳定错误模型。
+///
+/// 该类型属于 SSH transport 层，只表达连接、channel 与写入生命周期。
+enum SSHInteractiveInputTransportError: Error, Equatable, Sendable {
+    case connectionLost
+    case channelClosed
+    case targetReplaced
+    case writeFailed
+    case cancelled
+    case transactionUnavailable
+}
+
+/// 一次 Remote 输入写入的精确结算结果。
+///
+/// `acceptedBytes` 是底层实际接受的 prefix 长度；即使 `error` 非 nil，也绝不
+/// 把已经发送的 prefix 归零。这是未来需要 acknowledged delivery 的通用边界。
+struct SSHInteractiveInputWriteResult: Equatable, Sendable {
+    let requestedBytes: Int
+    let acceptedBytes: Int
+    let error: SSHInteractiveInputTransportError?
+
+    var isSuccess: Bool {
+        error == nil && acceptedBytes == requestedBytes
+    }
+
+    fileprivate func throwIfFailed() throws {
+        if let error {
+            throw error
+        }
+    }
+}
+
+/// 绑定到一条确切 SSHConnection actor 与 Shell incarnation 的输入能力。
+///
+/// Endpoint 可以安全跨越 MainActor / actor 边界传递；它没有 active-session
+/// resolver，也不会在写入时重新查询 `RemoteTerminalService.connection`。
+struct SSHInteractiveInputEndpoint: Sendable {
+    fileprivate let connection: SSHConnection
+    let incarnation: SSHInteractiveInputIncarnation
+
+    var generation: UInt64 {
+        incarnation.generation
+    }
+
+    /// 返回 acknowledged 的精确 prefix 结算，不会丢失已接受字节数。
+    func writeAcknowledged(_ data: ArraySlice<UInt8>) async -> SSHInteractiveInputWriteResult {
+        await connection.writeBoundInteractiveInput(data, incarnation: incarnation)
+    }
+
+    /// `[UInt8]` 便捷入口；底层仍以原始 bytes 传输，不经过 String 重编码。
+    func writeAcknowledged(_ data: [UInt8]) async -> SSHInteractiveInputWriteResult {
+        await writeAcknowledged(data[...])
+    }
+
+    /// 保持普通 terminal caller 的 throwing 语义。
+    func write(_ data: ArraySlice<UInt8>) async throws {
+        let result = await writeAcknowledged(data)
+        try result.throwIfFailed()
+    }
+
+    func write(_ data: [UInt8]) async throws {
+        try await write(data[...])
+    }
+
+    /// 以该 endpoint 捕获的 Shell incarnation 申请 exclusive transaction。
+    /// 不会在调用时重新读取 RemoteTerminalService 的可变 connection。
+    func withExclusiveInteractiveInputTransaction(
+        _ body: @escaping @Sendable (SSHInteractiveInputTransaction) async throws -> Void
+    ) async throws {
+        try await connection.withExclusiveInteractiveInputTransaction(
+            body,
+            incarnation: incarnation
+        )
+    }
+}
+
+/// exclusive Remote 输入 transaction 的绑定能力。
+///
+/// transaction 只允许由创建它的 `SSHConnection`、同一个 Shell incarnation
+/// 和同一个 reservation token 使用；普通输入会在 transaction 完成后才继续。
+struct SSHInteractiveInputTransaction: Sendable {
+    fileprivate let connection: SSHConnection
+    fileprivate let incarnation: SSHInteractiveInputIncarnation
+    fileprivate let reservation: UUID
+
+    var generation: UInt64 {
+        incarnation.generation
+    }
+
+    func writeAcknowledged(_ data: ArraySlice<UInt8>) async -> SSHInteractiveInputWriteResult {
+        await connection.writeTransactionInteractiveInput(
+            data,
+            incarnation: incarnation,
+            reservation: reservation
+        )
+    }
+
+    func writeAcknowledged(_ data: [UInt8]) async -> SSHInteractiveInputWriteResult {
+        await writeAcknowledged(data[...])
+    }
+
+    func write(_ data: ArraySlice<UInt8>) async throws {
+        let result = await writeAcknowledged(data)
+        try result.throwIfFailed()
+    }
+
+    func write(_ data: [UInt8]) async throws {
+        try await write(data[...])
+    }
+}
+
+/// 仅供确定性测试使用的 physical write step；生产路径不会安装该 seam。
+enum SSHInteractiveInputTestWriteStep: Equatable, Sendable {
+    case accepted(Int)
+    case wouldBlock
+    case failed(SSHInteractiveInputTransportError)
+}
+
 /// Phase 7：Interactive Shell Channel 能力，以 extension 形式挂在既有
 /// `SSHConnection` actor 上。
 ///
@@ -169,6 +302,13 @@ extension SSHConnection {
             throw error
         }
 
+        // PTY 与 shell request 均成功后才发布新的输入 incarnation；在此之前
+        // endpoint 不存在，避免把半开 Channel 当成可写目标。
+        interactiveInputGenerationCounter &+= 1
+        activeInteractiveInputIncarnation = SSHInteractiveInputIncarnation(
+            generation: interactiveInputGenerationCounter
+        )
+
         AppLogger.terminal.info("Remote shell channel opened")
     }
 
@@ -255,70 +395,461 @@ extension SSHConnection {
         }
     }
 
-    /// 写入用户输入（键盘 / paste）到 Channel。
+    /// 创建当前 Shell incarnation 的不可变输入能力。
     ///
-    /// 处理 partial write：`libssh2_channel_write_ex` 可能只写一部分或返回 EAGAIN，
-    /// 以 offset + remaining 循环直到全部写完、出错或超预算；不假设一次写完。
+    /// 只有 PTY 与 Shell request 全部成功后才返回 endpoint；调用方可以把
+    /// endpoint 跨越 MainActor / actor 边界保存，但它永远只会回到创建它的
+    /// `SSHConnection` actor。
+    func interactiveInputEndpoint() -> SSHInteractiveInputEndpoint? {
+        guard let incarnation = activeInteractiveInputIncarnation else {
+            return nil
+        }
+        return SSHInteractiveInputEndpoint(connection: self, incarnation: incarnation)
+    }
+
+    /// 安装不依赖真实 socket / libssh2 handle 的测试 backend，并发布一条新的
+    /// Shell incarnation。该入口只为 deterministic transport tests 提供接缝。
+    func installTestInteractiveInputBackend(
+        _ backend: @escaping @Sendable ([UInt8], Int) async -> SSHInteractiveInputTestWriteStep,
+        readinessWait: (@Sendable () async throws -> Void)? = nil
+    ) {
+        testInteractiveInputWriteBackend = backend
+        testInteractiveInputReadinessWait = readinessWait
+        interactiveInputGenerationCounter &+= 1
+        activeInteractiveInputIncarnation = SSHInteractiveInputIncarnation(
+            generation: interactiveInputGenerationCounter
+        )
+        activeInteractiveInputTransaction = nil
+    }
+
+    /// 测试专用的 Shell replacement：旧 endpoint 保留为对象，但不能写入新代次。
+    func replaceTestInteractiveInputIncarnation() {
+        activeInteractiveInputTransaction = nil
+        interactiveInputGenerationCounter &+= 1
+        activeInteractiveInputIncarnation = SSHInteractiveInputIncarnation(
+            generation: interactiveInputGenerationCounter
+        )
+    }
+
+    /// 测试专用的 Shell close；不释放任何 C handle，只撤销输入 authority。
+    func invalidateTestInteractiveInputIncarnation() {
+        activeInteractiveInputIncarnation = nil
+        activeInteractiveInputTransaction = nil
+    }
+
+    /// 设置 / 清除测试专用 partial-write 后挂钩。
+    func setTestInteractiveInputAfterPositiveWriteHook(
+        _ hook: (@Sendable () async -> Void)?
+    ) {
+        testInteractiveInputAfterPositiveWriteHook = hook
+    }
+
+    /// 只读测试仪表：transaction 从 admission 开始直到 body 结束都保持占用。
+    var hasPendingOrActiveInteractiveInputTransaction: Bool {
+        activeInteractiveInputTransaction != nil
+    }
+
+    /// 当前 incarnation 的普通输入入口；在 admission 时立即绑定代次。
+    ///
+    /// 所有普通 keyboard / paste bytes 都进入与 transaction 相同的 FIFO，
+    /// 因而不会从 exclusive transaction 旁路。
     func writeChannelInput(_ data: ArraySlice<UInt8>) async throws {
-        // 打开窗口期内 PTY / Shell 请求尚未完成：提前穿插的写入与 resize
-        // 同因——会在同一 Channel 上触发 LIBSSH2_ERROR_BAD_USE 并破坏打开
-        // 序列；等待在途打开 / 关闭尘埃落定后再写入（字节不丢，仅顺延）。
-        while shellChannelOpenTask != nil || shellChannelCloseTask != nil {
-            if let opening = shellChannelOpenTask {
-                try? await opening.value
-                continue
-            }
-            if let closing = shellChannelCloseTask {
-                await closing.value
-                continue
+        let result = await enqueueInteractiveInput(data, incarnation: activeInteractiveInputIncarnation)
+        try mapInteractiveInputResultToLegacyError(result)
+    }
+
+    /// 以明确 endpoint 作为 admission authority 的普通写入入口。
+    func writeBoundInteractiveInput(
+        _ data: ArraySlice<UInt8>,
+        incarnation: SSHInteractiveInputIncarnation
+    ) async -> SSHInteractiveInputWriteResult {
+        await enqueueInteractiveInput(data, incarnation: incarnation)
+    }
+
+    /// 在一个 Shell incarnation 内申请唯一的 exclusive 输入 transaction。
+    ///
+    /// reservation 在 admission 时就占住 FIFO，即使前一个普通写入仍在
+    /// physical write 中，后续普通输入也只能排在 transaction 之后。
+    func withExclusiveInteractiveInputTransaction(
+        _ body: @escaping @Sendable (SSHInteractiveInputTransaction) async throws -> Void
+    ) async throws {
+        guard let incarnation = activeInteractiveInputIncarnation else {
+            throw currentInteractiveInputFailure(for: nil) ?? .channelClosed
+        }
+        try await withExclusiveInteractiveInputTransaction(body, incarnation: incarnation)
+    }
+
+    /// endpoint 专用的 bound transaction 入口；admission 时再次确认捕获的
+    /// connection + incarnation 仍是当前 authority，旧 endpoint 不可借此
+    /// 申请到 reopen / reconnect 后的新 Shell。
+    func withExclusiveInteractiveInputTransaction(
+        _ body: @escaping @Sendable (SSHInteractiveInputTransaction) async throws -> Void,
+        incarnation: SSHInteractiveInputIncarnation
+    ) async throws {
+        guard activeInteractiveInputIncarnation == incarnation else {
+            throw currentInteractiveInputFailure(for: incarnation) ?? .targetReplaced
+        }
+        guard activeInteractiveInputTransaction == nil else {
+            throw SSHInteractiveInputTransportError.transactionUnavailable
+        }
+
+        let reservation = UUID()
+        activeInteractiveInputTransaction = reservation
+        let previous = interactiveInputTail
+        let operation = Task { [connection = self] in
+            await previous?.value
+            try await connection.performExclusiveInteractiveInputTransaction(
+                body,
+                incarnation: incarnation,
+                reservation: reservation
+            )
+        }
+        interactiveInputTail = Task {
+            _ = try? await operation.value
+        }
+
+        try await withTaskCancellationHandler(operation: {
+            try await operation.value
+        }, onCancel: {
+            operation.cancel()
+        })
+    }
+
+    /// transaction body 的实际执行点；它本身占住 shared FIFO tail，直到
+    /// body 返回或取消，确保多次 acknowledged write 之间没有普通输入插入。
+    private func performExclusiveInteractiveInputTransaction(
+        _ body: @escaping @Sendable (SSHInteractiveInputTransaction) async throws -> Void,
+        incarnation: SSHInteractiveInputIncarnation,
+        reservation: UUID
+    ) async throws {
+        defer {
+            if activeInteractiveInputTransaction == reservation {
+                activeInteractiveInputTransaction = nil
             }
         }
 
-        guard let session else {
-            throw RemoteTerminalError.connectionLost
+        guard activeInteractiveInputIncarnation == incarnation,
+              activeInteractiveInputTransaction == reservation
+        else {
+            throw currentInteractiveInputFailure(for: incarnation) ?? .targetReplaced
         }
-        guard let channel = shellChannel else {
-            throw RemoteTerminalError.channelClosed
+
+        try Task.checkCancellation()
+        try await body(
+            SSHInteractiveInputTransaction(
+                connection: self,
+                incarnation: incarnation,
+                reservation: reservation
+            )
+        )
+    }
+
+    /// transaction 内部写入：不再创建新的 FIFO 节点，而是直接复用当前
+    /// transaction 持有的 physical write authority。
+    func writeTransactionInteractiveInput(
+        _ data: ArraySlice<UInt8>,
+        incarnation: SSHInteractiveInputIncarnation,
+        reservation: UUID
+    ) async -> SSHInteractiveInputWriteResult {
+        guard activeInteractiveInputTransaction == reservation else {
+            return failedInteractiveInputResult(
+                requestedBytes: data.count,
+                error: currentInteractiveInputFailure(for: incarnation) ?? .targetReplaced
+            )
+        }
+        return await performPhysicalInteractiveInput(
+            Array(data),
+            incarnation: incarnation
+        )
+    }
+
+    /// 把普通输入挂到 shared FIFO；这个方法在 actor 内同步登记 queue tail，
+    /// 然后 operation 才可能跨 await 进入 physical libssh2 write。
+    private func enqueueInteractiveInput(
+        _ data: ArraySlice<UInt8>,
+        incarnation: SSHInteractiveInputIncarnation?
+    ) async -> SSHInteractiveInputWriteResult {
+        let requestedBytes = data.count
+        guard let incarnation else {
+            return failedInteractiveInputResult(
+                requestedBytes: requestedBytes,
+                error: currentInteractiveInputFailure(for: nil) ?? .channelClosed
+            )
+        }
+        guard activeInteractiveInputIncarnation == incarnation else {
+            return failedInteractiveInputResult(
+                requestedBytes: requestedBytes,
+                error: currentInteractiveInputFailure(for: incarnation) ?? .targetReplaced
+            )
         }
         guard !data.isEmpty else {
-            return
+            return SSHInteractiveInputWriteResult(
+                requestedBytes: 0,
+                acceptedBytes: 0,
+                error: nil
+            )
         }
 
         let bytes = Array(data)
-        let deadline = Date().addingTimeInterval(ChannelTimeouts.write)
-        var offset = 0
+        let previous = interactiveInputTail
+        let operation = Task { [connection = self] in
+            await previous?.value
+            return await connection.performPhysicalInteractiveInput(
+                bytes,
+                incarnation: incarnation
+            )
+        }
+        interactiveInputTail = Task {
+            _ = await operation.value
+        }
 
-        while offset < bytes.count {
-            try validateChannelOperation(session: session, channel: channel)
+        // 取消只取消该 logical write，不会取消此前已经 accepted 的 prefix。
+        return await withTaskCancellationHandler(operation: {
+            await operation.value
+        }, onCancel: {
+            operation.cancel()
+        })
+    }
+
+    /// physical Remote write 的唯一实现：正数表示 accepted prefix，EAGAIN
+    /// 等待后继续同一 logical request，致命错误保留此前已接受的字节数。
+    private func performPhysicalInteractiveInput(
+        _ bytes: [UInt8],
+        incarnation: SSHInteractiveInputIncarnation
+    ) async -> SSHInteractiveInputWriteResult {
+        var acceptedBytes = 0
+        let deadline = Date().addingTimeInterval(ChannelTimeouts.write)
+
+        while acceptedBytes < bytes.count {
+            if Task.isCancelled {
+                return SSHInteractiveInputWriteResult(
+                    requestedBytes: bytes.count,
+                    acceptedBytes: acceptedBytes,
+                    error: .cancelled
+                )
+            }
+
+            if let failure = currentInteractiveInputFailure(for: incarnation) {
+                return SSHInteractiveInputWriteResult(
+                    requestedBytes: bytes.count,
+                    acceptedBytes: acceptedBytes,
+                    error: failure
+                )
+            }
+
+            let remaining = bytes.count - acceptedBytes
+            if let backend = testInteractiveInputWriteBackend {
+                let step = await backend(bytes, acceptedBytes)
+                switch step {
+                case let .accepted(count):
+                    guard count > 0, count <= remaining else {
+                        return failedInteractiveInputResult(
+                            requestedBytes: bytes.count,
+                            acceptedBytes: acceptedBytes,
+                            error: .writeFailed
+                        )
+                    }
+                    acceptedBytes += count
+                    if let hook = testInteractiveInputAfterPositiveWriteHook {
+                        await hook()
+                    }
+                    continue
+
+                case .wouldBlock:
+                    do {
+                        try await waitForInteractiveInputReadiness(
+                            incarnation: incarnation,
+                            deadline: deadline
+                        )
+                    } catch is CancellationError {
+                        return SSHInteractiveInputWriteResult(
+                            requestedBytes: bytes.count,
+                            acceptedBytes: acceptedBytes,
+                            error: .cancelled
+                        )
+                    } catch {
+                        return failedInteractiveInputResult(
+                            requestedBytes: bytes.count,
+                            acceptedBytes: acceptedBytes,
+                            error: .writeFailed
+                        )
+                    }
+                    continue
+
+                case let .failed(error):
+                    if error == .channelClosed {
+                        activeInteractiveInputIncarnation = nil
+                        activeInteractiveInputTransaction = nil
+                    }
+                    return SSHInteractiveInputWriteResult(
+                        requestedBytes: bytes.count,
+                        acceptedBytes: acceptedBytes,
+                        error: error
+                    )
+                }
+            }
+
+            guard let session, let channel = shellChannel else {
+                return failedInteractiveInputResult(
+                    requestedBytes: bytes.count,
+                    acceptedBytes: acceptedBytes,
+                    error: currentInteractiveInputFailure(for: incarnation) ?? .channelClosed
+                )
+            }
 
             let written = bytes.withUnsafeBufferPointer { pointer -> Int in
-                guard let base = pointer.baseAddress?.advanced(by: offset) else {
+                guard let base = pointer.baseAddress?.advanced(by: acceptedBytes) else {
                     return 0
                 }
                 return base.withMemoryRebound(
                     to: CChar.self,
-                    capacity: bytes.count - offset
+                    capacity: remaining
                 ) { charPointer in
-                    libssh2_channel_write_ex(channel, 0, charPointer, bytes.count - offset)
+                    libssh2_channel_write_ex(channel, 0, charPointer, remaining)
                 }
             }
 
             if written > 0 {
-                offset += written
+                acceptedBytes += written
                 continue
             }
 
             if written == LIBSSH2_ERROR_EAGAIN {
-                try await waitForLibssh2Readiness(session: session, deadline: deadline)
+                do {
+                    try await waitForInteractiveInputReadiness(
+                        session: session,
+                        channel: channel,
+                        incarnation: incarnation,
+                        deadline: deadline
+                    )
+                } catch is CancellationError {
+                    return SSHInteractiveInputWriteResult(
+                        requestedBytes: bytes.count,
+                        acceptedBytes: acceptedBytes,
+                        error: .cancelled
+                    )
+                } catch {
+                    return failedInteractiveInputResult(
+                        requestedBytes: bytes.count,
+                        acceptedBytes: acceptedBytes,
+                        error: .writeFailed
+                    )
+                }
                 continue
             }
 
             if written == LIBSSH2_ERROR_CHANNEL_CLOSED {
-                throw RemoteTerminalError.channelClosed
+                activeInteractiveInputIncarnation = nil
+                activeInteractiveInputTransaction = nil
+                return failedInteractiveInputResult(
+                    requestedBytes: bytes.count,
+                    acceptedBytes: acceptedBytes,
+                    error: .channelClosed
+                )
             }
 
             let lastError = libssh2_session_last_errno(session)
             AppLogger.terminal.error("Channel write failed with libssh2 code \(lastError)")
+            return failedInteractiveInputResult(
+                requestedBytes: bytes.count,
+                acceptedBytes: acceptedBytes,
+                error: .writeFailed
+            )
+        }
+
+        return SSHInteractiveInputWriteResult(
+            requestedBytes: bytes.count,
+            acceptedBytes: acceptedBytes,
+            error: nil
+        )
+    }
+
+    /// 测试 backend 的 EAGAIN 等待；生产环境走 actor 内真实 readiness poll。
+    private func waitForInteractiveInputReadiness(
+        incarnation: SSHInteractiveInputIncarnation,
+        deadline: Date
+    ) async throws {
+        guard activeInteractiveInputIncarnation == incarnation else {
+            throw SSHInteractiveInputTransportError.targetReplaced
+        }
+        if let wait = testInteractiveInputReadinessWait {
+            try await wait()
+            guard activeInteractiveInputIncarnation == incarnation else {
+                throw SSHInteractiveInputTransportError.targetReplaced
+            }
+            return
+        }
+        guard let session, let channel = shellChannel else {
+            throw SSHInteractiveInputTransportError.connectionLost
+        }
+        try await waitForInteractiveInputReadiness(
+            session: session,
+            channel: channel,
+            incarnation: incarnation,
+            deadline: deadline
+        )
+    }
+
+    /// 真实 libssh2 EAGAIN 等待；恢复后由下一轮 physical loop 再次校验
+    /// session/channel/incarnation，绝不直接沿用 await 前的替换目标。
+    private func waitForInteractiveInputReadiness(
+        session: OpaquePointer,
+        channel: OpaquePointer,
+        incarnation: SSHInteractiveInputIncarnation,
+        deadline: Date
+    ) async throws {
+        try await waitForLibssh2Readiness(session: session, deadline: deadline)
+        guard activeInteractiveInputIncarnation == incarnation,
+              self.session == session,
+              shellChannel == channel
+        else {
+            throw SSHInteractiveInputTransportError.targetReplaced
+        }
+    }
+
+    /// 返回当前 target 对旧 endpoint 的稳定失败原因；不向调用方暴露 C pointer。
+    private func currentInteractiveInputFailure(
+        for expected: SSHInteractiveInputIncarnation?
+    ) -> SSHInteractiveInputTransportError? {
+        guard session != nil || testInteractiveInputWriteBackend != nil else {
+            return .connectionLost
+        }
+        guard shellChannel != nil || testInteractiveInputWriteBackend != nil else {
+            return .channelClosed
+        }
+        guard let expected, activeInteractiveInputIncarnation == expected else {
+            return activeInteractiveInputIncarnation == nil ? .channelClosed : .targetReplaced
+        }
+        return nil
+    }
+
+    private func failedInteractiveInputResult(
+        requestedBytes: Int,
+        acceptedBytes: Int = 0,
+        error: SSHInteractiveInputTransportError
+    ) -> SSHInteractiveInputWriteResult {
+        SSHInteractiveInputWriteResult(
+            requestedBytes: requestedBytes,
+            acceptedBytes: acceptedBytes,
+            error: error
+        )
+    }
+
+    /// 将新 acknowledged error 映射回既有 `writeChannelInput` throwing API。
+    private func mapInteractiveInputResultToLegacyError(
+        _ result: SSHInteractiveInputWriteResult
+    ) throws {
+        guard let error = result.error else {
+            return
+        }
+        switch error {
+        case .connectionLost:
+            throw RemoteTerminalError.connectionLost
+        case .channelClosed, .targetReplaced:
+            throw RemoteTerminalError.channelClosed
+        case .cancelled:
+            throw SSHError.cancelled
+        case .writeFailed, .transactionUnavailable:
             throw RemoteTerminalError.channelWriteFailed
         }
     }
@@ -398,10 +929,21 @@ extension SSHConnection {
             return
         }
 
+        // 先撤销 admission authority，再等待旧 FIFO drain。这样恢复后的
+        // physical write 即使越过 await，也只能结算旧 incarnation，不能摸到
+        // 后续 reopen 的新 Channel。
+        activeInteractiveInputIncarnation = nil
+        activeInteractiveInputTransaction = nil
+        let oldInputTail = interactiveInputTail
+        interactiveInputTail = nil
+
         guard let channel = shellChannel else {
+            await oldInputTail?.value
             return
         }
         shellChannel = nil
+
+        await oldInputTail?.value
 
         let closeTask = Task {
             await performTrackedGracefulShellChannelClose(channel)
@@ -438,6 +980,8 @@ extension SSHConnection {
         while shellChannelOpenTask != nil
             || shellChannelCloseTask != nil
             || shellChannel != nil
+            || activeInteractiveInputIncarnation != nil
+            || interactiveInputTail != nil
         {
             if let openTask = shellChannelOpenTask {
                 _ = try? await openTask.value

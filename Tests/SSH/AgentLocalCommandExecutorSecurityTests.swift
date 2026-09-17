@@ -272,9 +272,12 @@ final class AgentLocalCommandExecutorSecurityTests: XCTestCase {
     // MARK: - §77/§78/§79 provider / view-model 边界
 
     func testProviderAdvertisesRunCommandOnlyThroughB4Allowlist() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 5)
+        // 10F-B4-S1：catalog 精确扩大为 6（+ send_to_terminal，任务书 §40）。
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 6)
         XCTAssertTrue(AgentToolCatalog.names.contains("run_command"))
+        XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("run_command"))
+        XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
         XCTAssertEqual(
             AgentToolCallParsing.parse(name: "run_command", argumentsJSON: #"{"command":"ls"}"#),
             .success(AgentToolCall(.runCommand, arguments: ["command": "ls"]))

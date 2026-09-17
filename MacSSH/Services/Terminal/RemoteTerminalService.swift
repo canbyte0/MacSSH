@@ -1,6 +1,32 @@
 import AppKit
 import SwiftTerm
 
+/// SwiftTerm delegate 回调是 nonisolated；该小型 lock-protected snapshot 让回调
+/// 能在 admission 时同步捕获 immutable endpoint，而不是把 `self.connection`
+/// 延迟到 MainActor Task 执行时再读取。
+private final class RemoteTerminalInputAdmission: @unchecked Sendable {
+    private let lock = NSLock()
+    private var endpoint: SSHInteractiveInputEndpoint?
+
+    func capture() -> SSHInteractiveInputEndpoint? {
+        lock.lock()
+        defer { lock.unlock() }
+        return endpoint
+    }
+
+    func install(_ endpoint: SSHInteractiveInputEndpoint) {
+        lock.lock()
+        self.endpoint = endpoint
+        lock.unlock()
+    }
+
+    func clear() {
+        lock.lock()
+        endpoint = nil
+        lock.unlock()
+    }
+}
+
 /// Phase 7 Remote SSH Terminal 的拥有者：SwiftTerm `TerminalView` ↔ SSH Shell Channel。
 ///
 /// 职责（任务书第 6 节）：
@@ -11,7 +37,8 @@ import SwiftTerm
 ///   Password / Passphrase。
 ///
 /// 数据路径：
-/// - 输入：Keyboard → SwiftTerm → `TerminalViewDelegate.send` → actor `writeChannelInput`。
+/// - 输入：Keyboard → SwiftTerm → `TerminalViewDelegate.send` → immutable endpoint
+///   → actor acknowledged FIFO；兼容调用仍由 `writeChannelInput` 映射回 throwing API。
 /// - 输出：SSH Channel → 读取循环（EAGAIN poll，无 busy-loop）→ `terminalView.feed`
 ///   按原始 byte stream 消费（不做 String 重编码，保护 UTF-8 / ANSI / Emoji 边界）。
 /// - Resize：SwiftTerm sizeChanged → actor `resizeChannelPTY`（远端 tput cols/lines 同步）。
@@ -19,6 +46,14 @@ import SwiftTerm
 final class RemoteTerminalService: NSObject {
     /// View 只观察该状态对象。
     let session: RemoteTerminalSession
+
+    /// 与 ManagedTerminalSession 相同的逻辑身份；Remote mutation endpoint
+    /// 的第一层目标绑定，不从 active tab 或当前会话推导。
+    let logicalSessionID: UUID
+
+    /// B1 request 中已有的 Remote 展示快照；它只用于 endpoint 对账，
+    /// 绝不作为连接寻址或重连解析依据。
+    let hostDisplayName: String
 
     /// SwiftTerm 官方 AppKit 终端视图；显示能力（Font/Scrollback/选择/搜索/外观）
     /// 与 Local Terminal 同源。
@@ -32,6 +67,18 @@ final class RemoteTerminalService: NSObject {
     /// Reconnect（Phase 8）时通过 `reattach(connection:)` 替换为新连接；
     /// 调用前旧连接必须已完成 disconnect（SessionManager 保证顺序）。
     private var connection: SSHConnection
+
+    /// 当前 Remote shell incarnation 的 exact Agent mutation capability。
+    /// 该对象强持有 B3 input endpoint；Reconnect / stop / shell exit 时撤销。
+    private var currentMutationEndpoint: AgentRemoteTerminalMutationEndpoint?
+
+    /// 同一 logical session 内每次新建 Remote shell 都得到新的 B1 target epoch。
+    /// 不从 SSH generation、channel pointer 或 TerminalView identity 派生。
+    private var nextInputTargetEpoch: AgentTerminalInputTargetEpoch = 0
+
+    /// SwiftTerm 输入 admission 的 immutable endpoint 快照。
+    /// Reconnect / stop 时先清空；新的 Shell active 后再安装新 incarnation。
+    private let inputAdmission = RemoteTerminalInputAdmission()
 
     /// 持续拉取远端输出的读取循环。
     private var readLoopTask: Task<Void, Never>?
@@ -62,8 +109,16 @@ final class RemoteTerminalService: NSObject {
     /// 状态写入前调用。生产环境恒为 nil。
     var testReadLoopExitHook: (@MainActor () async -> Void)?
 
-    init(connection: SSHConnection, hostname: String, port: Int) {
+    init(
+        connection: SSHConnection,
+        hostname: String,
+        port: Int,
+        logicalSessionID: UUID = UUID(),
+        hostDisplayName: String? = nil
+    ) {
         self.connection = connection
+        self.logicalSessionID = logicalSessionID
+        self.hostDisplayName = hostDisplayName ?? hostname
         self.session = RemoteTerminalSession(hostname: hostname, port: port)
 
         // 与 Local Terminal 相同的显示设置来源：同字体、xterm-256color、
@@ -160,9 +215,37 @@ final class RemoteTerminalService: NSObject {
                     }
                 }
 
+                guard let inputEndpoint = await openConnection.interactiveInputEndpoint() else {
+                    await openConnection.closeShellChannel()
+                    session.phase = .failed(.channelClosed)
+                    feedLocalNotice("Terminal input is unavailable because the shell is closed.")
+                    return
+                }
+
+                // endpoint 查询本身跨 actor；恢复期间若 stop / reattach 已经
+                // 到达，旧代次不得重新安装回 admission snapshot。
+                guard !hasStopped, runtimeGeneration == generation else {
+                    await openConnection.closeShellChannel()
+                    return
+                }
+
+                // 先为这次 exact connection + shell incarnation 创建 immutable
+                // Agent capability，再发布 active 状态。后续 mutation 只使用
+                // 该对象，不读取可变 connection，也不依赖 TerminalView identity。
+                nextInputTargetEpoch &+= 1
+                currentMutationEndpoint = AgentRemoteTerminalMutationEndpoint(
+                    logicalSessionID: logicalSessionID,
+                    inputTargetEpoch: nextInputTargetEpoch,
+                    endpointToken: AgentTerminalEndpointToken.generate(),
+                    hostDisplayName: hostDisplayName,
+                    inputEndpoint: inputEndpoint,
+                    terminalView: terminalView
+                )
+                inputAdmission.install(inputEndpoint)
                 session.phase = .active
                 startReadLoop()
             } catch {
+                invalidateMutationEndpoint()
                 // stop() 已请求（打开被取消等）：静默退出，不更新状态。
                 guard !hasStopped else {
                     return
@@ -220,6 +303,9 @@ final class RemoteTerminalService: NSObject {
             return
         }
         hasStopped = true
+        // 阻止新旧 terminal bytes 在 stop / reconnect 期间继续 admission。
+        inputAdmission.clear()
+        invalidateMutationEndpoint()
         openTask?.cancel()
         readLoopTask?.cancel()
 
@@ -250,6 +336,10 @@ final class RemoteTerminalService: NSObject {
     /// **等待**旧任务全部退出，随后才替换连接并递增代次。绝不复用
     /// 已释放的 `LIBSSH2_SESSION *` / `LIBSSH2_CHANNEL *`。
     func reattach(connection newConnection: SSHConnection) async {
+        // 即使当前没有 read/open task，也必须先撤销旧输入快照；同一
+        // TerminalView 的后续 delegate 回调不能再进入旧连接 authority。
+        inputAdmission.clear()
+        invalidateMutationEndpoint()
         if hasStarted {
             await stopBarrier()
         }
@@ -262,6 +352,34 @@ final class RemoteTerminalService: NSObject {
         session.currentDirectory = nil
         feedLocalNotice("--- Reconnected ---")
         AppLogger.terminal.info("Remote terminal reattached to a new connection")
+    }
+
+    /// 测试专用 endpoint 注入，用来复现 delegate Task 在 reattach 前后延迟
+    /// 恢复的历史竞态；生产路径只在 Shell active 后由 `startIfNeeded()` 安装。
+    func installTestInputEndpoint(_ endpoint: SSHInteractiveInputEndpoint) {
+        inputAdmission.install(endpoint)
+    }
+
+    /// 返回当前 Remote shell incarnation 的 immutable Agent capability。
+    /// 仅 active 且仍有效时可见；opening / failed / exited / reconnecting
+    /// 状态不暴露 endpoint，调用方必须把返回值作为 side-effect entry 的
+    /// exact capability 保存并显式传入 executor。
+    func agentRemoteTerminalMutationEndpoint() -> AgentRemoteTerminalMutationEndpoint? {
+        guard session.phase == .active,
+              let endpoint = currentMutationEndpoint,
+              endpoint.isAvailable
+        else {
+            return nil
+        }
+        return endpoint
+    }
+
+    /// 失效当前 shell incarnation 的 Remote mutation capability，并清除
+    /// service 对它的 active 引用；外部已保存的旧 endpoint 仍然保持绑定到
+    /// 原连接，但其后续 transaction admission 会被拒绝。
+    private func invalidateMutationEndpoint() {
+        currentMutationEndpoint?.invalidate()
+        currentMutationEndpoint = nil
     }
 
     /// 终端重新进入可见 Workspace 后恢复键盘焦点。
@@ -378,6 +496,8 @@ final class RemoteTerminalService: NSObject {
     /// 关闭使用**捕获的**连接并在本任务内等待完成：`stopBarrier()`
     /// 等待读取循环退出即同时覆盖该清理，不留延迟关闭跨越 reattach。
     private func handleShellExit(connection closedConnection: SSHConnection) async {
+        inputAdmission.clear()
+        invalidateMutationEndpoint()
         session.phase = .exited
         feedLocalNotice("[Remote shell exited]")
         await closedConnection.closeShellChannel()
@@ -390,6 +510,8 @@ final class RemoteTerminalService: NSObject {
         _ error: RemoteTerminalError,
         connection closedConnection: SSHConnection
     ) async {
+        inputAdmission.clear()
+        invalidateMutationEndpoint()
         switch error {
         case .channelClosed:
             session.phase = .exited
@@ -429,15 +551,19 @@ extension RemoteTerminalService: TerminalViewDelegate {
     /// SwiftTerm 在主线程调用 delegate；发送 SwiftTerm 产生的原始字节流，
     /// 不把键盘事件转成 Shell 命令字符串。
     nonisolated func send(source: TerminalView, data: ArraySlice<UInt8>) {
-        Task { @MainActor [weak self] in
-            guard let self else {
-                return
-            }
-            do {
-                try await self.connection.writeChannelInput(data)
-            } catch {
-                // 写入失败：状态交给读取循环统一收敛（EOF/断开），此处只记录。
-                AppLogger.terminal.error("Remote terminal input delivery failed")
+        // 关键安全边界：在这里同步捕获 endpoint。Task 恢复时即使
+        // `reattach(connection:)` 已经替换了 service.connection，也只会回到
+        // 旧 SSHConnection / 旧 shell incarnation，绝不改投新连接。
+        guard let endpoint = inputAdmission.capture() else {
+            return
+        }
+        let bytes = Array(data)
+        Task {
+            let result = await endpoint.writeAcknowledged(bytes)
+            if let error = result.error {
+                // 写入失败：状态交给读取循环统一收敛（EOF/断开），此处只记录
+                // 通用错误，不输出输入 payload。
+                AppLogger.terminal.error("Remote terminal input delivery failed: \(String(describing: error))")
             }
         }
     }

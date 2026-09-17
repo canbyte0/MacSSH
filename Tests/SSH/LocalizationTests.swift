@@ -131,6 +131,82 @@ final class LocalizationTests: XCTestCase {
         XCTAssertFalse(source.contains(".accessibilityElement(children: .combine)"))
         XCTAssertTrue(source.contains("Self.approveAccessibilityIdentifier"))
         XCTAssertTrue(source.contains("Self.denyAccessibilityIdentifier"))
+        // 10F-B4-S1 §23/§56：terminal mutation 审批按钮独立稳定标识；
+        // 容器绝不整体可 Press（无 onTapGesture / 无 Button 包裹整卡）。
+        XCTAssertTrue(source.contains("Self.terminalApproveAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.terminalDenyAccessibilityIdentifier"))
+        XCTAssertFalse(source.contains(".onTapGesture"))
+    }
+
+    // MARK: - 10F-B4-S1 terminal mutation 文案
+
+    /// §21/§22/§57：terminal mutation 审批文案必须完整本地化且措辞准确。
+    func testTerminalMutationDisclosureIsLocalizedAndAccurate() {
+        let keys = [
+            "agent.tool.send_to_terminal",
+            "agent.terminal.target",
+            "agent.terminal.submit",
+            "agent.terminal.submit.yes",
+            "agent.terminal.submit.no",
+            "agent.terminal.text",
+            "agent.terminal.disclosure",
+            "agent.terminal.approve",
+            "agent.terminal.deny",
+            "agent.terminal.approve.hint",
+            "agent.terminal.deny.hint",
+            "agent.tool.status.partial",
+            "agent.provider.error.terminal_mutation_uncertain",
+        ]
+        for key in keys {
+            let zh = L10n.string(key, defaultValue: "", locale: AppLanguage.simplifiedChinese.locale)
+            let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
+            XCTAssertFalse(zh.isEmpty, "zh-Hans missing: \(key)")
+            XCTAssertFalse(en.isEmpty, "en missing: \(key)")
+            XCTAssertNotEqual(zh, key, "zh-Hans leaked raw key: \(key)")
+            XCTAssertNotEqual(en, key, "en leaked raw key: \(key)")
+        }
+
+        // §21 披露完整性（两 Locale）。
+        for locale in [AppLanguage.simplifiedChinese.locale, AppLanguage.english.locale] {
+            let disclosure = L10n.string(
+                "agent.terminal.disclosure",
+                defaultValue: "",
+                locale: locale
+            )
+            XCTAssertFalse(disclosure.isEmpty)
+            if locale.identifier.hasPrefix("zh") {
+                XCTAssertTrue(disclosure.contains("交互终端"))
+                XCTAssertTrue(disclosure.contains("回车"))
+                XCTAssertTrue(disclosure.contains("不会捕获终端输出"))
+            } else {
+                XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("interactive terminal"))
+                XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("Return"))
+                XCTAssertTrue(disclosure.localizedCaseInsensitiveContains("not captured"))
+            }
+            // §22：绝不把 submit=false 描述为不执行 / 仅粘贴 / 安全。
+            for misstatement in [
+                "不会执行", "仅粘贴", "只粘贴", "安全",
+                "will not execute", "only paste", "safe to run", "safe to review",
+            ] {
+                XCTAssertFalse(
+                    disclosure.localizedCaseInsensitiveContains(misstatement),
+                    "disclosure 不得包含失实措辞：\(misstatement)"
+                )
+            }
+        }
+    }
+
+    /// §56：审批按钮文案两 Locale 完整（与既有 command 按钮语言无关标识配套）。
+    func testTerminalMutationApprovalButtonsAreLocalized() {
+        for (key, zhContains, enContains) in [
+            ("agent.terminal.approve", "批准", "Approve"),
+            ("agent.terminal.deny", "拒绝", "Deny"),
+        ] {
+            let zh = L10n.string(key, defaultValue: "", locale: AppLanguage.simplifiedChinese.locale)
+            let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
+            XCTAssertTrue(zh.contains(zhContains), "\(key) zh: \(zh)")
+            XCTAssertTrue(en.contains(enContains), "\(key) en: \(en)")
+        }
     }
 
     // MARK: - 动态字符串插值

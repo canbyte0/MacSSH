@@ -22,6 +22,11 @@ enum AgentFailureKind: Sendable, Equatable {
     /// B4 §28/§43：执行工具时目标终端会话已不可用（关闭 / 断开）——
     /// 无法继续的错误，generation 安全收尾。
     case sessionUnavailable
+    /// 10F-B4-S1 §29：terminal mutation 交付结果为 partial / uncertain
+    /// （已确认前缀副作用存在 / 终端输入状态未知 / accepted prefix 后
+    /// 连接丢失）——同一 generation 内绝不自动续 Provider，loop 结构化
+    /// 停止并 surfaced 用户可见交付状态。
+    case terminalMutationUncertain
     case generic
 }
 
