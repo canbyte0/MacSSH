@@ -40,6 +40,18 @@ final class AgentViewModel {
     private let localMutationExecutor: AgentLocalTerminalMutationExecutor
     private let remoteMutationExecutor: AgentRemoteTerminalMutationExecutor
 
+    /// 10F-C3 Local file write 的独立 one-time approval authority；不与
+    /// command 或 interactive terminal mutation coordinator 混用。
+    private let fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator
+    /// C2 executor 的构造 seam：production 只构造 accepted Local executor，
+    /// focused loop tests 可注入相同 C2 语义的 deterministic executor。
+    private let localFileMutationExecutorFactory:
+        @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor
+
     /// 按 origin sessionID 冻结一次 mutation endpoint capability
     /// （§13：proposal admission 时刻解析；§14：绝不延迟到 Approve /
     /// executor 启动，绝无 active-tab fallback）。nil = 未接线（测试默认），
@@ -85,6 +97,12 @@ final class AgentViewModel {
         mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator = AgentTerminalMutationApprovalCoordinator(),
         localMutationExecutor: AgentLocalTerminalMutationExecutor? = nil,
         remoteMutationExecutor: AgentRemoteTerminalMutationExecutor? = nil,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator = AgentFileMutationApprovalCoordinator(),
+        localFileMutationExecutorFactory: (@Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor)? = nil,
         mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)? = nil,
         activeSessionProvider: @escaping @MainActor () -> ManagedTerminalSession?,
         allSessionsProvider: @escaping @MainActor () -> [ManagedTerminalSession],
@@ -110,6 +128,15 @@ final class AgentViewModel {
             ?? AgentRemoteTerminalMutationExecutor(
                 approvalCoordinator: mutationApprovalCoordinator
             )
+        self.fileMutationApprovalCoordinator = fileMutationApprovalCoordinator
+        self.localFileMutationExecutorFactory = localFileMutationExecutorFactory
+            ?? { authorization, targetCapability, approvalCoordinator in
+                AgentLocalFileMutationExecutor(
+                    authorization: authorization,
+                    targetCapability: targetCapability,
+                    approvalCoordinator: approvalCoordinator
+                )
+            }
         self.mutationEndpointProvider = mutationEndpointProvider
         self.activeSessionProvider = activeSessionProvider
         self.allSessionsProvider = allSessionsProvider
@@ -200,6 +227,7 @@ final class AgentViewModel {
         Task {
             _ = await approvalCoordinator.cancelGeneration(generationID)
             _ = await mutationApprovalCoordinator.cancelGeneration(generationID)
+            _ = await fileMutationApprovalCoordinator.cancelGeneration(generationID)
         }
     }
 
@@ -220,6 +248,10 @@ final class AgentViewModel {
             Task {
                 _ = await mutationApprovalCoordinator.approve(approvalID)
             }
+        } else if activity.toolName == AgentToolName.writeFile.rawValue {
+            Task {
+                _ = await fileMutationApprovalCoordinator.approve(approvalID)
+            }
         } else {
             Task {
                 _ = await approvalCoordinator.approve(approvalID)
@@ -239,6 +271,10 @@ final class AgentViewModel {
         if activity.toolName == AgentToolName.sendToTerminal.rawValue {
             Task {
                 _ = await mutationApprovalCoordinator.deny(approvalID)
+            }
+        } else if activity.toolName == AgentToolName.writeFile.rawValue {
+            Task {
+                _ = await fileMutationApprovalCoordinator.deny(approvalID)
             }
         } else {
             Task {
@@ -265,6 +301,8 @@ final class AgentViewModel {
                 _ = await approvalCoordinator.purgeSession(sessionID)
                 _ = await mutationApprovalCoordinator.cancelSession(sessionID)
                 _ = await mutationApprovalCoordinator.purgeSession(sessionID)
+                _ = await fileMutationApprovalCoordinator.cancelSession(sessionID)
+                _ = await fileMutationApprovalCoordinator.purgeSession(sessionID)
             }
             // 该会话的 pending mutation endpoint 引用随 conversation 一起
             // 清理（endpoint 对象仍绑定旧 incarnation，其 admission 自会
@@ -318,6 +356,8 @@ final class AgentViewModel {
         let mutationApprovalCoordinator = self.mutationApprovalCoordinator
         let localMutationExecutor = self.localMutationExecutor
         let remoteMutationExecutor = self.remoteMutationExecutor
+        let fileMutationApprovalCoordinator = self.fileMutationApprovalCoordinator
+        let localFileMutationExecutorFactory = self.localFileMutationExecutorFactory
         let mutationEndpointProvider = self.mutationEndpointProvider
 
         let task = Task { @MainActor [weak self] in
@@ -377,6 +417,8 @@ final class AgentViewModel {
                 mutationApprovalCoordinator: mutationApprovalCoordinator,
                 localMutationExecutor: localMutationExecutor,
                 remoteMutationExecutor: remoteMutationExecutor,
+                fileMutationApprovalCoordinator: fileMutationApprovalCoordinator,
+                localFileMutationExecutorFactory: localFileMutationExecutorFactory,
                 mutationEndpointProvider: mutationEndpointProvider,
                 toolRouter: toolRouter,
                 firstAssistantID: firstAssistantID
@@ -405,6 +447,12 @@ final class AgentViewModel {
         mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
         localMutationExecutor: AgentLocalTerminalMutationExecutor,
         remoteMutationExecutor: AgentRemoteTerminalMutationExecutor,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator,
+        localFileMutationExecutorFactory: @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor,
         mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?,
         toolRouter: AgentToolRouter,
         firstAssistantID: UUID
@@ -466,6 +514,7 @@ final class AgentViewModel {
                             generationProvider: generationProvider,
                             approvalCoordinator: approvalCoordinator,
                             mutationApprovalCoordinator: mutationApprovalCoordinator,
+                            fileMutationApprovalCoordinator: fileMutationApprovalCoordinator,
                             mutationEndpointProvider: mutationEndpointProvider,
                             conversation: conversation
                         )
@@ -528,6 +577,8 @@ final class AgentViewModel {
                         mutationApprovalCoordinator: mutationApprovalCoordinator,
                         localMutationExecutor: localMutationExecutor,
                         remoteMutationExecutor: remoteMutationExecutor,
+                        fileMutationApprovalCoordinator: fileMutationApprovalCoordinator,
+                        localFileMutationExecutorFactory: localFileMutationExecutorFactory,
                         toolRouter: toolRouter,
                         conversation: conversation
                     )
@@ -599,7 +650,8 @@ final class AgentViewModel {
         let cardID: UUID
     }
 
-    /// Provider call 到达时建立卡片。run_command / send_to_terminal 严格
+    /// Provider call 到达时建立卡片。run_command / send_to_terminal /
+    /// write_file 严格
     /// 执行：validate → immutable request → register → visible card；
     /// read-only call 则立即发布 running card，保持原有 streaming/Stop
     /// 可观察性。
@@ -612,6 +664,7 @@ final class AgentViewModel {
         generationProvider: any AgentProvider,
         approvalCoordinator: AgentCommandApprovalCoordinator,
         mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator,
         mutationEndpointProvider: (@MainActor (UUID) async -> AgentTerminalMutationEndpointCapability?)?,
         conversation: AgentConversation
     ) async -> UUID {
@@ -624,6 +677,19 @@ final class AgentViewModel {
                 generationProvider: generationProvider,
                 mutationApprovalCoordinator: mutationApprovalCoordinator,
                 mutationEndpointProvider: mutationEndpointProvider,
+                conversation: conversation
+            )
+        }
+
+        if providerCall.name == AgentToolName.writeFile.rawValue {
+            return await appendFileMutationCard(
+                providerCall,
+                generationID: generationID,
+                sessionID: sessionID,
+                frozenHandle: frozenHandle,
+                providerSnapshotID: providerSnapshotID,
+                generationProvider: generationProvider,
+                fileMutationApprovalCoordinator: fileMutationApprovalCoordinator,
                 conversation: conversation
             )
         }
@@ -799,6 +865,126 @@ final class AgentViewModel {
         }
     }
 
+    /// 10F-C3 write_file proposal（§14–§18）：仅允许 Local；在 card 可见
+    /// 前完成严格 parse、proposal-time write scope / parent capability 捕获、
+    /// exact payload freeze 与 file approval 登记。任何失败都只生成零副作用
+    /// 的结构化失败 card，不会触碰 C2 executor。
+    private func appendFileMutationCard(
+        _ providerCall: AgentProviderToolCall,
+        generationID: UUID,
+        sessionID: UUID,
+        frozenHandle: AgentTerminalSessionHandle,
+        providerSnapshotID: UUID,
+        generationProvider: any AgentProvider,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator,
+        conversation: AgentConversation
+    ) async -> UUID {
+        let parsed: AgentToolCall
+        switch AgentToolCallParsing.parse(
+            name: providerCall.name,
+            argumentsJSON: providerCall.argumentsJSON
+        ) {
+        case .failure(let error):
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                to: conversation
+            )
+        case .success(let value):
+            parsed = value
+        }
+
+        guard frozenHandle.sessionKind == .local else {
+            // C3 是 Local-only；绝不把同一个 Provider path 降级到 SFTP、
+            // SSH exec 或 Remote terminal。
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentToolError.unsupportedForSession
+                ),
+                to: conversation
+            )
+        }
+
+        guard let path = parsed.path, let content = parsed.content else {
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(
+                    error: AgentToolError.invalidArguments
+                ),
+                to: conversation
+            )
+        }
+
+        let providerMetadata = generationProvider.commandProviderMetadata
+        let providerBinding = AgentCommandProviderBinding(
+            snapshotID: providerSnapshotID,
+            provider: providerMetadata.provider,
+            model: providerMetadata.model,
+            baseURL: providerMetadata.baseURL
+        )
+
+        let writeScope: AgentWriteScope
+        switch AgentWriteScope.make(
+            logicalSessionID: sessionID,
+            workingDirectory: frozenHandle.workingDirectory
+        ) {
+        case .failure(let error):
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                to: conversation
+            )
+        case .success(let value):
+            writeScope = value
+        }
+
+        let proposal = await AgentFileMutationRequestFactory.make(
+            generationID: generationID,
+            callID: providerCall.callID,
+            logicalSessionID: sessionID,
+            writeScope: writeScope,
+            userSuppliedPath: path,
+            content: content,
+            providerBinding: providerBinding,
+            createdAt: Date()
+        )
+
+        let request: AgentFileMutationRequest
+        switch proposal {
+        case .failure(let error):
+            return appendFailedToolCard(
+                providerCall,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                to: conversation
+            )
+        case .success(let value):
+            request = value
+        }
+
+        let approvalID = await fileMutationApprovalCoordinator.register(request)
+        // register 对同一 generation/call 是幂等的；重放时沿用第一次
+        // proposal 的 immutable request，不能让第二次 Provider 参数替换
+        // target/payload 或获得新的 parent capability。
+        let recordedRequest = await fileMutationApprovalCoordinator
+            .snapshot(approvalID: approvalID)?.request ?? request
+        if recordedRequest.parentCapability !== request.parentCapability {
+            // 第二次 proposal 可能已经捕获了一个新的 parent FD；它没有
+            // 进入 authoritative ledger，必须立即关闭，避免 replay 泄漏。
+            _ = await request.parentCapability.invalidate()
+        }
+        let activity = AgentToolActivity(
+            callID: providerCall.callID,
+            toolName: providerCall.name,
+            argumentsJSON: providerCall.argumentsJSON,
+            displayTarget: recordedRequest.displayPath,
+            approvalID: approvalID,
+            fileMutationRequest: recordedRequest,
+            status: .awaitingApproval
+        )
+        return appendToolCard(activity, to: conversation)
+    }
+
     /// 零副作用失败卡片（结构化 tool error；call_id 配对恒成立）。
     private func appendFailedToolCard(
         _ providerCall: AgentProviderToolCall,
@@ -832,6 +1018,12 @@ final class AgentViewModel {
         mutationApprovalCoordinator: AgentTerminalMutationApprovalCoordinator,
         localMutationExecutor: AgentLocalTerminalMutationExecutor,
         remoteMutationExecutor: AgentRemoteTerminalMutationExecutor,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator,
+        localFileMutationExecutorFactory: @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor,
         toolRouter: AgentToolRouter,
         conversation: AgentConversation
     ) async throws -> ToolExecutionOutcome {
@@ -852,6 +1044,28 @@ final class AgentViewModel {
             return .completed
         case .success(let call):
             parsedCall = call
+        }
+
+        if parsedCall.name == AgentToolName.writeFile.rawValue {
+            guard
+                let activity = conversation.messages.first(where: { $0.id == cardID })?.toolActivity,
+                let approvalID = activity.approvalID,
+                let request = activity.fileMutationRequest
+            else {
+                // 参数或 proposal admission 已失败；此处是防御性 no-op。
+                return .completed
+            }
+            return try await executeWriteFile(
+                cardID: cardID,
+                approvalID: approvalID,
+                request: request,
+                generationID: generationID,
+                sessionID: sessionID,
+                providerSnapshotID: providerSnapshotID,
+                fileMutationApprovalCoordinator: fileMutationApprovalCoordinator,
+                localFileMutationExecutorFactory: localFileMutationExecutorFactory,
+                conversation: conversation
+            )
         }
 
         if parsedCall.name == AgentToolName.sendToTerminal.rawValue {
@@ -933,6 +1147,181 @@ final class AgentViewModel {
             return .fatalSessionUnavailable
         case .failure(let error):
             // §28：普通 tool error 是 result，模型可以解释并继续。
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: AgentToolResultSerializer.serialize(error: error),
+                isError: true
+            )
+            return .completed
+        }
+    }
+
+    /// 10F-C3 write_file 执行闭环：等待显式决定 → C1 原子 claim →
+    /// accepted C2 Local executor → sanitized publication result。只有
+    /// C2 executor 可以触碰 filesystem；本方法不重取 path/content，也不
+    /// 把 published + cleanupResidue 误报为失败或触发重试。
+    private func executeWriteFile(
+        cardID: UUID,
+        approvalID: UUID,
+        request: AgentFileMutationRequest,
+        generationID: UUID,
+        sessionID: UUID,
+        providerSnapshotID: UUID,
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator,
+        localFileMutationExecutorFactory: @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor,
+        conversation: AgentConversation
+    ) async throws -> ToolExecutionOutcome {
+        do {
+            let decision = try await fileMutationApprovalCoordinator.awaitDecision(
+                approvalID: approvalID
+            )
+            switch decision {
+            case .denied:
+                // Deny 已由 coordinator 失效 capability；再次 invalidate
+                // 是幂等的防御性收尾，仍然不产生任何 filesystem mutation。
+                _ = await request.parentCapability.invalidate()
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .denied,
+                    resultJSON: AgentToolResultSerializer.userDeniedOutput,
+                    isError: true
+                )
+                return .completed
+            case .cancelled:
+                _ = await request.parentCapability.invalidate()
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .cancelled,
+                    resultJSON: AgentToolResultSerializer.cancelledOutput,
+                    isError: true
+                )
+                throw CancellationError()
+            case .approved:
+                // Stop 与 Approve 的竞争在 claim 前再检查一次；取消不能
+                // 通过 stale UI card 进入 C2。
+                try Task.checkCancellation()
+            }
+
+            let authorization: AgentFileMutationExecutionAuthorization
+            do {
+                authorization = try await fileMutationApprovalCoordinator.claimExecution(
+                    approvalID: approvalID,
+                    expected: AgentFileMutationClaimExpectations(
+                        generationID: generationID,
+                        callID: request.callID,
+                        logicalSessionID: sessionID,
+                        providerSnapshotID: providerSnapshotID,
+                        targetIdentity: request.targetIdentity
+                    )
+                )
+            } catch let error as AgentFileMutationError {
+                _ = await request.parentCapability.invalidate()
+                if error == .generationCancelled {
+                    conversation.updateToolActivity(
+                        cardID,
+                        status: .cancelled,
+                        resultJSON: AgentToolResultSerializer.cancelledOutput,
+                        isError: true
+                    )
+                    throw CancellationError()
+                }
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .failure,
+                    resultJSON: AgentToolResultSerializer.serialize(error: error),
+                    isError: true
+                )
+                return .completed
+            }
+
+            let executionCapability = authorization.request.parentCapability
+            // claim 成功即代表已获唯一授权；先发布 running，再让 C2
+            // executor 观察 redeem。此后不再出现第二个 Approve/Deny 窗口。
+            conversation.updateToolActivity(
+                cardID,
+                status: .running,
+                resultJSON: "",
+                isError: false
+            )
+
+            let executor = localFileMutationExecutorFactory(
+                authorization,
+                executionCapability,
+                fileMutationApprovalCoordinator
+            )
+            let result = await executor.execute()
+            // C2 已完成其 side effect / cleanup 尝试；关闭 proposal-owned
+            // parent FD，避免 approval record 的 capability 长期占用资源。
+            _ = await executionCapability.invalidate()
+
+            let serialized = AgentToolResultSerializer.serialize(
+                fileMutationResult: result,
+                request: authorization.request
+            )
+
+            if result.published {
+                // published=true 是不可逆事实。即便 Stop 与 publication
+                // 竞态发生，也必须保留成功（含 cleanup warning）而不能
+                // 转成 retryable "not executed"。
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .success,
+                    resultJSON: serialized,
+                    isError: false
+                )
+                return .completed
+            }
+
+            if result.error == nil {
+                // C2 当前总是提供 published Bool + stable error；若未来
+                // seam 允许出现无 error 的 unpublished 结果，按 unknown
+                // publication state 立即停止 loop，绝不自动重试。
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .partial,
+                    resultJSON: serialized,
+                    isError: true
+                )
+                return .fatalMutationUncertain
+            }
+
+            if Task.isCancelled || result.error == .cancelled {
+                conversation.updateToolActivity(
+                    cardID,
+                    status: .cancelled,
+                    resultJSON: AgentToolResultSerializer.cancelledOutput,
+                    isError: true
+                )
+                throw CancellationError()
+            }
+
+            // 确定性 unpublished failure 可作为一次 tool result 回给
+            // Provider；Agent loop 不会基于它自动重新执行 write_file。
+            conversation.updateToolActivity(
+                cardID,
+                status: .failure,
+                resultJSON: serialized,
+                isError: true
+            )
+            return .completed
+        } catch is CancellationError {
+            // 对等待/claim 阶段的取消做统一安全收尾。若 C2 已返回
+            // published=true，上面的成功分支已经返回，不会被这里覆盖。
+            _ = await request.parentCapability.invalidate()
+            conversation.updateToolActivity(
+                cardID,
+                status: .cancelled,
+                resultJSON: AgentToolResultSerializer.cancelledOutput,
+                isError: true
+            )
+            throw CancellationError()
+        } catch let error as AgentFileMutationError {
+            _ = await request.parentCapability.invalidate()
             conversation.updateToolActivity(
                 cardID,
                 status: .failure,

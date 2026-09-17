@@ -184,6 +184,9 @@ final class AgentToolResultSerializerTests: XCTestCase {
             .binaryUnsupported: "binaryUnsupported",
             .cancelled: "cancelled",
             .internalFailure: "internalFailure",
+            .commandRequiresApproval: "commandRequiresApproval",
+            .terminalMutationRequiresApproval: "terminalMutationRequiresApproval",
+            .fileMutationRequiresApproval: "fileMutationRequiresApproval",
         ]
         for (error, name) in expected {
             let object = try json(AgentToolResultSerializer.serialize(error: error))
@@ -191,6 +194,88 @@ final class AgentToolResultSerializerTests: XCTestCase {
             XCTAssertEqual(object["error"] as? String, name)
             XCTAssertEqual(AgentToolResultSerializer.name(of: error), name)
         }
+    }
+
+    /// C3：published + cleanup residue 仍是成功；结果只带允许的状态、目标
+    /// 展示路径、字节计数与清理元数据，绝不回显 content 或 capability identity。
+    func testFileMutationPublishedResultIsSuccessWithCleanupWarningAndRedacted() async throws {
+        let root = try AgentFileMutationTestSupport.makeTemporaryRoot()
+        defer { AgentFileMutationTestSupport.removeTemporaryRoot(root) }
+        let content = "private payload 中文🙂\n"
+        let request = try await AgentFileMutationTestSupport.makeRequest(
+            root: root,
+            path: "created.txt",
+            content: content,
+            callID: "serializer-published"
+        )
+        let result = AgentLocalFileMutationResult(
+            published: true,
+            publicationMethod: .fallbackLink,
+            payloadBytesRequested: Data(content.utf8).count,
+            payloadBytesWrittenToTemp: Data(content.utf8).count,
+            cleanupComplete: false,
+            cleanupResidue: true,
+            error: .cleanupResidue
+        )
+
+        let serialized = AgentToolResultSerializer.serialize(
+            fileMutationResult: result,
+            request: request
+        )
+        let object = try json(serialized)
+        XCTAssertEqual(object["ok"] as? Bool, true)
+        XCTAssertEqual(object["status"] as? String, "published")
+        XCTAssertEqual(object["published"] as? Bool, true)
+        XCTAssertEqual(object["path"] as? String, request.displayPath)
+        XCTAssertEqual(object["publicationMethod"] as? String, "fallbackLink")
+        XCTAssertEqual(object["payloadBytesRequested"] as? Int, Data(content.utf8).count)
+        XCTAssertEqual(object["payloadBytesWritten"] as? Int, Data(content.utf8).count)
+        XCTAssertEqual(object["cleanupComplete"] as? Bool, false)
+        XCTAssertEqual(object["cleanupResidue"] as? Bool, true)
+        XCTAssertEqual(
+            Set(object.keys),
+            ["ok", "status", "path", "published", "publicationMethod",
+             "payloadBytesRequested", "payloadBytesWritten", "cleanupComplete",
+             "cleanupResidue"]
+        )
+        XCTAssertFalse(serialized.contains(content))
+        XCTAssertFalse(serialized.contains(request.targetIdentity.targetToken.uuidString))
+        XCTAssertFalse(serialized.contains(request.targetIdentity.parentCapabilityIdentity.capabilityToken.uuidString))
+        XCTAssertFalse(serialized.contains("parentCapability"))
+    }
+
+    /// C3：未发布的确定性失败可以回给 Provider，但不伪造 creation/published。
+    func testFileMutationUnpublishedFailureIsStableAndDoesNotEchoContent() async throws {
+        let root = try AgentFileMutationTestSupport.makeTemporaryRoot()
+        defer { AgentFileMutationTestSupport.removeTemporaryRoot(root) }
+        let content = "do not echo this"
+        let request = try await AgentFileMutationTestSupport.makeRequest(
+            root: root,
+            path: "existing.txt",
+            content: content,
+            callID: "serializer-failed"
+        )
+        let result = AgentLocalFileMutationResult(
+            published: false,
+            publicationMethod: nil,
+            payloadBytesRequested: Data(content.utf8).count,
+            payloadBytesWrittenToTemp: Data(content.utf8).count,
+            cleanupComplete: true,
+            cleanupResidue: false,
+            error: .destinationAlreadyExists
+        )
+
+        let serialized = AgentToolResultSerializer.serialize(
+            fileMutationResult: result,
+            request: request
+        )
+        let object = try json(serialized)
+        XCTAssertEqual(object["ok"] as? Bool, false)
+        XCTAssertEqual(object["status"] as? String, "destinationAlreadyExists")
+        XCTAssertEqual(object["published"] as? Bool, false)
+        XCTAssertEqual(object["error"] as? String, "destinationAlreadyExists")
+        XCTAssertFalse(serialized.contains(content))
+        XCTAssertFalse(serialized.contains("created"))
     }
 
     func testSerializedResultsNeverContainRawDumps() throws {

@@ -4,14 +4,14 @@ import XCTest
 @testable import MacSSH
 
 /// B4 §4/§5/§7/§8/§9/§50/§52 hard gate：
-/// Provider 请求只暴露静态 allowlist 的 4 个 read-only 工具和
-/// B4 的 run_command function tool。
+/// Provider 请求只暴露静态 allowlist 的 4 个 read-only 工具、B4 的
+/// command/terminal mutation 工具和 C3 的 Local file mutation 工具。
 ///
 /// - 请求体键集合 = {model, input, stream, tools, tool_choice}；
-/// - tools 恰好 5 个 function、名字来自静态注册表（绝非 reflection /
+/// - tools 恰好 7 个 function、名字来自静态注册表（绝非 reflection /
 ///   动态导出）；
 /// - 禁用工具类型（web_search / file_search / computer / code_interpreter /
-///   MCP / apply_patch）与危险工具名（run_command / write_file / …）绝不出现；
+///   MCP / apply_patch）与未授权危险工具名绝不出现；
 /// - tool_choice 恒为 "auto"（绝不 required / 用户可编辑）；
 /// - 普通文本中的伪工具标记（DSML 等）绝不触发结构化工具路径（§50）。
 final class AgentProviderToolGateTests: XCTestCase {
@@ -62,8 +62,8 @@ final class AgentProviderToolGateTests: XCTestCase {
 
     // MARK: - §4 静态 allowlist
 
-    func testCatalogContainsExactlySixToolsWithFourReadOnlyTools() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 6)
+    func testCatalogContainsExactlySevenToolsWithFourReadOnlyTools() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 7)
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -73,6 +73,7 @@ final class AgentProviderToolGateTests: XCTestCase {
                 "read_file",
                 "run_command",
                 "send_to_terminal",
+                "write_file",
             ]
         )
         // 与执行层静态注册表一一对应（§4：静态枚举派发，非 reflection）。
@@ -83,7 +84,7 @@ final class AgentProviderToolGateTests: XCTestCase {
         XCTAssertEqual(AgentToolName.runCommand.risk, .modifying)
         XCTAssertEqual(AgentToolName.sendToTerminal.risk, .modifying)
         for tool in AgentToolName.allCases
-        where tool != .runCommand && tool != .sendToTerminal {
+        where tool != .runCommand && tool != .sendToTerminal && tool != .writeFile {
             XCTAssertEqual(tool.risk, .readOnly, "read-only 工具风险不应改变")
         }
     }
@@ -95,7 +96,7 @@ final class AgentProviderToolGateTests: XCTestCase {
             try JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         let tools = try XCTUnwrap(object["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 6)
+        XCTAssertEqual(tools.count, 7)
         for tool in tools {
             XCTAssertEqual(tool["type"] as? String, "function")
             XCTAssertNotNil(tool["name"] as? String)
@@ -150,6 +151,25 @@ final class AgentProviderToolGateTests: XCTestCase {
                         "send_to_terminal schema 不得暴露目标身份字段 \(forbidden)（§8）"
                     )
                 }
+            case "write_file":
+                // C3：path/content 均为 required string；target identity
+                // 与 overwrite/append 等未来语义不得暴露给 Provider。
+                XCTAssertEqual(parameters["required"] as? [String], ["path", "content"])
+                XCTAssertEqual(properties.count, 2)
+                XCTAssertEqual(
+                    try XCTUnwrap(properties["path"] as? [String: Any])["type"] as? String,
+                    "string"
+                )
+                XCTAssertEqual(
+                    try XCTUnwrap(properties["content"] as? [String: Any])["type"] as? String,
+                    "string"
+                )
+                for forbidden in [
+                    "sessionID", "logicalSessionID", "providerSnapshotID", "targetToken",
+                    "parentFD", "cwd", "overwrite", "append", "mode", "remote",
+                ] {
+                    XCTAssertNil(properties[forbidden])
+                }
             default:
                 XCTFail("未知工具 \(name)")
             }
@@ -165,7 +185,7 @@ final class AgentProviderToolGateTests: XCTestCase {
         )
         for prohibited in [
             "execute", "exec", "shell", "terminal_send",
-            "write_file", "delete_file", "rename_file", "mkdir", "git_status",
+            "delete_file", "rename_file", "mkdir", "git_status",
             "chmod", "chown", "truncate", "upload",
         ] {
             XCTAssertFalse(
@@ -176,6 +196,63 @@ final class AgentProviderToolGateTests: XCTestCase {
         for tool in AgentToolCatalog.definitions {
             XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains(tool.name))
         }
+    }
+
+    /// C3：Provider 边界必须严格接收两个 required String，并逐字保留
+    /// whitespace、Unicode、embedded newline；任何额外字段都拒绝。
+    func testWriteFileParserPreservesExactTextAndRejectsInvalidShapes() {
+        let content = "  中文🙂e\u{301}\n末尾空格  \n"
+        let valid = #"{"path":"notes.txt","content":"  中文🙂é\n末尾空格  \n"}"#
+        let parsed = AgentToolCallParsing.parse(name: "write_file", argumentsJSON: valid)
+        XCTAssertEqual(
+            parsed,
+            .success(AgentToolCall(
+                name: "write_file",
+                arguments: ["path": "notes.txt", "content": content]
+            ))
+        )
+
+        for invalid in [
+            #"{"path":"notes.txt"}"#,
+            #"{"content":"x"}"#,
+            #"{"path":"notes.txt","content":"x","overwrite":true}"#,
+            #"{"path":"notes.txt","content":1}"#,
+            #"{"path":"notes.txt","content":"x\u0000y"}"#,
+            #"{"path":"notes/..","content":"x"}"#,
+        ] {
+            XCTAssertEqual(
+                AgentToolCallParsing.parse(name: "write_file", argumentsJSON: invalid),
+                .failure(.invalidArguments),
+                "invalid write_file shape must fail before approval"
+            )
+        }
+
+        let oversized = String(repeating: "a", count: AgentFileMutationLimits.maxPayloadBytes + 1)
+        let oversizedJSON = try? JSONSerialization.data(withJSONObject: [
+            "path": "too-large.txt", "content": oversized,
+        ])
+        XCTAssertEqual(
+            AgentToolCallParsing.parse(
+                name: "write_file",
+                argumentsJSON: String(decoding: oversizedJSON ?? Data(), as: UTF8.self)
+            ),
+            .failure(.invalidArguments)
+        )
+    }
+
+    /// C3：schema 字符串本身固定为 {path, content}，不隐式添加未来写入
+    /// 能力或 target identity 字段。
+    func testWriteFileDefinitionHasExactSchema() throws {
+        let definition = try XCTUnwrap(
+            AgentToolCatalog.definitions.first { $0.name == "write_file" }
+        )
+        XCTAssertEqual(
+            definition.parametersJSON,
+            #"{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}"#
+        )
+        XCTAssertTrue(definition.description.contains("explicit user approval"))
+        XCTAssertTrue(definition.description.contains("Existing destinations are not overwritten"))
+        XCTAssertTrue(definition.description.contains("Remote file mutation is not supported"))
     }
 
     func testHumanFacingToolDescriptionsDoNotGrantCommandExecution() throws {

@@ -87,8 +87,8 @@ final class AgentCommandSecurityGateTests: XCTestCase {
 
     // MARK: - B4：Provider 边界精确扩大一项（10F-B4-S1：+ send_to_terminal）
 
-    func testCatalogHasExactlySixToolsWithCommandAndMutationTools() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 6, "10F-B4-S1 后必须恰 6 个定义")
+    func testCatalogHasExactlySevenToolsWithCommandAndMutationTools() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 7, "10F-C3 后必须恰 7 个定义")
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -98,6 +98,7 @@ final class AgentCommandSecurityGateTests: XCTestCase {
                 "read_file",
                 "run_command",
                 "send_to_terminal",
+                "write_file",
             ]
         )
     }
@@ -106,9 +107,9 @@ final class AgentCommandSecurityGateTests: XCTestCase {
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("run_command"))
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
         XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
-        XCTAssertFalse(AgentToolCatalog.names.contains("write_file"))
+        XCTAssertTrue(AgentToolCatalog.names.contains("write_file"))
         for name in ["execute", "exec", "shell", "terminal_send",
-                     "write_file", "delete_file", "rename_file", "mkdir", "chmod"] {
+                     "delete_file", "rename_file", "mkdir", "chmod"] {
             XCTAssertTrue(AgentToolCatalog.prohibitedNames.contains(name))
             XCTAssertFalse(AgentToolCatalog.names.contains(name))
         }

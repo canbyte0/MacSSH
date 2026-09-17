@@ -24,6 +24,15 @@ struct AgentToolCardView: View {
     static let terminalSubmitAccessibilityIdentifier = "agent.terminal.submit"
     static let terminalTextAccessibilityIdentifier = "agent.terminal.text"
 
+    /// 10F-C3：Local create-only file approval card 的稳定 AX 标识。
+    static let fileApproveAccessibilityIdentifier = "agent.file.approve"
+    static let fileDenyAccessibilityIdentifier = "agent.file.deny"
+    static let fileTargetAccessibilityIdentifier = "agent.file.target"
+    static let fileBytesAccessibilityIdentifier = "agent.file.bytes"
+    static let fileContentAccessibilityIdentifier = "agent.file.content"
+    static let filePolicyAccessibilityIdentifier = "agent.file.policy"
+    static let fileStatusAccessibilityIdentifier = "agent.file.status"
+
     /// R2：审批动作只在等待审批时存在；运行中由 Composer Stop 负责取消。
     static func showsApprovalActions(for status: AgentToolActivity.Status) -> Bool {
         status == .awaitingApproval
@@ -52,6 +61,8 @@ struct AgentToolCardView: View {
                 commandCard
             } else if activity.toolName == AgentToolName.sendToTerminal.rawValue {
                 mutationCard
+            } else if activity.toolName == AgentToolName.writeFile.rawValue {
+                fileCard
             } else {
                 standardCard
             }
@@ -245,6 +256,232 @@ struct AgentToolCardView: View {
         }
         .padding(AppTheme.Spacing.compact)
         .background(commandCardBackground)
+    }
+
+    // MARK: - Local file approval card（10F-C3）
+
+    /// write_file 卡片只展示 proposal-time immutable request：resolved target、
+    /// 精确 UTF-8 字节数、可滚动的原文预览与 create-only disclosure。卡片本身
+    /// 没有任何 tap action，只有明确独立的 Approve / Deny 按钮可以改变 approval。
+    private var fileCard: some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.compact) {
+            HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.compact / 2) {
+                Image(systemName: "doc.badge.plus")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.orange)
+
+                Text(verbatim: toolLabel)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.primary)
+
+                if let request = activity.fileMutationRequest {
+                    fileTargetBadge(for: request)
+                }
+
+                Spacer(minLength: AppTheme.Spacing.compact / 2)
+                statusView
+                    .accessibilityIdentifier(Self.fileStatusAccessibilityIdentifier)
+            }
+
+            if let request = activity.fileMutationRequest {
+                fileDetails(request)
+            } else if let target = activity.displayTarget {
+                Text(verbatim: target)
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+
+            if Self.showsApprovalActions(for: activity.status) {
+                fileApprovalActions
+            }
+        }
+        .padding(AppTheme.Spacing.compact)
+        .background(commandCardBackground)
+    }
+
+    /// immutable file proposal 的全部用户可审阅信息；实际执行仍消费
+    /// request 内冻结的 exact bytes，不从当前 active session 重新取值。
+    @ViewBuilder
+    private func fileDetails(_ request: AgentFileMutationRequest) -> some View {
+        VStack(alignment: .leading, spacing: AppTheme.Spacing.compact / 2) {
+            fileDetailRow(
+                label: L10n.string("agent.file.target", defaultValue: "Target", locale: locale),
+                value: request.displayPath,
+                monospaced: true
+            )
+            .accessibilityIdentifier(Self.fileTargetAccessibilityIdentifier)
+
+            fileDetailRow(
+                label: L10n.string(
+                    "agent.file.bytes",
+                    defaultValue: "UTF-8 bytes",
+                    locale: locale
+                ),
+                value: "\(request.payloadIdentity.byteCount)",
+                monospaced: true
+            )
+            .accessibilityIdentifier(Self.fileBytesAccessibilityIdentifier)
+
+            Text(L10n.string("agent.file.content", defaultValue: "Exact UTF-8 text", locale: locale))
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+
+            // 内容最多 256 KiB；ScrollView 只限制展示窗口高度，不截断或改写
+            // 实际 payload。空内容显示明确占位，仍保留 0-byte 语义。
+            ScrollView(.vertical) {
+                if request.content.isEmpty {
+                    Text(
+                        L10n.string(
+                            "agent.file.empty_content",
+                            defaultValue: "〈empty text〉",
+                            locale: locale
+                        )
+                    )
+                    .foregroundStyle(.secondary)
+                } else {
+                    Text(verbatim: request.content)
+                        .foregroundStyle(.primary)
+                }
+            }
+            .font(.system(size: 12, design: .monospaced))
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, minHeight: 22, alignment: .leading)
+            .frame(maxHeight: 160)
+            .background(
+                RoundedRectangle(cornerRadius: 5)
+                    .fill(Color.black.opacity(0.16))
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 5)
+                    .strokeBorder(Color.primary.opacity(0.10), lineWidth: 0.5)
+            )
+            .accessibilityIdentifier(Self.fileContentAccessibilityIdentifier)
+
+            fileDetailRow(
+                label: L10n.string("agent.file.policy", defaultValue: "Policy", locale: locale),
+                value: L10n.string(
+                    "agent.file.policy.value",
+                    defaultValue: "Create only · existing destinations are not overwritten",
+                    locale: locale
+                )
+            )
+            .accessibilityIdentifier(Self.filePolicyAccessibilityIdentifier)
+
+            Text(
+                L10n.string(
+                    "agent.file.disclosure",
+                    defaultValue: "MacSSH will create a new local text file at the shown target. Existing files are not overwritten. The exact approved UTF-8 text will be written if publication succeeds. Remote files are not modified.",
+                    locale: locale
+                )
+            )
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+
+            if fileHasCleanupResidue {
+                Text(
+                    L10n.string(
+                        "agent.file.cleanup_warning",
+                        defaultValue: "File created; private staging cleanup is still pending.",
+                        locale: locale
+                    )
+                )
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.orange)
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    /// 文件目标需要完整可读；与 command/terminal 的单行 detail row 分开，
+    /// 允许长的 resolved path 换行而不改变冻结值。
+    private func fileDetailRow(
+        label: String,
+        value: String,
+        monospaced: Bool = false
+    ) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: AppTheme.Spacing.compact / 2) {
+            Text(verbatim: label)
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            Text(verbatim: value)
+                .font(.system(size: 11, design: monospaced ? .monospaced : .default))
+                .foregroundStyle(.primary)
+                .textSelection(.enabled)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+    }
+
+    private func fileTargetBadge(for _: AgentFileMutationRequest) -> some View {
+        Text(L10n.string("agent.command.target.local", defaultValue: "Local", locale: locale))
+            .font(.system(size: 10, weight: .semibold))
+            .foregroundStyle(.orange)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                Capsule(style: .continuous)
+                    .fill(Color.orange.opacity(0.14))
+            )
+            .accessibilityHidden(true)
+    }
+
+    private var fileApprovalActions: some View {
+        HStack(spacing: AppTheme.Spacing.compact / 2) {
+            Spacer(minLength: 0)
+
+            Button(role: .cancel, action: onDeny) {
+                Text(L10n.string("agent.file.deny", defaultValue: "Deny", locale: locale))
+            }
+            .controlSize(.small)
+            .buttonStyle(.bordered)
+            .accessibilityLabel(
+                L10n.string("agent.file.deny", defaultValue: "Deny", locale: locale)
+            )
+            .accessibilityHint(
+                L10n.string(
+                    "agent.file.deny.hint",
+                    defaultValue: "Reject this file creation before anything is written.",
+                    locale: locale
+                )
+            )
+            .accessibilityIdentifier(Self.fileDenyAccessibilityIdentifier)
+
+            Button(action: onApprove) {
+                Text(L10n.string("agent.file.approve", defaultValue: "Approve", locale: locale))
+            }
+            .controlSize(.small)
+            .buttonStyle(.borderedProminent)
+            .tint(.orange)
+            .accessibilityLabel(
+                L10n.string("agent.file.approve", defaultValue: "Approve", locale: locale)
+            )
+            .accessibilityHint(
+                L10n.string(
+                    "agent.file.approve.hint",
+                    defaultValue: "Create this new local text file with the exact approved UTF-8 text.",
+                    locale: locale
+                )
+            )
+            .accessibilityIdentifier(Self.fileApproveAccessibilityIdentifier)
+        }
+    }
+
+    /// cleanupResidue 是 published success 的 warning，不是失败或可重试状态。
+    private var fileHasCleanupResidue: Bool {
+        guard
+            activity.status == .success,
+            let resultJSON = activity.resultJSON,
+            let data = resultJSON.data(using: .utf8),
+            let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+            object["published"] as? Bool == true,
+            object["cleanupResidue"] as? Bool == true
+        else {
+            return false
+        }
+        return true
     }
 
     /// immutable request 的冻结信息：target / submit / exact text /
@@ -527,31 +764,52 @@ struct AgentToolCardView: View {
     }
 
     private var statusText: String {
+        // write_file 的成功语义是“文件已创建”，而不是泛化的“Done”；清理残留
+        // 仍然保持 published success，只在同一张卡片上追加可见 warning。
+        if activity.toolName == AgentToolName.writeFile.rawValue {
+            switch activity.status {
+            case .success:
+                return fileHasCleanupResidue
+                    ? L10n.string(
+                        "agent.file.status.cleanup_warning",
+                        defaultValue: "Created · cleanup pending",
+                        locale: locale
+                    )
+                    : L10n.string(
+                        "agent.file.status.published",
+                        defaultValue: "File created",
+                        locale: locale
+                    )
+            default:
+                break
+            }
+        }
+
         switch activity.status {
         case .running:
-            L10n.string("agent.tool.status.running", defaultValue: "Running", locale: locale)
+            return L10n.string("agent.tool.status.running", defaultValue: "Running", locale: locale)
         case .awaitingApproval:
-            L10n.string(
+            return L10n.string(
                 "agent.tool.status.awaiting_approval",
                 defaultValue: "Approval required",
                 locale: locale
             )
         case .success:
-            L10n.string("agent.tool.status.success", defaultValue: "Done", locale: locale)
+            return L10n.string("agent.tool.status.success", defaultValue: "Done", locale: locale)
         case .failure:
-            L10n.string("agent.tool.status.failure", defaultValue: "Failed", locale: locale)
+            return L10n.string("agent.tool.status.failure", defaultValue: "Failed", locale: locale)
         case .denied:
-            L10n.string("agent.tool.status.denied", defaultValue: "Denied", locale: locale)
+            return L10n.string("agent.tool.status.denied", defaultValue: "Denied", locale: locale)
         case .cancelled:
-            L10n.string("agent.tool.status.cancelled", defaultValue: "Cancelled", locale: locale)
+            return L10n.string("agent.tool.status.cancelled", defaultValue: "Cancelled", locale: locale)
         case .timedOut:
-            L10n.string(
+            return L10n.string(
                 "agent.tool.status.timed_out",
                 defaultValue: "Timed out",
                 locale: locale
             )
         case .partial:
-            L10n.string(
+            return L10n.string(
                 "agent.tool.status.partial",
                 defaultValue: "Partially delivered",
                 locale: locale
@@ -561,7 +819,7 @@ struct AgentToolCardView: View {
 
     // MARK: - 工具名与图标（§39）
 
-    /// 已知 4 工具 → 本地化名称；未知 / prohibited 名字原样展示原始
+    /// 已知 7 工具 → 本地化名称；未知 / prohibited 名字原样展示原始
     /// 名字（绝不隐藏模型实际请求了什么）。
     private var toolLabel: String {
         switch activity.toolName {
@@ -601,6 +859,12 @@ struct AgentToolCardView: View {
                 defaultValue: "Send to terminal",
                 locale: locale
             )
+        case AgentToolName.writeFile.rawValue:
+            return L10n.string(
+                "agent.tool.write_file",
+                defaultValue: "Create local file",
+                locale: locale
+            )
         default:
             return L10n.string("agent.tool.unknown", defaultValue: "Tool call", locale: locale)
                 + " · " + activity.toolName
@@ -621,6 +885,8 @@ struct AgentToolCardView: View {
             return "terminal"
         case AgentToolName.sendToTerminal.rawValue:
             return "text.cursor"
+        case AgentToolName.writeFile.rawValue:
+            return "doc.badge.plus"
         default:
             return "wrench.and.screwdriver"
         }

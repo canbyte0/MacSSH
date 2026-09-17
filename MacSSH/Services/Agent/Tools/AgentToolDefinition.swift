@@ -15,7 +15,8 @@ struct AgentToolDefinition: Sendable, Equatable {
 /// 静态 allowlist（§4 hard gate）。
 ///
 /// Provider 每轮请求只看到这里登记的 4 个 read-only 工具、10E-B4 的
-/// `run_command` 和 10F-B4-S1 的 `send_to_terminal`：
+/// `run_command`、10F-B4-S1 的 `send_to_terminal` 与 10F-C3 的
+/// Local-only `write_file`：
 /// - 禁止 Swift reflection 动态导出函数；
 /// - 禁止按模型返回的任意 name 动态派发（执行点走 `AgentToolRegistry`
 ///   静态枚举，未知名字一律 `unknownTool` 拒绝）。
@@ -23,7 +24,7 @@ struct AgentToolDefinition: Sendable, Equatable {
 /// 工具描述面向模型（英文），只描述能力与边界，绝不包含路径示例之外的
 /// 本机信息。
 enum AgentToolCatalog: Sendable {
-    /// 恰好 6 个工具（10F-B4-S1 边界）。
+    /// 恰好 7 个工具（10F-C3 边界）。
     static let definitions: [AgentToolDefinition] = [
         AgentToolDefinition(
             name: AgentToolName.getTerminalContext.rawValue,
@@ -78,18 +79,26 @@ enum AgentToolCatalog: Sendable {
                 + "instead when you need non-interactive execution with captured output.",
             parametersJSON: #"{"type":"object","properties":{"text":{"type":"string","description":"The exact text to send to the interactive terminal."},"submit":{"type":"boolean","description":"Whether MacSSH appends a Return after the text."}},"required":["text","submit"],"additionalProperties":false}"#
         ),
+        AgentToolDefinition(
+            name: AgentToolName.writeFile.rawValue,
+            description: "Create a new Local text file in the current approved write scope. "
+                + "Every request requires explicit user approval. Existing destinations "
+                + "are not overwritten. Content is UTF-8 text, maximum 256 KiB. "
+                + "Remote file mutation is not supported.",
+            parametersJSON: #"{"type":"object","properties":{"path":{"type":"string"},"content":{"type":"string"}},"required":["path","content"],"additionalProperties":false}"#
+        ),
     ]
 
     /// 全部工具名（供 gate 断言）。
     static var names: [String] { definitions.map(\.name) }
 
     /// §52：禁止出现在请求 tool definitions 中的名字（含读操作但依赖
-    /// command execution 的 `git_status`）。`send_to_terminal` 已在
-    /// 10F-B4-S1 注册，不再是禁止名；`terminal_send` / `pasteText` /
-    /// `write_file` 等别名与文件写工具仍全部禁止。
+    /// command execution 的 `git_status`）。`send_to_terminal` 与
+    /// `write_file` 已分别在 10F-B4-S1 / 10F-C3 注册，不再是禁止名；
+    /// `terminal_send` / `pasteText` / 其它文件写工具仍全部禁止。
     static let prohibitedNames: Set<String> = [
         "execute", "exec", "shell", "terminal_send",
-        "pasteText", "write_file", "delete_file", "rename_file", "mkdir",
+        "pasteText", "delete_file", "rename_file", "mkdir",
         "move", "copy", "upload", "chmod", "chown", "truncate", "git_status",
     ]
 }
@@ -114,6 +123,8 @@ enum AgentToolCatalog: Sendable {
 ///   → `.invalidArguments`
 /// - send_to_terminal 非 `{text: String, submit: Bool}` 精确形态
 ///   → `.invalidArguments`
+/// - write_file 非 `{path: String, content: String}` 精确形态、超过
+///   256 KiB UTF-8、含 U+0000 或 path 结构非法 → `.invalidArguments`
 /// - 未知工具名 → `.unknownTool`
 /// - 无参数工具：arguments 为空串或 `{}` 视为合法；其余键宽容忽略
 ///   （拒绝与否不影响安全——工具本身不接受任何参数）。
@@ -174,6 +185,28 @@ enum AgentToolCallParsing: Sendable {
             ))
         }
 
+        // 2c. write_file 是 Provider boundary 的严格文本契约：必须恰好
+        // path + content 两个 String，不能让 JSONDecoder 忽略安全字段。
+        if tool == .writeFile {
+            guard
+                let data = trimmed.data(using: .utf8),
+                let object = try? JSONSerialization.jsonObject(with: data),
+                let dictionary = object as? [String: Any],
+                Set(dictionary.keys) == Set(["path", "content"]),
+                let path = dictionary["path"] as? String,
+                let content = dictionary["content"] as? String,
+                AgentFileMutationRequestFactory.isStructurallyValidPath(path),
+                !content.utf8.contains(0),
+                Data(content.utf8).count <= AgentFileMutationLimits.maxPayloadBytes
+            else {
+                return .failure(.invalidArguments)
+            }
+            return .success(AgentToolCall(
+                name: name,
+                arguments: ["path": path, "content": content]
+            ))
+        }
+
         // 3. raw JSON → Decodable（§6）。
         let typed: TypedArguments
         if trimmed.isEmpty {
@@ -202,6 +235,9 @@ enum AgentToolCallParsing: Sendable {
             // 已在严格分支中返回；保留穷尽性保护，绝不向 Router 派发裸命令。
             return .failure(.invalidArguments)
         case .sendToTerminal:
+            // 已在严格分支中返回；保留穷尽性保护。
+            return .failure(.invalidArguments)
+        case .writeFile:
             // 已在严格分支中返回；保留穷尽性保护。
             return .failure(.invalidArguments)
         }

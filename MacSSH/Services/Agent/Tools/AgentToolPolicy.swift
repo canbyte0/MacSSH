@@ -23,6 +23,9 @@ enum AgentDataAccessPolicy: Sendable, Equatable {
     /// 也非独立进程命令：必须经 TerminalMutation approval coordinator
     /// 逐次授权（10F-B4-S1）。
     case terminalMutation
+    /// Local create-only file mutation 既非 read scope 也不允许经 Router
+    /// 直接执行：必须经独立的 file-mutation approval coordinator。
+    case fileMutation
 }
 
 // 两个 enum 必须独立定义、绝不合并：

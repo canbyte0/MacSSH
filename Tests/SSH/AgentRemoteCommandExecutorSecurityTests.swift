@@ -335,12 +335,12 @@ final class AgentRemoteCommandExecutorSecurityTests: XCTestCase {
         }
     }
 
-    func testProviderBoundaryAdvertisesSixToolsWithRunCommandAndMutation() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 6, "10F-B4-S1 后必须恰 6 个定义")
+    func testProviderBoundaryAdvertisesSevenToolsWithRunCommandAndMutations() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 7, "10F-C3 后必须恰 7 个定义")
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             ["get_terminal_context", "get_current_directory", "list_directory",
-             "read_file", "run_command", "send_to_terminal"]
+             "read_file", "run_command", "send_to_terminal", "write_file"]
         )
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("run_command"))
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
@@ -353,7 +353,7 @@ final class AgentRemoteCommandExecutorSecurityTests: XCTestCase {
     func testStandaloneMutationToolsRemainProhibited() {
         XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
         for name in [
-            "write_file", "delete_file", "rename_file", "mkdir", "chmod",
+            "delete_file", "rename_file", "mkdir", "chmod",
             "pasteText", "execute", "shell", "terminal_send",
         ] {
             XCTAssertTrue(

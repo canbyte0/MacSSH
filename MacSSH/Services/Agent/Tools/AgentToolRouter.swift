@@ -95,6 +95,11 @@ final class AgentToolRouter {
             // immutable request，再经 TerminalMutation ApprovalCoordinator
             // 接线到 accepted executor；误调用只返回结构化错误。
             result = .failure(.terminalMutationRequiresApproval)
+        case .writeFile:
+            // Local file mutation 必须先在 AgentViewModel admission 时冻结
+            // write scope、parent capability 与 exact payload；Router 永远
+            // 不触碰文件 executor，也不提供 Remote fallback。
+            result = .failure(.fileMutationRequiresApproval)
         }
 
         do {

@@ -405,7 +405,7 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
         // 等价，§37）；
         // 禁用字段（server-side state / 危险工具名）绝不出现。
         let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 6)
+        XCTAssertEqual(tools.count, 7)
         XCTAssertEqual(
             Set(tools.compactMap { $0["type"] as? String }),
             ["function"]
@@ -420,7 +420,7 @@ final class DeepSeekResponsesProviderTests: XCTestCase {
         for forbidden in [
             "web_search", "file_search", "computer", "code_interpreter",
             "previous_response_id", "conversation",
-            "write_file", "delete_file", "mkdir", "git_status",
+            "delete_file", "mkdir", "git_status",
         ] {
             XCTAssertFalse(
                 rawBody.contains("\"\(forbidden)\""),

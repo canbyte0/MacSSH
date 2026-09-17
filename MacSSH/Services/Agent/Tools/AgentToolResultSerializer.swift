@@ -211,7 +211,46 @@ enum AgentToolResultSerializer: Sendable {
         case .internalFailure: return "internalFailure"
         case .commandRequiresApproval: return "commandRequiresApproval"
         case .terminalMutationRequiresApproval: return "terminalMutationRequiresApproval"
+        case .fileMutationRequiresApproval: return "fileMutationRequiresApproval"
         }
+    }
+
+    // MARK: - write_file 结果（10F-C3）
+
+    /// Local file mutation 的唯一 Provider 结果入口。
+    ///
+    /// `request.displayPath` 是用户已经批准的冻结目标；content、payload
+    /// bytes、parent FD、target token 与 staging 名称永远不进入结果。已
+    /// 发布但私有 residue 未清理时仍输出 `ok=true` / `published=true`，
+    /// 由 cleanupResidue 表示 warning，禁止被 Agent loop 当成可重试失败。
+    static func serialize(
+        fileMutationResult result: AgentLocalFileMutationResult,
+        request: AgentFileMutationRequest
+    ) -> String {
+        var object: [String: Any] = [
+            "ok": result.published,
+            "status": result.published
+                ? "published"
+                : fileMutationStatusName(result.error),
+            "path": request.displayPath,
+            "published": result.published,
+            "payloadBytesRequested": result.payloadBytesRequested,
+            "payloadBytesWritten": result.payloadBytesWritten,
+            "cleanupComplete": result.cleanupComplete,
+            "cleanupResidue": result.cleanupResidue,
+        ]
+        if let method = result.publicationMethod {
+            object["publicationMethod"] = method.rawValue
+        }
+        if !result.published, let error = result.error {
+            object["error"] = fileMutationErrorName(error)
+        }
+        return encode(object)
+    }
+
+    /// Proposal / claim 失败只输出稳定的 domain error；不携带 request 内容。
+    static func serialize(error: AgentFileMutationError) -> String {
+        encode(["ok": false, "error": fileMutationErrorName(error)])
     }
 
     // MARK: - 各结果形态（§30/§31/§32/§33）
@@ -376,6 +415,48 @@ enum AgentToolResultSerializer: Sendable {
             return "approvalAlreadyClaimed"
         case .bindingMismatch:
             return "bindingMismatch"
+        }
+    }
+
+    /// C2 的内部错误 → Provider 可解释且不可误导为自动重试的分类。
+    private static func fileMutationStatusName(_ error: AgentFileMutationError?) -> String {
+        guard let error else { return "notPublished" }
+        return fileMutationErrorName(error)
+    }
+
+    private static func fileMutationErrorName(_ error: AgentFileMutationError) -> String {
+        switch error {
+        case .invalidPath: return "invalidPath"
+        case .payloadTooLarge: return "payloadTooLarge"
+        case .cwdUnavailable: return "cwdUnavailable"
+        case .outsideWriteScope: return "outsideWriteScope"
+        case .parentUnavailable: return "parentUnavailable"
+        case .parentNotDirectory: return "parentNotDirectory"
+        case .parentSymlinkRejected: return "parentSymlinkRejected"
+        case .destinationAlreadyExists: return "destinationAlreadyExists"
+        case .targetStale: return "targetStale"
+        case .approvalNotFound: return "approvalNotFound"
+        case .approvalRequired: return "approvalRequired"
+        case .userDenied: return "userDenied"
+        case .generationCancelled: return "cancelled"
+        case .approvalAlreadyClaimed: return "approvalAlreadyClaimed"
+        case .approvalAlreadyConsumed: return "approvalAlreadyConsumed"
+        case .bindingMismatch: return "bindingMismatch"
+        case .parentCapabilityUnavailable, .parentCapabilityStale:
+            return "targetStale"
+        case .stagingDirectoryCreationFailed, .stagingDirectoryOpenFailed,
+             .stagingDirectoryValidationFailed, .tempFileCreationFailed,
+             .tempFileValidationFailed, .payloadWriteFailed, .zeroByteWrite,
+             .publicationFailed, .fallbackPublicationFailed:
+            return "writeFailed"
+        case .tempSyncFailed:
+            return "syncFailed"
+        case .sourceReplaced:
+            return "targetStale"
+        case .cleanupResidue:
+            return "cleanupResidue"
+        case .cancelled:
+            return "cancelledBeforePublication"
         }
     }
 }

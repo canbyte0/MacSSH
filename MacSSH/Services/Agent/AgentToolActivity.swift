@@ -5,8 +5,8 @@ import Foundation
 ///
 /// 生命周期：
 /// 1. Provider 组装出完整 `AgentProviderToolCall` → read-only call 以
-///    `.running` 状态 append；run_command 先完成参数校验、immutable request
-///    和 approval record，再以 `.awaitingApproval` append（§37）；
+///    `.running` 状态 append；run_command / write_file 先完成参数校验、
+///    immutable request 和 approval record，再以 `.awaitingApproval` append；
 /// 2. 执行（成功 / 可恢复失败 / 取消）→ 更新 `status` 与 `resultJSON`；
 /// 3. transcript 重建时输出为一对 `function_call` + `function_call_output`
 ///    （§14：call_id 严格配对；`resultJSON` 为空时输出结构化 cancelled
@@ -67,6 +67,9 @@ struct AgentToolActivity: Equatable, Sendable {
     /// 10F-B4-S1 的 immutable mutation request；只供本地 UI 显示与
     /// runtime 对账，payload 绝不进入日志或 Provider tool result echo。
     let mutationRequest: AgentTerminalMutationRequest?
+    /// 10F-C3 Local create-only file proposal；只供本地审批卡显示与
+    /// runtime identity guard，exact content 不进入 Provider tool result。
+    let fileMutationRequest: AgentFileMutationRequest?
 
     /// 当前状态（UI 渲染依据）。
     var status: Status
@@ -83,6 +86,7 @@ struct AgentToolActivity: Equatable, Sendable {
         approvalID: UUID? = nil,
         commandRequest: AgentCommandRequest? = nil,
         mutationRequest: AgentTerminalMutationRequest? = nil,
+        fileMutationRequest: AgentFileMutationRequest? = nil,
         status: Status = .running,
         resultJSON: String? = nil,
         isError: Bool = false
@@ -94,6 +98,7 @@ struct AgentToolActivity: Equatable, Sendable {
         self.approvalID = approvalID
         self.commandRequest = commandRequest
         self.mutationRequest = mutationRequest
+        self.fileMutationRequest = fileMutationRequest
         self.status = status
         self.resultJSON = resultJSON
         self.isError = isError

@@ -115,19 +115,20 @@ final class AgentToolRouterTests: XCTestCase {
 
     // MARK: - 静态注册表（§30/§31）
 
-    func testRegistryContainsExactlySixTools() {
-        // 10F-B4-S1：静态注册表精确扩大为 6（+ send_to_terminal）。
-        XCTAssertEqual(AgentToolRegistry.all.count, 6)
+    func testRegistryContainsExactlySevenTools() {
+        // 10F-C3：静态注册表精确扩大为 7（+ write_file）。
+        XCTAssertEqual(AgentToolRegistry.all.count, 7)
         XCTAssertEqual(AgentToolRegistry.lookup("get_terminal_context"), .getTerminalContext)
         XCTAssertEqual(AgentToolRegistry.lookup("get_current_directory"), .getCurrentDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("list_directory"), .listDirectory)
         XCTAssertEqual(AgentToolRegistry.lookup("read_file"), .readFile)
         XCTAssertEqual(AgentToolRegistry.lookup("run_command"), .runCommand)
         XCTAssertEqual(AgentToolRegistry.lookup("send_to_terminal"), .sendToTerminal)
+        XCTAssertEqual(AgentToolRegistry.lookup("write_file"), .writeFile)
     }
 
     func testRegistryRejectsUnknownNames() {
-        XCTAssertNil(AgentToolRegistry.lookup("write_file"))
+        XCTAssertEqual(AgentToolRegistry.lookup("write_file"), .writeFile)
         XCTAssertNil(AgentToolRegistry.lookup("terminal_send"))
         XCTAssertNil(AgentToolRegistry.lookup("read_file "))
     }
@@ -142,6 +143,10 @@ final class AgentToolRouterTests: XCTestCase {
         // 10F-B4-S1：mutation 不是 read-only，也不是 command execution。
         XCTAssertEqual(AgentToolName.sendToTerminal.risk, .modifying)
         XCTAssertEqual(AgentToolName.sendToTerminal.dataAccessPolicy, .terminalMutation)
+        // 10F-C3：file mutation 必须在 AgentViewModel admission 后经
+        // FileMutationApprovalCoordinator / C2 executor，不能落入 read router。
+        XCTAssertEqual(AgentToolName.writeFile.risk, .modifying)
+        XCTAssertEqual(AgentToolName.writeFile.dataAccessPolicy, .fileMutation)
     }
 
     func testRunCommandCannotExecuteThroughReadOnlyRouter() async {
@@ -151,6 +156,18 @@ final class AgentToolRouterTests: XCTestCase {
             readScope: scopeA
         )
         XCTAssertEqual(result, .failure(.commandRequiresApproval))
+    }
+
+    func testWriteFileCannotExecuteThroughReadOnlyRouter() async {
+        let result = await router.execute(
+            call: AgentToolCall(
+                .writeFile,
+                arguments: ["path": "new.txt", "content": "content"]
+            ),
+            sessionID: sessionA,
+            readScope: scopeA
+        )
+        XCTAssertEqual(result, .failure(.fileMutationRequiresApproval))
     }
 
     // MARK: - scope / session 绑定（§33/§34）

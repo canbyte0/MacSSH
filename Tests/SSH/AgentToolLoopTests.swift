@@ -1,3 +1,4 @@
+import Darwin
 import Foundation
 import XCTest
 
@@ -314,13 +315,23 @@ final class AgentToolLoopTests: XCTestCase {
     private func makeViewModel(
         provider: LoopScriptedProvider,
         box: SessionBox,
-        store: AgentConversationStore = AgentConversationStore()
+        store: AgentConversationStore = AgentConversationStore(),
+        fileMutationApprovalCoordinator: AgentFileMutationApprovalCoordinator? = nil,
+        localFileMutationExecutorFactory: (@Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor)? = nil
     ) -> AgentViewModel {
-        AgentViewModel(
+        let fileCoordinator = fileMutationApprovalCoordinator
+            ?? AgentFileMutationApprovalCoordinator()
+        return AgentViewModel(
             store: store,
             provider: provider,
             toolRouter: router,
             remoteServiceResolver: resolver,
+            fileMutationApprovalCoordinator: fileCoordinator,
+            localFileMutationExecutorFactory: localFileMutationExecutorFactory,
             activeSessionProvider: { box.session },
             allSessionsProvider: { box.session.map { [$0] } ?? [] },
             handleProvider: { [weak self] session in
@@ -1191,6 +1202,476 @@ final class AgentToolLoopTests: XCTestCase {
             "cwd 不可用必须安全拒绝，实际：\(noCwdResult)"
         )
         XCTAssertFalse(String(describing: noCwdResult).contains("content-B"))
+    }
+
+    // MARK: - 10F-C3 write_file approval / execution / loop
+
+    /// write_file 必须先显示冻结的 Local proposal；Approve 后由 C2 写入
+    /// exact UTF-8 bytes，并把不含 content/capability 的成功结果带入下一轮。
+    func testWriteFileApprovalPublishesExactUTF8AndContinues() async throws {
+        let content = "  中文🙂e\u{301}\ntrailing spaces  \n"
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "created.txt", "content": content,
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_create",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("文件已创建"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("创建文件", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let pendingCard = try XCTUnwrap(toolCards(in: conversation).first)
+        let pendingActivity = try XCTUnwrap(pendingCard.toolActivity)
+        let request = try XCTUnwrap(pendingActivity.fileMutationRequest)
+        XCTAssertEqual(request.content, content)
+        XCTAssertEqual(request.payloadUTF8, Data(content.utf8))
+        XCTAssertEqual(pendingActivity.displayTarget, request.displayPath)
+        XCTAssertEqual(request.payloadIdentity.byteCount, Data(content.utf8).count)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directoryA + "/created.txt"))
+
+        viewModel.approveCommand(cardID: pendingCard.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(card.toolActivity?.status, .success)
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: directoryA + "/created.txt")),
+            Data(content.utf8)
+        )
+        let result = try resultJSON(of: card)
+        XCTAssertEqual(result["ok"] as? Bool, true)
+        XCTAssertEqual(result["published"] as? Bool, true)
+        XCTAssertEqual(result["payloadBytesRequested"] as? Int, Data(content.utf8).count)
+        XCTAssertFalse(card.toolActivity?.resultJSON?.contains(content) == true)
+        XCTAssertFalse(card.toolActivity?.resultJSON?.contains(request.targetIdentity.targetToken.uuidString) == true)
+        XCTAssertEqual(provider.calls.count, 2, "published result 只能继续一次，不得自动重写")
+        XCTAssertEqual(conversation.messages.last?.text, "文件已创建")
+    }
+
+    /// 空 payload 仍需显示为可批准的 0-byte proposal，并由同一 C2
+    /// executor 创建真正的空文件。
+    func testWriteFileEmptyContentPublishesZeroByteFile() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "empty-create.txt", "content": "",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_empty",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("空文件已创建"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("创建空文件", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        let request = try XCTUnwrap(card.toolActivity?.fileMutationRequest)
+        XCTAssertEqual(request.payloadIdentity.byteCount, 0)
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let destination = URL(fileURLWithPath: directoryA + "/empty-create.txt")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: destination.path))
+        XCTAssertEqual(try Data(contentsOf: destination), Data())
+        let result = try resultJSON(of: toolCards(in: conversation)[0])
+        XCTAssertEqual(result["ok"] as? Bool, true)
+        XCTAssertEqual(result["published"] as? Bool, true)
+        XCTAssertEqual(result["payloadBytesRequested"] as? Int, 0)
+        XCTAssertEqual(provider.calls.count, 2)
+    }
+
+    /// Deny 在 C2 之前结束 proposal，必须零 filesystem mutation，并把稳定
+    /// userDenied 作为一次 tool result 送入 continuation。
+    func testWriteFileDenyProducesStableUserDeniedWithoutMutation() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "denied-create.txt", "content": "must not be written",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_deny",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("已跳过"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("不要创建", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        viewModel.denyCommand(cardID: card.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updated = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updated.toolActivity?.status, .denied)
+        XCTAssertEqual(try resultJSON(of: updated)["error"] as? String, "userDenied")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directoryA + "/denied-create.txt"))
+        XCTAssertEqual(provider.calls.count, 2)
+    }
+
+    /// Pending proposal 上点击 Stop 必须先取消 generation，再让 coordinator
+    /// 失效 proposal；旧卡片的迟到 Approve 不得触发任何文件 side effect。
+    func testWriteFilePendingStopCancelsWithoutMutation() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "pending-stop.txt", "content": "must not be written",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_pending_stop",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let coordinator = AgentFileMutationApprovalCoordinator()
+        let viewModel = makeViewModel(
+            provider: provider,
+            box: box,
+            fileMutationApprovalCoordinator: coordinator
+        )
+
+        let conversation = try beginSend("停止待审批写入", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        let approvalID = try XCTUnwrap(card.toolActivity?.approvalID)
+        let request = try XCTUnwrap(card.toolActivity?.fileMutationRequest)
+
+        viewModel.stop()
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updatedCard = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updatedCard.toolActivity?.status, .cancelled)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directoryA + "/pending-stop.txt"))
+        XCTAssertEqual(provider.calls.count, 1, "pending Stop 后不得发起 continuation")
+        try await waitUntilAsync {
+            await coordinator.snapshot(approvalID: approvalID)?.state == .cancelled
+        }
+        let capabilityOpen = await request.parentCapability.isOpen()
+        XCTAssertFalse(capabilityOpen)
+    }
+
+    /// 提案在 Local A 产生后切换 active session 到 B；批准仍只能使用
+    /// proposal-time 的 A capability，绝不能按 active tab 重定向。
+    func testWriteFileApprovalUsesProposalSessionAfterActiveSwitch() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "frozen-session.txt", "content": "written in A",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_frozen_session",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("仍写入原提案目录"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("冻结目标", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        box.session = sessions[localSessionB]
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: directoryA + "/frozen-session.txt")),
+            Data("written in A".utf8)
+        )
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directoryB + "/frozen-session.txt"))
+        XCTAssertEqual(toolCards(in: conversation).first?.toolActivity?.status, .success)
+    }
+
+    /// 提案与批准之间由外部创建目标时，C2 no-clobber 失败；既有内容
+    /// 保持不变，Provider 只收到一次稳定失败，不自动重试写入。
+    func testWriteFileDestinationRaceNeverOverwritesExistingBytes() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "destination-race.txt", "content": "provider bytes",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_destination_race",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("目标已存在，未覆盖"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("验证 no-clobber", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let existing = Data("external winner".utf8)
+        try existing.write(
+            to: URL(fileURLWithPath: directoryA + "/destination-race.txt"),
+            options: .withoutOverwriting
+        )
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updated = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updated.toolActivity?.status, .failure)
+        let result = try resultJSON(of: updated)
+        XCTAssertEqual(result["ok"] as? Bool, false)
+        XCTAssertEqual(result["published"] as? Bool, false)
+        XCTAssertEqual(result["error"] as? String, "destinationAlreadyExists")
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: directoryA + "/destination-race.txt")),
+            existing
+        )
+        XCTAssertEqual(provider.calls.count, 2, "no-clobber 失败不得自动重试")
+    }
+
+    /// 注入 C2 的 pre-publication payload write failure：目标不出现，
+    /// 但这是一次已完成的 tool result，loop 不得静默重放同一个 write。
+    func testWriteFilePrePublicationFailureIsStableAndNotRetried() async throws {
+        let fake = AgentFileMutationInjectingFileSystem(
+            plans: [.fatal(EIO)]
+        )
+        let coordinator = AgentFileMutationApprovalCoordinator()
+        let factory: @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor = { authorization, capability, ledger in
+            AgentLocalFileMutationExecutor(
+                authorization: authorization,
+                targetCapability: capability,
+                approvalCoordinator: ledger,
+                fileSystem: fake
+            )
+        }
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "write-failure.txt", "content": "not published",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_write_failure",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("写入失败，未创建"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(
+            provider: provider,
+            box: box,
+            fileMutationApprovalCoordinator: coordinator,
+            localFileMutationExecutorFactory: factory
+        )
+
+        let conversation = try beginSend("验证安全失败", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updated = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updated.toolActivity?.status, .failure)
+        let result = try resultJSON(of: updated)
+        XCTAssertEqual(result["ok"] as? Bool, false)
+        XCTAssertEqual(result["published"] as? Bool, false)
+        XCTAssertEqual(result["status"] as? String, "writeFailed")
+        XCTAssertEqual(result["error"] as? String, "writeFailed")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directoryA + "/write-failure.txt"))
+        XCTAssertEqual(provider.calls.count, 2, "确定性失败不得自动重试")
+    }
+
+    /// Remote write_file 必须在 proposal 前拒绝，不能借用 Remote SFTP、SSH
+    /// exec 或当前 active session 的 Local path。
+    func testWriteFileRemoteIsRejectedBeforeApproval() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "remote.txt", "content": "remote mutation is forbidden",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_remote",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("Remote 不支持文件写入"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[remoteSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try await send("写远程文件", in: viewModel, box: box)
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(card.toolActivity?.status, .failure)
+        XCTAssertNil(card.toolActivity?.approvalID)
+        XCTAssertEqual(try resultJSON(of: card)["error"] as? String, "unsupportedForSession")
+        XCTAssertEqual(provider.calls.count, 2)
+    }
+
+    /// 同一 Provider call identity 在一轮中重放时复用第一次 proposal，但
+    /// C1 claim/redeem 只允许一次物理发布；第二张卡只能收到稳定失败。
+    func testWriteFileReplayHasOnePhysicalPublication() async throws {
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "replay-create.txt", "content": "one physical write",
+        ], options: [.sortedKeys])
+        let argumentsJSON = String(decoding: arguments, as: UTF8.self)
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall("file_replay", name: "write_file", argumentsJSON: argumentsJSON),
+                toolCall("file_replay", name: "write_file", argumentsJSON: argumentsJSON),
+                .completed,
+            ]),
+            .events([.textDelta("只处理一次"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(provider: provider, box: box)
+
+        let conversation = try beginSend("重放创建", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).count == 2
+                && self.toolCards(in: conversation).allSatisfy {
+                    $0.toolActivity?.status == .awaitingApproval
+                }
+        }
+        let cards = toolCards(in: conversation)
+        XCTAssertEqual(cards[0].toolActivity?.approvalID, cards[1].toolActivity?.approvalID)
+        viewModel.approveCommand(cardID: cards[0].id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updatedCards = toolCards(in: conversation)
+        XCTAssertEqual(updatedCards[0].toolActivity?.status, .success)
+        XCTAssertEqual(updatedCards[1].toolActivity?.status, .failure)
+        XCTAssertEqual(
+            try Data(contentsOf: URL(fileURLWithPath: directoryA + "/replay-create.txt")),
+            Data("one physical write".utf8)
+        )
+        XCTAssertEqual(provider.calls.count, 2)
+    }
+
+    /// C2 cleanup residue 仍然是 published success-with-warning，Provider 可
+    /// 继续，但 Agent 不得据此自动再执行 write_file。
+    func testWriteFileCleanupResidueRemainsPublishedSuccess() async throws {
+        let fake = AgentFileMutationInjectingFileSystem(
+            preferredPublicationFailure: ENOTSUP,
+            unlinkFailureCall: 1
+        )
+        let coordinator = AgentFileMutationApprovalCoordinator()
+        let factory: @Sendable (
+            AgentFileMutationExecutionAuthorization,
+            AgentLocalFileMutationTargetCapability,
+            AgentFileMutationApprovalCoordinator
+        ) -> AgentLocalFileMutationExecutor = { authorization, capability, ledger in
+            AgentLocalFileMutationExecutor(
+                authorization: authorization,
+                targetCapability: capability,
+                approvalCoordinator: ledger,
+                fileSystem: fake
+            )
+        }
+        let arguments = try JSONSerialization.data(withJSONObject: [
+            "path": "residue-create.txt", "content": "published once",
+        ], options: [.sortedKeys])
+        let provider = LoopScriptedProvider(rounds: [
+            .events([
+                toolCall(
+                    "file_residue",
+                    name: "write_file",
+                    argumentsJSON: String(decoding: arguments, as: UTF8.self)
+                ),
+                .completed,
+            ]),
+            .events([.textDelta("已创建但需要清理残留"), .completed]),
+        ])
+        let box = SessionBox()
+        box.session = sessions[localSessionA]
+        let viewModel = makeViewModel(
+            provider: provider,
+            box: box,
+            fileMutationApprovalCoordinator: coordinator,
+            localFileMutationExecutorFactory: factory
+        )
+
+        let conversation = try beginSend("验证清理 warning", in: viewModel)
+        try await waitUntil {
+            self.toolCards(in: conversation).first?.toolActivity?.status == .awaitingApproval
+        }
+        let card = try XCTUnwrap(toolCards(in: conversation).first)
+        viewModel.approveCommand(cardID: card.id, sessionID: conversation.sessionID)
+        let task = try XCTUnwrap(conversation.generationTask)
+        await task.value
+
+        let updated = try XCTUnwrap(toolCards(in: conversation).first)
+        XCTAssertEqual(updated.toolActivity?.status, .success)
+        let result = try resultJSON(of: updated)
+        XCTAssertEqual(result["ok"] as? Bool, true)
+        XCTAssertEqual(result["published"] as? Bool, true)
+        XCTAssertEqual(result["cleanupResidue"] as? Bool, true)
+        XCTAssertEqual(result["status"] as? String, "published")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: directoryA + "/residue-create.txt"))
+        XCTAssertEqual(provider.calls.count, 2, "cleanup warning 只能继续，不得自动重写")
     }
 
     // MARK: - §85 无隐藏 prefetch

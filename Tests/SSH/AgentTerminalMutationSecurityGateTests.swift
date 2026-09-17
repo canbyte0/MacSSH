@@ -4,13 +4,14 @@ import XCTest
 @testable import MacSSH
 
 /// Phase 10F-B1 任务书 §5/§18/§29/§30/§41/§42/§44/§45/§52：B1 安全门
-/// （10F-B4-S1 更新：catalog 恰 6 个，`send_to_terminal` 已注册、
-/// 严格 schema 形态由 parser 接受；别名 / 文件写工具仍全部禁止）。
+/// （10F-B4-S1 / 10F-C3 更新：catalog 恰 7 个，`send_to_terminal` 与
+/// `write_file` 已注册、各自严格 schema 形态由 parser 接受；别名 / 其它
+/// 文件写工具仍全部禁止）。
 ///
 /// 静态 source gate + Provider 边界 + 执行能力零依赖：
 /// - B1 TerminalMutation domain 中：交付 / 注入能力 token = 0；凭据 /
 ///   持久化 / 信任升级 token = 0；UI 会话解析 fallback = 0；
-/// - Provider tool 注册表 10F-B4-S1 后恰 6 个，别名仍留在禁止集合；
+    /// - Provider tool 注册表 10F-C3 后恰 7 个，别名仍留在禁止集合；
 /// - parser 只接受精确 `{text: String, submit: Bool}` 形态。
 ///
 /// Token 列表刻意从严：生产源文件中“提及即视为意图”（含注释），
@@ -170,10 +171,10 @@ final class AgentTerminalMutationSecurityGateTests: XCTestCase {
         }
     }
 
-    // MARK: - §44：Provider 工具注册表 gate（10F-B4-S1 后恰 6 个）
+    // MARK: - §44：Provider 工具注册表 gate（10F-C3 后恰 7 个）
 
-    func testCatalogHasExactlySixToolsWithRegisteredMutationTool() {
-        XCTAssertEqual(AgentToolCatalog.definitions.count, 6, "10F-B4-S1 后必须恰 6 个定义")
+    func testCatalogHasExactlySevenToolsWithRegisteredMutationTools() {
+        XCTAssertEqual(AgentToolCatalog.definitions.count, 7, "10F-C3 后必须恰 7 个定义")
         XCTAssertEqual(
             Set(AgentToolCatalog.names),
             [
@@ -183,18 +184,19 @@ final class AgentTerminalMutationSecurityGateTests: XCTestCase {
                 "read_file",
                 "run_command",
                 "send_to_terminal",
+                "write_file",
             ],
-            "10F-B4-S1 精确注册 send_to_terminal；write_file 仍禁止"
+            "10F-C3 精确注册 send_to_terminal 与 write_file"
         )
         XCTAssertTrue(AgentToolCatalog.names.contains("send_to_terminal"))
-        XCTAssertFalse(AgentToolCatalog.names.contains("write_file"))
+        XCTAssertTrue(AgentToolCatalog.names.contains("write_file"))
     }
 
     func testMutationAliasesRemainInProhibitedList() {
-        // send_to_terminal 已在 10F-B4-S1 注册；别名与文件写工具仍全部禁止。
+        // send_to_terminal 与 write_file 已注册；其余别名与未来写工具仍禁止。
         XCTAssertFalse(AgentToolCatalog.prohibitedNames.contains("send_to_terminal"))
         for name in [
-            "terminal_send", "write_file",
+            "terminal_send",
             "delete_file", "rename_file", "mkdir", "move", "copy", "chmod", "chown",
         ] {
             XCTAssertTrue(
@@ -219,10 +221,13 @@ final class AgentTerminalMutationSecurityGateTests: XCTestCase {
                 )
             ))
         )
-        // 未注册名字仍 unknownTool（静态注册表，绝无 dynamic dispatch）。
+        // C3 的 file tool 是静态注册的，并使用独立的 path/content shape。
         XCTAssertEqual(
             AgentToolCallParsing.parse(name: "write_file", argumentsJSON: #"{"path":"/tmp/x","content":"y"}"#),
-            .failure(.unknownTool)
+            .success(AgentToolCall(
+                name: "write_file",
+                arguments: ["path": "/tmp/x", "content": "y"]
+            ))
         )
     }
 

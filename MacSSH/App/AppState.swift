@@ -234,6 +234,9 @@ final class AppState {
         let agentMutationEndpointResolver = SessionManagerTerminalMutationEndpointResolver(
             sessionManager: sessionManager
         )
+        // 10F-C3 write_file 使用独立的 memory-only one-time approval
+        // authority；不与 command / send_to_terminal coordinator 混用。
+        let agentFileMutationApprovalCoordinator = AgentFileMutationApprovalCoordinator()
         let agentViewModel = AgentViewModel(
             store: agentConversationStore,
             provider: ResolvingAgentProvider(credentialService: agentCredentialService),
@@ -243,6 +246,7 @@ final class AppState {
             mutationApprovalCoordinator: agentMutationApprovalCoordinator,
             localMutationExecutor: agentLocalMutationExecutor,
             remoteMutationExecutor: agentRemoteMutationExecutor,
+            fileMutationApprovalCoordinator: agentFileMutationApprovalCoordinator,
             mutationEndpointProvider: { sessionID in
                 await agentMutationEndpointResolver.endpointCapability(
                     forSessionID: sessionID

@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - 工具名与静态注册表（任务书 §30/§31）
 
-/// B4 注册的六个工具名（10F-B4-S1 起 `send_to_terminal` 上线）。
+/// Phase 10F-C3 注册的七个工具名（新增 Local create-only `write_file`）。
 ///
 /// 注册表是**静态枚举**：禁止 dynamic reflection、禁止任意字符串 →
 /// selector 派发（§31）。未知名字 → `AgentToolError.unknownTool`。
@@ -15,6 +15,8 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
     case runCommand = "run_command"
     /// 10F-B4-S1：向已存在的交互终端发送文本（逐次批准的 mutation）。
     case sendToTerminal = "send_to_terminal"
+    /// 10F-C3：创建 Local text file（逐次批准、create-only、no-clobber）。
+    case writeFile = "write_file"
 
     /// 变更风险轴（§11/§30）：run_command / send_to_terminal 不能被
     /// 当作 read-only。
@@ -22,7 +24,7 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
         switch self {
         case .getTerminalContext, .getCurrentDirectory, .listDirectory, .readFile:
             return .readOnly
-        case .runCommand, .sendToTerminal:
+        case .runCommand, .sendToTerminal, .writeFile:
             return .modifying
         }
     }
@@ -38,6 +40,8 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
             return .commandExecution
         case .sendToTerminal:
             return .terminalMutation
+        case .writeFile:
+            return .fileMutation
         }
     }
 
@@ -51,6 +55,10 @@ enum AgentToolName: String, Sendable, CaseIterable, Equatable {
         case .getTerminalContext, .getCurrentDirectory, .listDirectory,
              .readFile, .runCommand, .sendToTerminal:
             return true
+        case .writeFile:
+            // Remote file mutation is explicitly outside C3 scope; the
+            // ViewModel must reject it before any executor is reachable.
+            return false
         }
     }
 }
@@ -106,6 +114,9 @@ struct AgentToolCall: Sendable, Equatable {
 
     /// run_command 的原始 command；除 request factory 外不做 trim / rewrite。
     var command: String? { arguments["command"] }
+
+    /// write_file 的 exact text payload；不 trim、不 normalize。
+    var content: String? { arguments["content"] }
 }
 
 // MARK: - 结果（任务书 §21/§25）

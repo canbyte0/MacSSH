@@ -367,7 +367,7 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         // send_to_terminal，tool_choice 恒为 auto；禁止的 provider 侧工具
         // 类型 / 危险名字绝不出现在请求体。
         let tools = try XCTUnwrap(json["tools"] as? [[String: Any]])
-        XCTAssertEqual(tools.count, 6, "只允许 6 个 function 工具")
+        XCTAssertEqual(tools.count, 7, "只允许 7 个 function 工具")
         XCTAssertEqual(
             Set(tools.compactMap { $0["type"] as? String }),
             ["function"],
@@ -389,7 +389,7 @@ final class OpenAIResponsesProviderTests: XCTestCase {
         for forbidden in [
             "web_search", "file_search", "computer", "code_interpreter",
             "apply_patch", "execute", "exec", "shell", "terminal_send",
-            "write_file", "delete_file", "rename_file", "mkdir", "git_status",
+            "delete_file", "rename_file", "mkdir", "git_status",
         ] {
             XCTAssertFalse(
                 rawBody.contains("\"\(forbidden)\""),

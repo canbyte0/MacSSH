@@ -51,4 +51,7 @@ enum AgentToolError: Error, Equatable, Sendable {
     /// （10F-B4-S1：mutation 必须先建立 immutable request 并经
     /// TerminalMutation ApprovalCoordinator 接线）。
     case terminalMutationRequiresApproval
+    /// 防御性错误：write_file 不允许从 read-only Router 执行；必须先在
+    /// AgentViewModel admission 处冻结 Local write scope / target / payload。
+    case fileMutationRequiresApproval
 }

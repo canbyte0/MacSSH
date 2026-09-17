@@ -135,6 +135,18 @@ final class LocalizationTests: XCTestCase {
         // 容器绝不整体可 Press（无 onTapGesture / 无 Button 包裹整卡）。
         XCTAssertTrue(source.contains("Self.terminalApproveAccessibilityIdentifier"))
         XCTAssertTrue(source.contains("Self.terminalDenyAccessibilityIdentifier"))
+        // 10F-C3：file approval controls、冻结目标、字节数、内容、策略与
+        // status 也必须拥有独立稳定标识。
+        XCTAssertTrue(source.contains("Self.fileApproveAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.fileDenyAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.fileTargetAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.fileBytesAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.fileContentAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.filePolicyAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("Self.fileStatusAccessibilityIdentifier"))
+        XCTAssertTrue(source.contains("request.payloadIdentity.byteCount"))
+        XCTAssertTrue(source.contains("request.content.isEmpty"))
+        XCTAssertTrue(source.contains("ScrollView(.vertical)"))
         XCTAssertFalse(source.contains(".onTapGesture"))
     }
 
@@ -206,6 +218,122 @@ final class LocalizationTests: XCTestCase {
             let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
             XCTAssertTrue(zh.contains(zhContains), "\(key) zh: \(zh)")
             XCTAssertTrue(en.contains(enContains), "\(key) en: \(en)")
+        }
+    }
+
+    // MARK: - 10F-C3 file mutation 文案
+
+    /// C3：Local write_file approval card 的所有 user-facing 文案必须在
+    /// English / zh-Hans 完整存在，并准确披露 create-only 与 Remote 隔离。
+    func testFileMutationDisclosureIsLocalizedAndAccurate() {
+        let keys = [
+            "agent.tool.write_file",
+            "agent.file.target",
+            "agent.file.bytes",
+            "agent.file.content",
+            "agent.file.policy",
+            "agent.file.policy.value",
+            "agent.file.disclosure",
+            "agent.file.empty_content",
+            "agent.file.cleanup_warning",
+            "agent.file.status.cleanup_warning",
+            "agent.file.status.published",
+            "agent.file.approve",
+            "agent.file.approve.hint",
+            "agent.file.deny",
+            "agent.file.deny.hint",
+        ]
+        for key in keys {
+            let zh = L10n.string(key, defaultValue: "", locale: AppLanguage.simplifiedChinese.locale)
+            let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
+            XCTAssertFalse(zh.isEmpty, "zh-Hans missing: \(key)")
+            XCTAssertFalse(en.isEmpty, "en missing: \(key)")
+            XCTAssertNotEqual(zh, key, "zh-Hans leaked raw key: \(key)")
+            XCTAssertNotEqual(en, key, "en leaked raw key: \(key)")
+        }
+
+        let zhDisclosure = L10n.string(
+            "agent.file.disclosure",
+            defaultValue: "",
+            locale: AppLanguage.simplifiedChinese.locale
+        )
+        XCTAssertTrue(zhDisclosure.contains("新的本地文本文件"))
+        XCTAssertTrue(zhDisclosure.contains("不会覆盖已有文件"))
+        XCTAssertTrue(zhDisclosure.contains("精确批准的 UTF-8 文本"))
+        XCTAssertTrue(zhDisclosure.contains("不会修改远程文件"))
+
+        let enDisclosure = L10n.string(
+            "agent.file.disclosure",
+            defaultValue: "",
+            locale: AppLanguage.english.locale
+        )
+        XCTAssertTrue(enDisclosure.localizedCaseInsensitiveContains("new local text file"))
+        XCTAssertTrue(enDisclosure.localizedCaseInsensitiveContains("not overwritten"))
+        XCTAssertTrue(enDisclosure.localizedCaseInsensitiveContains("exact approved UTF-8 text"))
+        XCTAssertTrue(enDisclosure.localizedCaseInsensitiveContains("Remote files are not modified"))
+
+        let zhPolicy = L10n.string(
+            "agent.file.policy.value",
+            defaultValue: "",
+            locale: AppLanguage.simplifiedChinese.locale
+        )
+        let enPolicy = L10n.string(
+            "agent.file.policy.value",
+            defaultValue: "",
+            locale: AppLanguage.english.locale
+        )
+        XCTAssertTrue(zhPolicy.contains("仅创建"))
+        XCTAssertTrue(zhPolicy.contains("不会覆盖已有目标"))
+        XCTAssertTrue(enPolicy.localizedCaseInsensitiveContains("create only"))
+        XCTAssertTrue(enPolicy.localizedCaseInsensitiveContains("not overwritten"))
+
+        let zhPublished = L10n.string(
+            "agent.file.status.published",
+            defaultValue: "",
+            locale: AppLanguage.simplifiedChinese.locale
+        )
+        XCTAssertTrue(zhPublished.contains("文件已创建"))
+
+        let enPublished = L10n.string(
+            "agent.file.status.published",
+            defaultValue: "",
+            locale: AppLanguage.english.locale
+        )
+        XCTAssertTrue(enPublished.localizedCaseInsensitiveContains("File created"))
+
+        let zhCleanupStatus = L10n.string(
+            "agent.file.status.cleanup_warning",
+            defaultValue: "",
+            locale: AppLanguage.simplifiedChinese.locale
+        )
+        XCTAssertTrue(zhCleanupStatus.contains("已创建"))
+        XCTAssertTrue(zhCleanupStatus.contains("清理待完成"))
+
+        let enCleanupStatus = L10n.string(
+            "agent.file.status.cleanup_warning",
+            defaultValue: "",
+            locale: AppLanguage.english.locale
+        )
+        XCTAssertTrue(enCleanupStatus.localizedCaseInsensitiveContains("created"))
+        XCTAssertTrue(enCleanupStatus.localizedCaseInsensitiveContains("cleanup pending"))
+    }
+
+    /// C3：byte count label 经过本地化，且空 payload 的 UI 语义保留为 0。
+    func testFileMutationByteCountAndEmptyPreviewAreLocalized() {
+        for locale in [AppLanguage.simplifiedChinese.locale, AppLanguage.english.locale] {
+            let bytes = L10n.string(
+                "agent.file.bytes",
+                defaultValue: "UTF-8 bytes",
+                locale: locale
+            )
+            XCTAssertTrue(bytes.contains("UTF-8"))
+
+            let empty = L10n.string(
+                "agent.file.empty_content",
+                defaultValue: "",
+                locale: locale
+            )
+            XCTAssertFalse(empty.isEmpty)
         }
     }
 
