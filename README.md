@@ -52,7 +52,7 @@ MacSSH 是一款使用 Swift、SwiftUI 与 AppKit 构建的原生 macOS 客户�
 | 项目 | 当前值 |
 | --- | --- |
 | 源码开发线 | MacSSH 1.1 |
-| 工程版本 | 1.0.0（Build 1，尚未在 1.1 开发阶段提升版本号） |
+| 工程版本 | 1.1.0（Build 2，Phase 10G-D1 发布元数据候选） |
 | 最低系统 | macOS 14.0 |
 | 架构 | Apple Silicon `arm64` |
 | Swift | Swift 6 |
