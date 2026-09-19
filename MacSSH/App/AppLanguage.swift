@@ -49,6 +49,10 @@ enum AppPreferenceKey {
     static let rightSidebarVisible = "macssh.rightSidebarVisible"
     /// MacSSH 1.1 Phase 7：右侧栏选中 tab（CommandSidebarTab rawValue）。
     static let rightSidebarTab = "macssh.rightSidebarTab"
+    /// 主导航分栏的 AppKit autosave name；系统据此保存左侧栏分隔位置。
+    static let mainSplitViewAutosaveName = "macssh.mainNavigationSplitView"
+    /// 右侧命令栏宽度（Double，单位为 macOS 逻辑点）。
+    static let rightSidebarWidth = "macssh.rightSidebarWidth"
     /// MacSSH 1.1 Phase 8：应用外观模式（AppAppearanceMode rawValue：system/light/dark）。
     static let appearanceMode = "macssh.appearanceMode"
     /// MacSSH 1.1 Phase 9：终端字号（Int，10...32，step 1，default 14）。

@@ -128,7 +128,8 @@ struct SettingsView: View {
                     .padding(.top, 4)
 
                 // MacSSH 1.1 Phase 7：命令历史设置（任务书 §32 / §33 / §40）。
-                Divider()
+                // grouped Form 会自动绘制相邻行分隔线；这里不再额外插入
+                // Divider，避免它被 Form 当作独立行并产生多余的空白行高。
                 Toggle("sidebar_right.save_history", isOn: historyEnabledBinding)
                     .accessibilityIdentifier("settings.saveCommandHistory")
                 Text(verbatim: L10n.string(
@@ -212,7 +213,8 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .accessibilityIdentifier("settings.agent.baseURLInvalidHint")
                 }
-                Divider()
+                // grouped Form 会自动分隔 Base URL 与 API Key；额外 Divider
+                // 会被布局为独立空白行，因此这里直接衔接下一项设置。
                 // API Key：SecureField 草稿——保存后立即清空，绝不把 Keychain
                 // 内容回填显示；状态行只区分「已配置 / 未配置」（任务书 §12：
                 // 不显示 sk-… 任何形式的部分 Key）。

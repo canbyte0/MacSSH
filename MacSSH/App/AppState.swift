@@ -115,11 +115,18 @@ final class AppState {
         }
     }
 
-    /// 右侧命令栏在当前 App 运行期间的宽度。
-    ///
-    /// 此状态有意不写入 UserDefaults：切换页面或收起再展开时保留，
-    /// 完全退出并重新启动后恢复为设计默认值。
-    var rightSidebarWidth: CGFloat = AppTheme.Layout.rightSidebarWidth
+    /// 右侧命令栏宽度；拖动时实时更新并持久化，切换页面或重启后恢复。
+    var rightSidebarWidth: CGFloat = AppTheme.Layout.rightSidebarWidth {
+        didSet {
+            // UI 写入均已按当前窗口动态范围限制；这里只持久化有限值，
+            // 避免损坏偏好污染下一次启动。
+            guard rightSidebarWidth.isFinite else { return }
+            userDefaults.set(
+                Double(rightSidebarWidth),
+                forKey: AppPreferenceKey.rightSidebarWidth
+            )
+        }
+    }
 
     init(
         modelContainer: ModelContainer,
@@ -274,6 +281,19 @@ final class AppState {
             self.selectedRightSidebarTab = tab
         } else {
             self.selectedRightSidebarTab = .history
+        }
+        // 宽度只按静态设计范围恢复；窗口较窄时，TerminalWorkspaceView 仍会
+        // 通过动态上限临时收窄显示，但不会覆盖用户保存的目标宽度。
+        if let storedWidth = userDefaults.object(
+            forKey: AppPreferenceKey.rightSidebarWidth
+        ) as? NSNumber {
+            let proposedWidth = CGFloat(storedWidth.doubleValue)
+            if proposedWidth.isFinite {
+                self.rightSidebarWidth = min(
+                    max(proposedWidth, AppTheme.Layout.rightSidebarMinimumWidth),
+                    AppTheme.Layout.rightSidebarMaximumWidth
+                )
+            }
         }
 
         // Phase 1（1.1 Localization）：调度器 / 拒绝路径按当前 App Locale

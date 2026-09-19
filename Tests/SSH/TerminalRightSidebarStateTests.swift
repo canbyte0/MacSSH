@@ -68,9 +68,12 @@ final class TerminalRightSidebarStateTests: XCTestCase {
     }
 
     /// 构造内存态 AppState（绝不动用户真实偏好 / 持久化存储），
-    /// 可注入已持久化的 rightSidebarTab raw value。
+    /// 可注入已持久化的 rightSidebarTab raw value 与右侧栏宽度。
     @MainActor
-    private func makeAppState(storedTabRawValue: String?) throws -> AppState {
+    private func makeAppState(
+        storedTabRawValue: String?,
+        storedRightSidebarWidth: Double? = nil
+    ) throws -> AppState {
         let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
         let container = try ModelContainer(for: schema, configurations: [configuration])
@@ -79,6 +82,9 @@ final class TerminalRightSidebarStateTests: XCTestCase {
         if let storedTabRawValue {
             defaults.set(storedTabRawValue, forKey: AppPreferenceKey.rightSidebarTab)
         }
+        if let storedRightSidebarWidth {
+            defaults.set(storedRightSidebarWidth, forKey: AppPreferenceKey.rightSidebarWidth)
+        }
         defer { defaults.removePersistentDomain(forName: suiteName) }
         return AppState(modelContainer: container, userDefaults: defaults)
     }
@@ -86,6 +92,49 @@ final class TerminalRightSidebarStateTests: XCTestCase {
     func testAppPreferenceKeysExist() {
         XCTAssertEqual(AppPreferenceKey.rightSidebarVisible, "macssh.rightSidebarVisible")
         XCTAssertEqual(AppPreferenceKey.rightSidebarTab, "macssh.rightSidebarTab")
+        XCTAssertEqual(
+            AppPreferenceKey.mainSplitViewAutosaveName,
+            "macssh.mainNavigationSplitView"
+        )
+        XCTAssertEqual(AppPreferenceKey.rightSidebarWidth, "macssh.rightSidebarWidth")
+    }
+
+    /// 右侧栏宽度必须从隔离 UserDefaults 恢复，并在后续拖动状态更新时写回。
+    @MainActor
+    func testRightSidebarWidthRestoresAndPersists() throws {
+        let schema = Schema([Host.self, HostGroup.self, KnownHost.self])
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let suiteName = "MacSSH.TerminalRightSidebarWidthTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        defaults.set(412.5, forKey: AppPreferenceKey.rightSidebarWidth)
+        let appState = AppState(modelContainer: container, userDefaults: defaults)
+        XCTAssertEqual(appState.rightSidebarWidth, 412.5, accuracy: 0.0001)
+
+        appState.rightSidebarWidth = 388
+        XCTAssertEqual(
+            defaults.double(forKey: AppPreferenceKey.rightSidebarWidth),
+            388,
+            accuracy: 0.0001
+        )
+    }
+
+    /// 损坏或过期的越界宽度只能恢复到当前设计范围内。
+    @MainActor
+    func testStoredRightSidebarWidthClampsToStaticBounds() throws {
+        let tooWide = try makeAppState(
+            storedTabRawValue: nil,
+            storedRightSidebarWidth: 900
+        )
+        XCTAssertEqual(tooWide.rightSidebarWidth, AppTheme.Layout.rightSidebarMaximumWidth)
+
+        let tooNarrow = try makeAppState(
+            storedTabRawValue: nil,
+            storedRightSidebarWidth: 100
+        )
+        XCTAssertEqual(tooNarrow.rightSidebarWidth, AppTheme.Layout.rightSidebarMinimumWidth)
     }
 
     func testCommandHistoryStoreKey() {
