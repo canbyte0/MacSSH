@@ -7,7 +7,7 @@ import SwiftData
 /// 职责（任务书 §38 / Phase 7A 验收）：
 /// - Group CRUD（新增 / 重命名 / 删除）；
 /// - Command CRUD（新增 / 编辑 / 删除）；
-/// - validation（单行 / 非空 / control-char policy，`CommandValidation`）；
+/// - validation（标题与命令的单行 / 非空 / control-char policy，`CommandValidation`）；
 /// - sorting（`sortOrder` 升序）。
 ///
 /// 不持有：TerminalView / Session / SSHConnection（任务书 §38）。
@@ -97,16 +97,23 @@ final class SavedCommandStore {
 
     /// 新增命令。`command` 保存原文（不 trim，任务书 §71），但经
     /// `CommandValidation` 校验（单行 / 非空 / 无 NUL/CR/LF/U+2028/U+2029）。
+    /// `title == nil` 仅用于兼容旧调用/旧数据；非 nil 标题会 trim 后持久化并执行同等单行校验。
     /// `groupID` 为 nil 时命令进入「未分组」。
     @discardableResult
-    func addCommand(command: String, groupID: UUID? = nil, sortOrder: Int? = nil) throws -> SavedCommand {
+    func addCommand(
+        title: String? = nil,
+        command: String,
+        groupID: UUID? = nil,
+        sortOrder: Int? = nil
+    ) throws -> SavedCommand {
         guard !CommandValidation.isRejected(command) else {
             throw SavedCommandError.invalidCommand
         }
+        let normalizedTitle = try normalizeTitle(title)
         let context = modelContainer.mainContext
         let group = groupID.flatMap { fetchGroup(id: $0, in: context) }
         let order = sortOrder ?? nextCommandSortOrder(in: context, groupID: groupID)
-        let saved = SavedCommand(command: command, group: group, sortOrder: order)
+        let saved = SavedCommand(title: normalizedTitle, command: command, group: group, sortOrder: order)
         context.insert(saved)
         do {
             try saveAction(context)
@@ -117,14 +124,33 @@ final class SavedCommandStore {
         return saved
     }
 
-    /// 编辑命令文本。经 `CommandValidation` 校验。保存原文。
+    /// 兼容旧调用：只编辑命令文本，保留原有标题（包括旧记录的 nil）。
     func updateCommand(id: UUID, command: String) throws {
+        try updateCommand(id: id, command: command, title: nil, shouldUpdateTitle: false)
+    }
+
+    /// 编辑标题与命令。标题 trim 后保存；标题和命令都必须是非空单行文本。
+    func updateCommand(id: UUID, title: String, command: String) throws {
+        let normalizedTitle = try normalizeTitle(title)
+        try updateCommand(id: id, command: command, title: normalizedTitle, shouldUpdateTitle: true)
+    }
+
+    /// 共用更新事务，确保标题、命令与 updatedAt 要么一起保存，要么一起回滚。
+    private func updateCommand(
+        id: UUID,
+        command: String,
+        title: String?,
+        shouldUpdateTitle: Bool
+    ) throws {
         guard !CommandValidation.isRejected(command) else {
             throw SavedCommandError.invalidCommand
         }
         let context = modelContainer.mainContext
         guard let saved = fetchCommand(id: id, in: context) else {
             throw SavedCommandError.commandNotFound
+        }
+        if shouldUpdateTitle {
+            saved.title = title
         }
         saved.command = command
         saved.updatedAt = .now
@@ -198,6 +224,17 @@ final class SavedCommandStore {
         return try? context.fetch(descriptor).first
     }
 
+    /// 标题与命令共用单行安全策略；标题额外去除首尾空白以保持列表展示稳定。
+    private func normalizeTitle(_ title: String?) throws -> String? {
+        guard let title else {
+            return nil
+        }
+        guard !CommandValidation.isRejected(title) else {
+            throw SavedCommandError.invalidTitle
+        }
+        return title.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func nextGroupSortOrder(in context: ModelContext) -> Int {
         let descriptor = FetchDescriptor<SavedCommandGroup>(
             sortBy: [SortDescriptor(\.sortOrder, order: .reverse)]
@@ -227,6 +264,7 @@ final class SavedCommandStore {
 /// SavedCommand 业务错误（语言无关，UI 按 Locale 映射文案）。
 enum SavedCommandError: Error, Equatable {
     case emptyGroupName
+    case invalidTitle
     case invalidCommand
     case groupNotFound
     case commandNotFound

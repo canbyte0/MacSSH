@@ -3,9 +3,10 @@ import SwiftData
 
 /// MacSSH 1.1 Phase 7：用户保存的常用命令（SwiftData 持久化）。
 ///
-/// v1 字段（任务书 §25 / Phase 7A 验收 §55）：
+/// 基础字段（任务书 §25 / Phase 7A 验收 §55）：
 /// - `id` / `command` / `group`（nullable）/ `sortOrder`；
-/// - **不**加 title / tag / host binding / variable template / shortcut / AI。
+/// - 后续按用户确认新增可空 `title`，用于描述命令作用；可空设计保证旧数据轻量迁移后仍可读取。
+/// - 不增加 tag / host binding / variable template / shortcut / AI。
 ///
 /// `command` 第一版只支持单行（任务书 §27 / Phase 7A 验收 §56）：
 /// Store + UI 双重校验拒绝 `\n` / `\r` / NUL / U+2028 / U+2029；
@@ -19,6 +20,9 @@ final class SavedCommand {
     /// 业务层稳定标识。
     @Attribute(.unique) var id: UUID
 
+    /// 命令用途标题；旧记录迁移后可为 nil，新增/编辑 UI 要求填写。
+    var title: String?
+
     /// 单行命令文本（原文，不 trim；Store 层校验单行 + 非空）。
     var command: String
 
@@ -31,6 +35,7 @@ final class SavedCommand {
 
     init(
         id: UUID = UUID(),
+        title: String? = nil,
         command: String,
         group: SavedCommandGroup? = nil,
         sortOrder: Int = 0,
@@ -38,6 +43,7 @@ final class SavedCommand {
         updatedAt: Date = .now
     ) {
         self.id = id
+        self.title = title
         self.command = command
         self.group = group
         self.sortOrder = sortOrder

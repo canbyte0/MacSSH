@@ -123,7 +123,7 @@ final class SwiftDataMigrationTests: XCTestCase {
         // 7. 新 model 可正常插入/query。
         let cmdGroup = SavedCommandGroup(name: "Git", sortOrder: 0)
         ctx7.insert(cmdGroup)
-        let cmd = SavedCommand(command: "git status", group: cmdGroup, sortOrder: 0)
+        let cmd = SavedCommand(title: "查看仓库状态", command: "git status", group: cmdGroup, sortOrder: 0)
         ctx7.insert(cmd)
         let history = CommandHistoryEntry(
             command: "ls", sessionID: UUID(), sessionKind: "local", source: "savedCommand"
@@ -136,6 +136,7 @@ final class SwiftDataMigrationTests: XCTestCase {
         )
         let savedCmd = try ctx7.fetch(cmdDescriptor).first
         XCTAssertNotNil(savedCmd, "新 SavedCommand 无法插入/query")
+        XCTAssertEqual(savedCmd?.title, "查看仓库状态")
         XCTAssertEqual(savedCmd?.group?.name, "Git")
 
         let historyDescriptor = FetchDescriptor<CommandHistoryEntry>()

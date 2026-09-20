@@ -130,13 +130,13 @@ private struct HistoryRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.compact) {
             VStack(alignment: .leading, spacing: 2) {
+                // 不启用文本选择，避免右键时显示系统“字体/格式”等文本编辑菜单。
                 Text(verbatim: entry.command)
                     // 历史与常用命令统一使用 13 pt 终端字体（JetBrains Mono 级联，
                     // 中文回落 PingFang SC、Emoji 回落 Apple Color Emoji）。
                     .font(Font(TerminalFontProvider.regularFont(size: 13)))
                     .lineLimit(2)
                     .truncationMode(.middle)
-                    .textSelection(.enabled)
 
                 Text(verbatim: sourceLabel)
                     // 来源属于辅助文字，统一使用 11 pt 常规字重。

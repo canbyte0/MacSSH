@@ -68,6 +68,24 @@ final class SavedCommandStoreTests: XCTestCase {
         _ = try store.addCommand(command: "git status")
         XCTAssertEqual(store.ungroupedCommands().count, 1)
         XCTAssertEqual(store.ungroupedCommands().first?.command, "git status")
+        XCTAssertNil(store.ungroupedCommands().first?.title, "旧调用不提供标题时应保持兼容")
+    }
+
+    func testAddCommandWithTitleTrimsAndPersistsTitle() throws {
+        _ = try store.addCommand(title: "  查看仓库状态  ", command: "git status")
+
+        let saved = store.ungroupedCommands().first
+        XCTAssertEqual(saved?.title, "查看仓库状态")
+        XCTAssertEqual(saved?.command, "git status")
+    }
+
+    func testRejectsInvalidTitle() {
+        XCTAssertThrowsError(try store.addCommand(title: "   ", command: "pwd")) { error in
+            XCTAssertEqual(error as? SavedCommandError, .invalidTitle)
+        }
+        XCTAssertThrowsError(try store.addCommand(title: "显示\n路径", command: "pwd")) { error in
+            XCTAssertEqual(error as? SavedCommandError, .invalidTitle)
+        }
     }
 
     func testRejectsEmptyCommand() {
@@ -132,9 +150,20 @@ final class SavedCommandStoreTests: XCTestCase {
     }
 
     func testUpdateCommand() throws {
-        let cmd = try store.addCommand(command: "git status")
+        let cmd = try store.addCommand(title: "查看状态", command: "git status")
         try store.updateCommand(id: cmd.id, command: "git pull")
         XCTAssertEqual(store.ungroupedCommands().first?.command, "git pull")
+        XCTAssertEqual(store.ungroupedCommands().first?.title, "查看状态", "旧更新 API 不应清空标题")
+    }
+
+    func testUpdateCommandTitleAndCommand() throws {
+        let cmd = try store.addCommand(title: "旧标题", command: "git status")
+
+        try store.updateCommand(id: cmd.id, title: "  查看简短状态  ", command: "git status --short")
+
+        let updated = store.ungroupedCommands().first
+        XCTAssertEqual(updated?.title, "查看简短状态")
+        XCTAssertEqual(updated?.command, "git status --short")
     }
 
     func testDeleteCommand() throws {
@@ -177,14 +206,15 @@ final class SavedCommandStoreTests: XCTestCase {
     /// 修复 P2-3（原分组内 Edit 为空操作）的回归保护：确保 update API 真正作用于分组内命令。
     func testUpdateGroupedCommandPreservesGroup() throws {
         let group = try store.addGroup(name: "Docker")
-        let cmd = try store.addCommand(command: "git status", groupID: group.id)
+        let cmd = try store.addCommand(title: "查看状态", command: "git status", groupID: group.id)
         let originalGroupID = group.id
 
-        try store.updateCommand(id: cmd.id, command: "git status --short")
+        try store.updateCommand(id: cmd.id, title: "查看简短状态", command: "git status --short")
 
         // command 文本更新。
         let updated = store.commands(inGroup: originalGroupID).first { $0.id == cmd.id }
         XCTAssertEqual(updated?.command, "git status --short")
+        XCTAssertEqual(updated?.title, "查看简短状态")
         // group 关系保持（仍属原 group）。
         XCTAssertEqual(updated?.group?.id, originalGroupID, "编辑分组内命令不得改变其 group")
         // 该 group 仍含此命令，未变成未分组。

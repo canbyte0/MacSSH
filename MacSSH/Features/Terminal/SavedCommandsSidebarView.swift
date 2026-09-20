@@ -198,9 +198,9 @@ struct SavedCommandsSidebarView: View {
     // MARK: - Editor sheets (native Form)
 
     private var commandCreateSheet: some View {
-        CommandEditorSheet(mode: .create, onSave: { text in
+        CommandEditorSheet(mode: .create, onSave: { title, text in
             do {
-                _ = try appState.savedCommandStore.addCommand(command: text)
+                _ = try appState.savedCommandStore.addCommand(title: title, command: text)
             } catch {
                 AppLogger.app.error("Saved command add failed")
             }
@@ -208,9 +208,15 @@ struct SavedCommandsSidebarView: View {
     }
 
     private func commandEditSheet(_ command: SavedCommand) -> some View {
-        CommandEditorSheet(mode: .edit(command.command), onSave: { text in
+        CommandEditorSheet(
+            mode: .edit(title: command.title, command: command.command),
+            onSave: { title, text in
             do {
-                try appState.savedCommandStore.updateCommand(id: command.id, command: text)
+                try appState.savedCommandStore.updateCommand(
+                    id: command.id,
+                    title: title,
+                    command: text
+                )
             } catch {
                 AppLogger.app.error("Saved command update failed")
             }
@@ -243,12 +249,16 @@ struct SavedCommandsSidebarView: View {
     }
 
     /// 分组内新增命令 sheet（GUI Acceptance Round 1 FAIL #2 修复）。
-    /// 复用 `CommandEditorSheet(mode: .create)`；Sheet 只编辑 command text（第一版不显示 Group Picker，
-    /// 调用者已明确 target group）。保存时直接绑定 target groupID（不先建 ungrouped 再 move）。
+    /// 复用 `CommandEditorSheet(mode: .create)`；Sheet 编辑 title + command，不显示 Group Picker，
+    /// 调用者已明确 target group。保存时直接绑定 target groupID（不先建 ungrouped 再 move）。
     private func commandCreateInGroupSheet(_ group: SavedCommandGroup) -> some View {
-        CommandEditorSheet(mode: .create, onSave: { text in
+        CommandEditorSheet(mode: .create, onSave: { title, text in
             do {
-                _ = try appState.savedCommandStore.addCommand(command: text, groupID: group.id)
+                _ = try appState.savedCommandStore.addCommand(
+                    title: title,
+                    command: text,
+                    groupID: group.id
+                )
             } catch {
                 AppLogger.app.error("Saved command add to group failed")
             }
@@ -309,9 +319,17 @@ private struct GroupSection: View {
         } label: {
             HStack {
                 Text(verbatim: group.name)
-                    .font(.callout.weight(.medium))
+                    // 分组标题在原生 callout（约 13 pt）基础上放大 1 pt，并使用粗体强化层级。
+                    .font(.system(size: 14, weight: .bold))
                 Spacer()
-                groupMenu
+            }
+            // 让分组标题右侧空白区域同时参与左右键命中，整行都可切换或打开菜单。
+            .contentShape(Rectangle())
+            .onTapGesture {
+                expansionBinding.wrappedValue.toggle()
+            }
+            .contextMenu {
+                groupContextMenu
             }
         }
         .padding(.horizontal, AppTheme.Spacing.regular)
@@ -354,36 +372,25 @@ private struct GroupSection: View {
         )
     }
 
-    private var groupMenu: some View {
-        Menu {
-            Button {
-                onAddCommand(group)
-            } label: {
-                Label("sidebar_right.add_command", systemImage: "plus")
-            }
-            Divider()
-            Button {
-                onRenameGroup(group)
-            } label: {
-                Label("sidebar_right.rename", systemImage: "pencil")
-            }
-            Button(role: .destructive) {
-                pendingDelete = true
-            } label: {
-                Label("sidebar_right.delete_group", systemImage: "trash")
-            }
+    /// 分组标题整行的右键操作；替代原先标题右侧的省略号菜单按钮。
+    @ViewBuilder
+    private var groupContextMenu: some View {
+        Button {
+            onAddCommand(group)
         } label: {
-            Image(systemName: "ellipsis")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
+            Label("sidebar_right.add_command", systemImage: "plus")
         }
-        // 所有分组菜单统一只显示省略号，不影响左侧 DisclosureGroup 展开箭头。
-        .menuIndicator(.hidden)
-        .buttonStyle(AppInteractiveButtonStyle(
-            baseStyle: BorderlessButtonStyle(),
-            compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
-        ))
-        .accessibilityLabel(L10n.string("sidebar_right.group_actions", defaultValue: "Group actions", locale: appState.language.locale))
+        Divider()
+        Button {
+            onRenameGroup(group)
+        } label: {
+            Label("sidebar_right.rename", systemImage: "pencil")
+        }
+        Button(role: .destructive) {
+            pendingDelete = true
+        } label: {
+            Label("sidebar_right.delete_group", systemImage: "trash")
+        }
     }
 }
 
@@ -399,12 +406,29 @@ private struct SavedCommandRow: View {
 
     var body: some View {
         HStack(alignment: .top, spacing: AppTheme.Spacing.compact) {
-            Text(verbatim: command.command)
-                // 与历史命令统一为 13 pt 终端字体（JetBrains Mono 级联），便于辨认路径和符号。
-                .font(Font(TerminalFontProvider.regularFont(size: 13)))
-                .lineLimit(1)
-                .truncationMode(.middle)
-                .textSelection(.enabled)
+            // 不启用文本选择，避免系统“字体/格式”菜单覆盖命令项自身的右键菜单。
+            VStack(alignment: .leading, spacing: AppTheme.Spacing.compact / 2) {
+                if let displayTitle {
+                    Text(verbatim: displayTitle)
+                        // 标题优先表达命令用途；不使用额外图标，保持窄侧栏简洁。
+                        .font(.system(size: 13, weight: .medium))
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+
+                    Text(verbatim: command.command)
+                        // 原始命令作为次级信息，使用较小等宽字体便于辨认路径和符号。
+                        .font(Font(TerminalFontProvider.regularFont(size: 12)))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    // 兼容迁移前的旧记录：没有标题时维持原来的单行命令展示。
+                    Text(verbatim: command.command)
+                        .font(Font(TerminalFontProvider.regularFont(size: 13)))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                }
+            }
 
             Spacer()
 
@@ -438,6 +462,15 @@ private struct SavedCommandRow: View {
         .accessibilityElement(children: .contain)
     }
 
+    /// 防御旧数据或外部写入的空标题；空白标题回退到单行命令样式。
+    private var displayTitle: String? {
+        guard let title = command.title?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !title.isEmpty else {
+            return nil
+        }
+        return title
+    }
+
     @ViewBuilder
     private var rowBackground: some View {
         RoundedRectangle(cornerRadius: 4)
@@ -450,21 +483,26 @@ private struct SavedCommandRow: View {
 private struct CommandEditorSheet: View {
     enum Mode {
         case create
-        case edit(String)
+        case edit(title: String?, command: String)
     }
     let mode: Mode
-    let onSave: (String) -> Void
+    let onSave: (String, String) -> Void
 
     @Environment(\.locale) private var locale
     @Environment(\.dismiss) private var dismiss
+    @State private var title: String
     @State private var text: String
 
-    init(mode: Mode, onSave: @escaping (String) -> Void) {
+    init(mode: Mode, onSave: @escaping (String, String) -> Void) {
         self.mode = mode
         self.onSave = onSave
         switch mode {
-        case .create: _text = State(initialValue: "")
-        case .edit(let existing): _text = State(initialValue: existing)
+        case .create:
+            _title = State(initialValue: "")
+            _text = State(initialValue: "")
+        case .edit(let existingTitle, let existingCommand):
+            _title = State(initialValue: existingTitle ?? "")
+            _text = State(initialValue: existingCommand)
         }
     }
 
@@ -472,6 +510,11 @@ private struct CommandEditorSheet: View {
         VStack(spacing: AppTheme.Spacing.regular) {
             Text(modeTitle)
                 .font(.headline)
+            TextField(
+                L10n.string("sidebar_right.command_title_placeholder", defaultValue: "Title", locale: locale),
+                text: $title
+            )
+                .textFieldStyle(.roundedBorder)
             TextField(L10n.string("sidebar_right.command_placeholder", defaultValue: "Command", locale: locale), text: $text)
                 .textFieldStyle(.roundedBorder)
                 // 命令编辑框与侧栏命令文本统一为 13 pt 终端字体（JetBrains Mono 级联）。
@@ -485,7 +528,7 @@ private struct CommandEditorSheet: View {
                     Text(verbatim: L10n.string("action.cancel", defaultValue: "Cancel", locale: locale))
                 }
                 Button {
-                    onSave(text)
+                    onSave(title, text)
                     dismiss()
                 } label: {
                     Text(verbatim: L10n.string("common.save", defaultValue: "Save", locale: locale))
@@ -507,6 +550,12 @@ private struct CommandEditorSheet: View {
     }
 
     private var validationError: String? {
+        if title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return L10n.string("sidebar_right.command_title_empty", defaultValue: "Title cannot be empty.", locale: locale)
+        }
+        if CommandValidation.isRejected(title) {
+            return L10n.string("sidebar_right.command_title_single_line", defaultValue: "Title must be a single line.", locale: locale)
+        }
         if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return L10n.string("sidebar_right.command_empty", defaultValue: "Command cannot be empty.", locale: locale)
         }
