@@ -134,7 +134,7 @@ struct SettingsView: View {
                     .accessibilityIdentifier("settings.saveCommandHistory")
                 Text(verbatim: L10n.string(
                     "sidebar_right.history_disclosure",
-                    defaultValue: "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded.",
+                    defaultValue: "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded.",
                     locale: locale
                 ))
                 .font(.footnote)

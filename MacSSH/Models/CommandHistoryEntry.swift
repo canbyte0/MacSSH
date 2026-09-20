@@ -3,10 +3,9 @@ import SwiftData
 
 /// MacSSH 1.1 Phase 7：命令历史条目（SwiftData 持久化）。
 ///
-/// History v1 **只记录通过 MacSSH Execute action 明确执行的命令**
-/// （任务书 §22 / Phase 7A 验收 §38）。不记录手动键盘输入、Paste、
-/// password prompt、REPL、tmux raw input——禁止 keyboard interception
-/// （P1 安全边界，任务书 §23 / Phase 7A 验收 §31）。
+/// 记录 MacSSH Execute action 与本地 zsh `preexec` 确认开始执行的命令。
+/// 不记录仅 Paste 的文本、password prompt、REPL 或 tmux raw input；
+/// 仍严格禁止 keyboard interception 与 Terminal 输出字节解析。
 ///
 /// 不依赖活着的 Session 对象（任务书 §29 / Phase 7A 验收 §42）：
 /// `sessionID` 是 runtime UUID 快照，session close 后 history 仍可显示
@@ -19,7 +18,7 @@ final class CommandHistoryEntry {
     /// 业务层稳定标识。
     @Attribute(.unique) var id: UUID
 
-    /// 执行的命令文本（原文，单行）。
+    /// 执行的命令文本（原文；zsh 手动命令可为多行）。
     var command: String
 
     /// 执行时刻（用于倒序排序与 retention pruning）。
@@ -35,7 +34,7 @@ final class CommandHistoryEntry {
     /// Remote 时存 host 显示名快照（不含凭据）；Local 为 nil。
     var hostDisplayName: String?
 
-    /// "savedCommand" / "historyReplay"（命令来源；任务书 §25 / Phase 7A 验收 §39）。
+    /// "savedCommand" / "historyReplay" / "manualShell"（命令来源）。
     var source: String
 
     init(

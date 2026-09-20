@@ -166,6 +166,60 @@ final class SavedCommandStoreTests: XCTestCase {
         XCTAssertEqual(updated?.command, "git status --short")
     }
 
+    func testMoveUngroupedCommandIntoGroup() throws {
+        let group = try store.addGroup(name: "Git")
+        let command = try store.addCommand(title: "查看状态", command: "git status")
+
+        try store.moveCommand(id: command.id, toGroupID: group.id)
+
+        XCTAssertEqual(store.commands(inGroup: group.id).map(\.id), [command.id])
+        XCTAssertTrue(store.ungroupedCommands().isEmpty)
+    }
+
+    func testMoveCommandBetweenGroupsAppendsToDestination() throws {
+        let source = try store.addGroup(name: "Source")
+        let destination = try store.addGroup(name: "Destination")
+        let existing = try store.addCommand(command: "pwd", groupID: destination.id)
+        let moved = try store.addCommand(command: "git status", groupID: source.id)
+
+        try store.moveCommand(id: moved.id, toGroupID: destination.id)
+
+        XCTAssertTrue(store.commands(inGroup: source.id).isEmpty)
+        XCTAssertEqual(store.commands(inGroup: destination.id).map(\.id), [existing.id, moved.id])
+        XCTAssertGreaterThan(moved.sortOrder, existing.sortOrder)
+    }
+
+    func testMoveGroupedCommandToUngrouped() throws {
+        let group = try store.addGroup(name: "Git")
+        let command = try store.addCommand(command: "git status", groupID: group.id)
+
+        try store.moveCommand(id: command.id, toGroupID: nil)
+
+        XCTAssertTrue(store.commands(inGroup: group.id).isEmpty)
+        XCTAssertEqual(store.ungroupedCommands().map(\.id), [command.id])
+        XCTAssertNil(command.group)
+    }
+
+    func testMoveCommandRejectsMissingTargetGroupWithoutChangingRelationship() throws {
+        let source = try store.addGroup(name: "Git")
+        let command = try store.addCommand(command: "git status", groupID: source.id)
+
+        XCTAssertThrowsError(try store.moveCommand(id: command.id, toGroupID: UUID())) { error in
+            XCTAssertEqual(error as? SavedCommandError, .groupNotFound)
+        }
+
+        XCTAssertEqual(command.group?.id, source.id)
+        XCTAssertEqual(store.commands(inGroup: source.id).map(\.id), [command.id])
+    }
+
+    func testMoveMissingCommandIsRejected() throws {
+        let group = try store.addGroup(name: "Git")
+
+        XCTAssertThrowsError(try store.moveCommand(id: UUID(), toGroupID: group.id)) { error in
+            XCTAssertEqual(error as? SavedCommandError, .commandNotFound)
+        }
+    }
+
     func testDeleteCommand() throws {
         let cmd = try store.addCommand(command: "git status")
         try store.deleteCommand(id: cmd.id)

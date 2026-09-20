@@ -8,13 +8,12 @@ struct AppSidebar: View {
 
     var body: some View {
         List(AppSection.allCases, selection: $selection) { section in
-            Label {
-                Text(section.titleKey)
-            } icon: {
-                Image(systemName: section.systemImage)
-            }
-                .tag(section)
-                .accessibilityIdentifier("sidebar.\(section.rawValue)")
+            AppSidebarRow(
+                section: section,
+                isSelected: selection == section
+            )
+            .tag(section)
+            .accessibilityIdentifier("sidebar.\(section.rawValue)")
         }
         .listStyle(.sidebar)
         .navigationTitle("MacSSH")
@@ -34,6 +33,49 @@ struct AppSidebar: View {
             .frame(width: 0, height: 0)
         }
         .accessibilityLabel("accessibility.main_sidebar")
+    }
+}
+
+/// 顶层导航行：保留 List 原生选中样式，只为未选中项补充轻量悬停反馈。
+private struct AppSidebarRow: View {
+    /// SidebarListStyle 的行背景自身已有边缘布局；10 pt 可与系统选中底色对齐。
+    private static let hoverBackgroundHorizontalInset: CGFloat = 10
+
+    let section: AppSection
+    let isSelected: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    var body: some View {
+        Label {
+            Text(section.titleKey)
+        } icon: {
+            Image(systemName: section.systemImage)
+        }
+        // 扩大到 List 行的完整内容宽度，让图标、标题和右侧空白都能触发悬停。
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .listRowBackground(sidebarRowBackground)
+        .animation(
+            reduceMotion
+                ? nil
+                : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+            value: isHovering
+        )
+        .onHover { isHovering = $0 }
+    }
+
+    /// 选中项继续由系统绘制较深背景；未选中项悬停时显示更浅的圆角底色。
+    private var sidebarRowBackground: some View {
+        RoundedRectangle(cornerRadius: AppTheme.Spacing.compact)
+            .fill(
+                isHovering && !isSelected
+                    ? Color.primary.opacity(0.04)
+                    : Color.clear
+            )
+            // Retina 截图中的 4 px 差值对应 2 pt；10 pt 是 8 与 12 的正确中间值。
+            .padding(.horizontal, Self.hoverBackgroundHorizontalInset)
     }
 }
 

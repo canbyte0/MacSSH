@@ -135,6 +135,43 @@ final class SavedCommandStore {
         try updateCommand(id: id, command: command, title: normalizedTitle, shouldUpdateTitle: true)
     }
 
+    /// 把常用命令移动到指定分组；`groupID == nil` 表示移到「未分组」。
+    ///
+    /// 拖放只改变分组归属，不重排目标分组已有命令；被移动的命令追加到目标分组末尾。
+    /// 若命令已经位于目标分组，则直接视为成功，不触发无意义的持久化写入。
+    func moveCommand(id: UUID, toGroupID groupID: UUID?) throws {
+        let context = modelContainer.mainContext
+        guard let saved = fetchCommand(id: id, in: context) else {
+            throw SavedCommandError.commandNotFound
+        }
+
+        let targetGroup: SavedCommandGroup?
+        if let groupID {
+            guard let resolvedGroup = fetchGroup(id: groupID, in: context) else {
+                throw SavedCommandError.groupNotFound
+            }
+            targetGroup = resolvedGroup
+        } else {
+            targetGroup = nil
+        }
+
+        guard saved.group?.id != groupID else {
+            return
+        }
+
+        // 在修改 relationship 之前计算目标末尾位置，避免查询把当前命令也计入目标分组。
+        let destinationSortOrder = nextCommandSortOrder(in: context, groupID: groupID)
+        saved.group = targetGroup
+        saved.sortOrder = destinationSortOrder
+        saved.updatedAt = .now
+        do {
+            try saveAction(context)
+        } catch {
+            context.rollback()
+            throw SavedCommandError.persistenceFailed
+        }
+    }
+
     /// 共用更新事务，确保标题、命令与 updatedAt 要么一起保存，要么一起回滚。
     private func updateCommand(
         id: UUID,

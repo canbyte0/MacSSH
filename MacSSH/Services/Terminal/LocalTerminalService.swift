@@ -2,6 +2,174 @@ import AppKit
 import Darwin
 import SwiftTerm
 
+/// zsh Shell Integration 手动命令帧的编解码器。
+///
+/// Shell 端用大写十六进制把 UTF-8 bytes 编成单行，以 `\n` 分帧：
+/// - 命令内的换行不会破坏边界；
+/// - 不需要在 shell 内启动 `base64` 子进程；
+/// - 解码严格限长，损坏或过大帧直接丢弃。
+enum ShellCommandHistoryCodec {
+    static let maxCommandByteCount = 64 * 1024
+    static let maxFrameByteCount = maxCommandByteCount * 2
+
+    static func decode(hexLine: Data) -> String? {
+        guard !hexLine.isEmpty,
+              hexLine.count <= maxFrameByteCount,
+              hexLine.count.isMultiple(of: 2)
+        else {
+            return nil
+        }
+
+        var decoded = Data()
+        decoded.reserveCapacity(hexLine.count / 2)
+        var index = hexLine.startIndex
+        while index < hexLine.endIndex {
+            let next = hexLine.index(after: index)
+            guard let high = nibble(hexLine[index]),
+                  let low = nibble(hexLine[next])
+            else {
+                return nil
+            }
+            decoded.append((high << 4) | low)
+            index = hexLine.index(after: next)
+        }
+        guard decoded.count <= maxCommandByteCount,
+              let command = String(data: decoded, encoding: .utf8),
+              !command.isEmpty
+        else {
+            return nil
+        }
+        return command
+    }
+
+    private static func nibble(_ byte: UInt8) -> UInt8? {
+        switch byte {
+        case 48...57: return byte - 48
+        case 65...70: return byte - 65 + 10
+        case 97...102: return byte - 97 + 10
+        default: return nil
+        }
+    }
+}
+
+/// 在专用串行队列上组装 FIFO 字节，处理拆包、粘包和过大帧恢复。
+final class ShellCommandHistoryFrameAccumulator: @unchecked Sendable {
+    private var pending = Data()
+    private var discardingOversizedFrame = false
+
+    func ingest(_ data: Data) -> [String] {
+        guard !data.isEmpty else { return [] }
+        pending.append(data)
+        var commands: [String] = []
+
+        while let newline = pending.firstIndex(of: 0x0A) {
+            let line = pending[..<newline]
+            pending.removeSubrange(...newline)
+            if discardingOversizedFrame {
+                discardingOversizedFrame = false
+                continue
+            }
+            if let command = ShellCommandHistoryCodec.decode(hexLine: Data(line)) {
+                commands.append(command)
+            }
+        }
+
+        if pending.count > ShellCommandHistoryCodec.maxFrameByteCount {
+            // 当前无换行的帧已超限：丢弃已收到部分，并一直忽略到
+            // 下一个换行，避免把后续片段误当成新命令。
+            pending.removeAll(keepingCapacity: true)
+            discardingOversizedFrame = true
+        }
+        return commands
+    }
+}
+
+/// 单个本地 zsh 会话的手动命令事件通道。
+///
+/// App 创建 `0700` 私有目录 + `0600` FIFO，zsh `preexec` 只在命令真正
+/// 开始执行前写入帧。该通道不读键盘、不读终端输出，也不会捕获
+/// password prompt、REPL 或 tmux 内部输入。
+final class ShellCommandHistoryChannel: @unchecked Sendable {
+    let fifoPath: String
+
+    private let lifecycleLock = NSLock()
+    private var readSource: DispatchSourceRead?
+
+    init?(
+        temporaryDirectory: URL = FileManager.default.temporaryDirectory,
+        fileManager: FileManager = .default,
+        onCommand: @escaping @Sendable (String) -> Void
+    ) {
+        let directoryURL = temporaryDirectory.appendingPathComponent(
+            "MacSSH-command-history-\(UUID().uuidString)",
+            isDirectory: true
+        )
+        let fifoURL = directoryURL.appendingPathComponent("events.fifo")
+        fifoPath = fifoURL.path
+
+        do {
+            try fileManager.createDirectory(
+                at: directoryURL,
+                withIntermediateDirectories: false,
+                attributes: [.posixPermissions: 0o700]
+            )
+        } catch {
+            return nil
+        }
+        guard mkfifo(fifoPath, mode_t(S_IRUSR | S_IWUSR)) == 0 else {
+            try? fileManager.removeItem(at: directoryURL)
+            return nil
+        }
+
+        let fileDescriptor = open(fifoPath, O_RDWR | O_NONBLOCK | O_CLOEXEC)
+        guard fileDescriptor >= 0 else {
+            try? fileManager.removeItem(at: directoryURL)
+            return nil
+        }
+
+        let accumulator = ShellCommandHistoryFrameAccumulator()
+        let queue = DispatchQueue(label: "com.macssh.shell-command-history")
+        let source = DispatchSource.makeReadSource(fileDescriptor: fileDescriptor, queue: queue)
+        source.setEventHandler {
+            var bytes = [UInt8](repeating: 0, count: 4096)
+            while true {
+                let count = Darwin.read(fileDescriptor, &bytes, bytes.count)
+                if count > 0 {
+                    for command in accumulator.ingest(Data(bytes.prefix(count))) {
+                        onCommand(command)
+                    }
+                    continue
+                }
+                if count < 0, errno == EINTR {
+                    continue
+                }
+                break
+            }
+        }
+        source.setCancelHandler {
+            Darwin.close(fileDescriptor)
+            // Shell 成功打开 FIFO 后会先移除入口；若尚未打开，此处
+            // 统一清理该通道自己的随机私有目录。
+            try? FileManager.default.removeItem(at: directoryURL)
+        }
+        readSource = source
+        source.resume()
+    }
+
+    deinit {
+        close()
+    }
+
+    /// 幂等停止监听；描述符与私有目录由 cancel handler 收敛。
+    func close() {
+        lifecycleLock.lock()
+        let source = readSource
+        readSource = nil
+        lifecycleLock.unlock()
+        source?.cancel()
+    }
+}
+
 /// 单个本地 zsh 会话的粘贴高亮控制通道。
 ///
 /// App 通过仅当前用户可访问的命名管道发送 `1` / `0`；zsh 的 ZLE 文件描述符
@@ -103,9 +271,20 @@ final class LocalTerminalService: NSObject {
     /// 每个 Local Session 独立持有控制通道，关闭会话时随 Service 一并释放。
     private var pasteHighlightControlChannel: PasteHighlightControlChannel?
 
-    init(session: TerminalSession, logicalSessionID: UUID = UUID()) {
+    /// 每个 Local zsh Session 独立的手动命令上报通道。
+    private var shellCommandHistoryChannel: ShellCommandHistoryChannel?
+
+    /// Store 由 AppState 强持有；Service 仅作为本会话事件转发者。
+    private weak var commandHistoryStore: CommandHistoryStore?
+
+    init(
+        session: TerminalSession,
+        logicalSessionID: UUID = UUID(),
+        commandHistoryStore: CommandHistoryStore? = nil
+    ) {
         self.session = session
         self.logicalSessionID = logicalSessionID
+        self.commandHistoryStore = commandHistoryStore
 
         // 计划书要求默认限制为 10,000 行，并使用 xterm-256color 能力。
         //
@@ -164,10 +343,25 @@ final class LocalTerminalService: NSObject {
         session.processState = .starting
         if URL(fileURLWithPath: session.shellPath).lastPathComponent == "zsh" {
             pasteHighlightControlChannel = PasteHighlightControlChannel()
+            if commandHistoryStore != nil {
+                shellCommandHistoryChannel = ShellCommandHistoryChannel { [weak self] command in
+                    Task { @MainActor [weak self] in
+                        guard let self, let store = self.commandHistoryStore else { return }
+                        store.append(
+                            command: command,
+                            sessionID: self.logicalSessionID,
+                            sessionKind: "local",
+                            hostDisplayName: nil,
+                            source: CommandSource.manualShell.rawValue
+                        )
+                    }
+                }
+            }
         }
 
         let configuration = LocalShellLauncher.makeConfiguration(
-            pasteHighlightControlPath: pasteHighlightControlChannel?.fifoPath
+            pasteHighlightControlPath: pasteHighlightControlChannel?.fifoPath,
+            commandHistoryEventPath: shellCommandHistoryChannel?.fifoPath
         )
         switch configuration.strategy {
         case .systemLogin:
@@ -193,7 +387,7 @@ final class LocalTerminalService: NSObject {
             scheduleMutationEndpointPreparation()
         } else {
             invalidateMutationEndpoint()
-            closePasteHighlightControlChannel()
+            closeShellIntegrationChannels()
             session.processState = .failedToStart
             AppLogger.terminal.error("Local terminal failed to start")
         }
@@ -215,7 +409,7 @@ final class LocalTerminalService: NSObject {
             return
         }
         terminalView.terminate()
-        closePasteHighlightControlChannel()
+        closeShellIntegrationChannels()
         AppLogger.terminal.info("Local terminal process termination requested")
 
         let pid = terminalView.process.shellPid
@@ -380,9 +574,11 @@ final class LocalTerminalService: NSObject {
     }
 
     /// 统一释放控制通道；进程启动失败、主动关闭和自然退出均调用。
-    private func closePasteHighlightControlChannel() {
+    private func closeShellIntegrationChannels() {
         pasteHighlightControlChannel?.close()
         pasteHighlightControlChannel = nil
+        shellCommandHistoryChannel?.close()
+        shellCommandHistoryChannel = nil
     }
 }
 
@@ -418,7 +614,7 @@ extension LocalTerminalService: LocalProcessTerminalViewDelegate {
     nonisolated func processTerminated(source: TerminalView, exitCode: Int32?) {
         Task { @MainActor [weak self] in
             self?.invalidateMutationEndpoint()
-            self?.closePasteHighlightControlChannel()
+            self?.closeShellIntegrationChannels()
             self?.session.processState = .exited(exitCode)
             AppLogger.terminal.info("Local terminal process terminated")
         }

@@ -172,6 +172,24 @@ final class CommandHistoryStoreTests: XCTestCase {
 
     // MARK: - clear
 
+    func testDeleteOnlyRemovesSelectedEntry() {
+        store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "manualShell")
+        store.append(command: "pwd", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "manualShell")
+        let selectedID = try! XCTUnwrap(store.recentEntries().first(where: { $0.command == "ls" })?.id)
+
+        store.delete(id: selectedID)
+
+        XCTAssertEqual(store.recentEntries().map(\.command), ["pwd"], "只应删除右键选中的一条")
+    }
+
+    func testDeleteMissingEntryIsIdempotent() {
+        store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "manualShell")
+
+        store.delete(id: UUID())
+
+        XCTAssertEqual(store.recentEntries().map(\.command), ["ls"])
+    }
+
     func testClear() {
         store.append(command: "ls", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")
         store.append(command: "pwd", sessionID: UUID(), sessionKind: "local", hostDisplayName: nil, source: "savedCommand")

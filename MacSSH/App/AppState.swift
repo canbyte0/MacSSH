@@ -79,7 +79,7 @@ final class AppState {
     let savedCommandStore: SavedCommandStore
 
     /// MacSSH 1.1 Phase 7：命令历史 Store（SwiftData + historyEnabled UserDefaults）。
-    /// 只记录通过 MacSSH Execute 明确执行的命令（P1 安全边界：禁止 keyboard interception）。
+    /// 记录 MacSSH Execute 与本地 zsh preexec 上报，严格禁止 keyboard interception。
     let commandHistoryStore: CommandHistoryStore
 
     /// MacSSH 1.1 Phase 7：统一 Paste / Execute 调度器。每次 action 实时读 activeSession，
@@ -171,7 +171,18 @@ final class AppState {
         let terminalFontSizeController = TerminalFontSizeController(userDefaults: userDefaults)
         self.terminalFontSizeController = terminalFontSizeController
 
-        let sessionManager = SessionManager(sshService: sshService)
+        // MacSSH 1.1 Phase 7：先创建命令 Store，使 SessionManager 在构造
+        // 首个 Local Session 时就能注入安全的 zsh 命令历史上报通道。
+        let savedCommandStore = SavedCommandStore(modelContainer: modelContainer)
+        let commandHistoryStore = CommandHistoryStore(
+            modelContainer: modelContainer,
+            userDefaults: userDefaults
+        )
+
+        let sessionManager = SessionManager(
+            sshService: sshService,
+            commandHistoryStore: commandHistoryStore
+        )
         let transferManager = TransferManager()
         // 双向弱引用装配（两者均由本对象强持有，绝不形成引用环）。
         transferManager.sessionManager = sessionManager
@@ -183,13 +194,7 @@ final class AppState {
         self.sessionManager = sessionManager
         self.transferManager = transferManager
 
-        // MacSSH 1.1 Phase 7：命令侧边栏 Store + Dispatcher 装配。
-        // 必须在 localeProvider 闭包（捕获 self）之前初始化全部 Phase 7 非可选属性。
-        let savedCommandStore = SavedCommandStore(modelContainer: modelContainer)
-        let commandHistoryStore = CommandHistoryStore(
-            modelContainer: modelContainer,
-            userDefaults: userDefaults
-        )
+        // MacSSH 1.1 Phase 7：命令侧边栏 Dispatcher 装配。
         let commandDispatcher = TerminalCommandDispatcher(
             sessionManager: sessionManager,
             historyStore: commandHistoryStore

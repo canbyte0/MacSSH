@@ -4,10 +4,9 @@ import SwiftData
 
 /// MacSSH 1.1 Phase 7：命令历史存储（SwiftData 持久化）。
 ///
-/// History v1 **只记录通过 MacSSH Execute action 明确执行的命令**
-/// （任务书 §22 / Phase 7A 验收 §38）。不记录手动键盘输入、Paste、
-/// password prompt、REPL、tmux raw input——禁止 keyboard interception
-/// （P1 安全边界，任务书 §23）。
+/// History 记录通过 MacSSH Execute action 执行的命令，以及本地 zsh
+/// Shell Integration 的 `preexec` 确认开始执行的命令。不拦截键盘、Paste、
+/// password prompt、REPL 或 tmux raw input，不处理 Terminal 输出字节。
 ///
 /// 职责（任务书 §39 / Phase 7A 验收）：
 /// - append（仅在 historyEnabled 且 Execute 成功发送后调用）；
@@ -73,7 +72,7 @@ final class CommandHistoryStore {
     ///   - sessionID: runtime session UUID（快照，不依赖活着的 Session 对象）。
     ///   - sessionKind: "local" / "remoteSSH"。
     ///   - hostDisplayName: Remote 时存 host 显示名快照（不含凭据）；Local 为 nil。
-    ///   - source: "savedCommand" / "historyReplay"（任务书 §25 / 验收 §39）。
+    ///   - source: "savedCommand" / "historyReplay" / "manualShell"。
     func append(
         command: String,
         sessionID: UUID,
@@ -150,7 +149,26 @@ final class CommandHistoryStore {
         return (try? context.fetch(descriptor)) ?? []
     }
 
-    // MARK: - clear
+    // MARK: - delete / clear
+
+    /// 只删除指定的一条历史；已不存在时幂等 no-op。
+    /// 不影响其他历史、常用命令、分组或 Host 数据。
+    func delete(id: UUID) {
+        let context = modelContainer.mainContext
+        let descriptor = FetchDescriptor<CommandHistoryEntry>(
+            predicate: #Predicate { $0.id == id }
+        )
+        guard let entry = try? context.fetch(descriptor).first else {
+            return
+        }
+        context.delete(entry)
+        do {
+            try saveAction(context)
+        } catch {
+            context.rollback()
+            AppLogger.app.error("Command history entry delete failed (persistence)")
+        }
+    }
 
     /// 清空全部历史（任务书 §33 / Phase 7A 验收 §46）。
     /// **只删 CommandHistoryEntry**，绝不删 SavedCommand/Groups/Hosts/KnownHosts。

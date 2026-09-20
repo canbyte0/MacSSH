@@ -3,9 +3,9 @@ import SwiftUI
 
 /// MacSSH 1.1 Phase 7：历史记录侧边栏视图。
 ///
-/// History v1 只记录通过 MacSSH Execute 执行的命令（任务书 §22 / §24 / Phase 7A 验收 §38）。
-/// 页面顶部明确 disclosure（任务书 §24 / Phase 7A 验收 §38：保留「历史记录」名，
-/// 但说明限制）。History row 也支持 Paste / Run（replay 会再新增 history，§25 / §39）。
+/// History 记录 MacSSH Execute 与本地 zsh Shell Integration 确认开始执行的命令。
+/// 页面顶部常显安全边界：不拦截密码提示、REPL 或 tmux 原始输入。
+/// History row 支持 Paste / Run，右键可添加到常用命令或只删除当前记录。
 struct CommandHistorySidebarView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
@@ -16,7 +16,13 @@ struct CommandHistorySidebarView: View {
     )
     private var entries: [CommandHistoryEntry]
 
+    @Query(
+        sort: [SortDescriptor(\SavedCommandGroup.sortOrder), SortDescriptor(\SavedCommandGroup.createdAt)]
+    )
+    private var savedCommandGroups: [SavedCommandGroup]
+
     @State private var pendingClear = false
+    @State private var savedCommandDraft: SavedCommandDraft?
 
     var body: some View {
         VStack(spacing: AppTheme.Spacing.none) {
@@ -34,12 +40,42 @@ struct CommandHistorySidebarView: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: AppTheme.Spacing.none) {
                         ForEach(entries) { entry in
-                            HistoryRow(entry: entry, canDispatch: appState.commandDispatcher.canDispatch)
+                            HistoryRow(
+                                entry: entry,
+                                canDispatch: appState.commandDispatcher.canDispatch,
+                                onAddToSavedCommands: {
+                                    savedCommandDraft = SavedCommandDraft(command: entry.command)
+                                },
+                                onDelete: {
+                                    appState.commandHistoryStore.delete(id: entry.id)
+                                }
+                            )
                         }
                     }
                     .padding(.vertical, AppTheme.Spacing.compact / 2)
                 }
             }
+        }
+        .sheet(item: $savedCommandDraft) { draft in
+            // 复用常用命令的原生编辑器：命令预填，标题由用户补充，
+            // 默认保存到「未分组」，也可选择现有分组；不隐式创建新分组。
+            CommandEditorSheet(
+                mode: .createPrefilled(command: draft.command),
+                groupOptions: savedCommandGroups.map {
+                    CommandEditorGroupOption(id: $0.id, name: $0.name)
+                }
+            ) { title, command, groupID in
+                do {
+                    _ = try appState.savedCommandStore.addCommand(
+                        title: title,
+                        command: command,
+                        groupID: groupID
+                    )
+                } catch {
+                    AppLogger.app.error("History command add to saved commands failed")
+                }
+            }
+            .environment(\.locale, appState.language.locale)
         }
         .accessibilityIdentifier("sidebar_right.history_content")
     }
@@ -95,7 +131,7 @@ struct CommandHistorySidebarView: View {
     private var disclosureBanner: some View {
         Text(verbatim: L10n.string(
             "sidebar_right.history_disclosure",
-            defaultValue: "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded.",
+            defaultValue: "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded.",
             locale: locale
         ))
         .font(.system(size: 11))
@@ -117,11 +153,19 @@ struct CommandHistorySidebarView: View {
     }
 }
 
+/// 用于驱动「历史命令 → 常用命令」Sheet 的短生命周期数据。
+private struct SavedCommandDraft: Identifiable {
+    let id = UUID()
+    let command: String
+}
+
 // MARK: - History row
 
 private struct HistoryRow: View {
     let entry: CommandHistoryEntry
     let canDispatch: Bool
+    let onAddToSavedCommands: () -> Void
+    let onDelete: () -> Void
     @Environment(AppState.self) private var appState
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -160,6 +204,24 @@ private struct HistoryRow: View {
                 .fill(isHovering ? Color.primary.opacity(0.04) : Color.clear)
         )
         .contentShape(Rectangle())
+        .contextMenu {
+            // 整行都是右键目标；不恢复文本选择，避免系统「字体/格式」菜单。
+            Button(action: onAddToSavedCommands) {
+                Text(verbatim: L10n.string(
+                    "sidebar_right.add_to_saved_commands",
+                    defaultValue: "Add to Saved Commands",
+                    locale: locale
+                ))
+            }
+            Divider()
+            Button(role: .destructive, action: onDelete) {
+                Text(verbatim: L10n.string(
+                    "sidebar_right.delete_history_entry",
+                    defaultValue: "Delete This History Entry",
+                    locale: locale
+                ))
+            }
+        }
         // 背景与 Paste / Run 按钮使用同一 hover transaction 平滑出现、消失。
         .animation(
             reduceMotion

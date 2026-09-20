@@ -118,6 +118,132 @@ final class LocalShellLauncherTests: XCTestCase {
         }
     }
 
+    /// 手动命令事件 FIFO 只注入本地 zsh，不污染 bash 或其他 Shell。
+    func testCommandHistoryEventChannelIsRestrictedToLocalZsh() {
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            let configuration = LocalShellLauncher.resolve(
+                username: "tester",
+                home: "/Users/tester",
+                accountShell: shell,
+                environmentShell: nil,
+                lang: nil,
+                commandHistoryEventPath: "/private/events.fifo",
+                zshIntegrationDirectory: "/Application With Spaces/ShellIntegration",
+                isExecutable: { _ in true }
+            )
+            XCTAssertEqual(
+                configuration.environment.contains(
+                    "MACSSH_COMMAND_HISTORY_FIFO=/private/events.fifo"
+                ),
+                shell == "/bin/zsh"
+            )
+        }
+    }
+
+    /// 十六进制帧在拆包、粘包、Unicode 和命令内换行下仍保持精确边界。
+    func testShellCommandHistoryFrameAccumulatorHandlesBoundariesAndUnicode() {
+        let accumulator = ShellCommandHistoryFrameAccumulator()
+        let first = Self.commandHistoryFrame("echo 你好")
+        let second = Self.commandHistoryFrame("printf 'a\\nb'")
+        let splitIndex = first.index(first.startIndex, offsetBy: 5)
+
+        XCTAssertTrue(accumulator.ingest(first[..<splitIndex]).isEmpty)
+        let combined = Data(first[splitIndex...]) + second
+        XCTAssertEqual(
+            accumulator.ingest(combined),
+            ["echo 你好", "printf 'a\\nb'"]
+        )
+    }
+
+    /// 损坏帧不得生成历史，后续合法帧仍能继续解析。
+    func testShellCommandHistoryFrameAccumulatorRejectsInvalidFrameAndRecovers() {
+        let accumulator = ShellCommandHistoryFrameAccumulator()
+        let invalid = Data("XYZ\n".utf8)
+        let valid = Self.commandHistoryFrame("pwd")
+
+        XCTAssertEqual(accumulator.ingest(invalid + valid), ["pwd"])
+    }
+
+    /// 真实 FIFO 通道从 shell 端写入后异步交付解码命令。
+    func testShellCommandHistoryChannelDeliversCommandFromFIFO() throws {
+        let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
+            "MacSSH.HistoryChannelTests.\(UUID().uuidString)",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(at: temporaryDirectory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: temporaryDirectory) }
+
+        let delivered = expectation(description: "history command delivered")
+        let received = ThreadSafeStringBox()
+        let channel = try XCTUnwrap(
+            ShellCommandHistoryChannel(temporaryDirectory: temporaryDirectory) { command in
+                received.set(command)
+                delivered.fulfill()
+            }
+        )
+        defer { channel.close() }
+
+        let writer = open(channel.fifoPath, O_WRONLY | O_NONBLOCK)
+        XCTAssertGreaterThanOrEqual(writer, 0)
+        defer { close(writer) }
+        let frame = Self.commandHistoryFrame("git status")
+        let written = frame.withUnsafeBytes { buffer in
+            write(writer, buffer.baseAddress, buffer.count)
+        }
+        XCTAssertEqual(written, frame.count)
+
+        wait(for: [delivered], timeout: 2)
+        XCTAssertEqual(received.value, "git status")
+    }
+
+    /// 真实 login zsh + Bundle ShellIntegration + FIFO + SwiftData 全链路：
+    /// 只有命令被 zsh `preexec` 确认开始执行后才写入历史。
+    func testRealLocalZshManualCommandIsPersistedByShellIntegration() async throws {
+        try XCTSkipUnless(
+            URL(fileURLWithPath: LoginShellResolver.resolve()).lastPathComponent == "zsh",
+            "本机账户 Shell 非 zsh：手动命令 Shell Integration 只装配本地 zsh"
+        )
+        let schema = Schema([SavedCommandGroup.self, SavedCommand.self, CommandHistoryEntry.self])
+        let configuration = ModelConfiguration(
+            "ManualCommandHistoryIntegration",
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+        let container = try ModelContainer(for: schema, configurations: [configuration])
+        let defaultsName = "MacSSH.ManualCommandHistory.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: defaultsName))
+        defer { defaults.removePersistentDomain(forName: defaultsName) }
+        defaults.set(true, forKey: CommandHistoryStore.historyEnabledKey)
+        let store = CommandHistoryStore(modelContainer: container, userDefaults: defaults)
+        let sessionID = UUID()
+        let service = LocalTerminalService(
+            session: TerminalSession(shellPath: LoginShellResolver.resolve()),
+            logicalSessionID: sessionID,
+            commandHistoryStore: store
+        )
+        services.append(service)
+        service.startIfNeeded()
+
+        let ready = try await waitForCondition(timeout: 20) {
+            service.session.processState == .running && !self.bufferText(of: service).isEmpty
+        }
+        XCTAssertTrue(ready, "Local zsh 必须进入 running 并显示首个提示符")
+        try await Task.sleep(nanoseconds: 500_000_000)
+
+        let command = "echo MACSSH_MANUAL_HISTORY_\(UUID().uuidString) >/dev/null"
+        service.terminalView.send(txt: command + "\r")
+        let persisted = try await waitForCondition(timeout: 10) {
+            store.recentEntries().contains(where: { $0.command == command })
+        }
+        XCTAssertTrue(persisted, "zsh preexec 上报的手动命令必须持久化")
+        let entry = try XCTUnwrap(store.recentEntries().first(where: { $0.command == command }))
+        XCTAssertEqual(entry.source, CommandSource.manualShell.rawValue)
+        XCTAssertEqual(entry.sessionID, sessionID)
+        XCTAssertEqual(entry.sessionKind, "local")
+        XCTAssertNil(entry.hostDisplayName)
+    }
+
     /// App 端控制通道按顺序写入完整状态消息，供已打开 zsh 的 ZLE 读取。
     func testPasteHighlightControlChannelQueuesStateMessages() throws {
         let temporaryDirectory = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -142,6 +268,12 @@ final class LocalShellLauncherTests: XCTestCase {
         let count = read(reader, &bytes, bytes.count)
         XCTAssertEqual(count, 4)
         XCTAssertEqual(String(decoding: bytes, as: UTF8.self), "1\n0\n")
+    }
+
+    /// 与 ShellIntegration 相同的 UTF-8 → 大写十六进制测试帧生成器。
+    private static func commandHistoryFrame(_ command: String) -> Data {
+        let encoded = command.utf8.map { String(format: "%02X", $0) }.joined()
+        return Data("\(encoded)\n".utf8)
     }
 
     /// 资源缺失时不注入失效 ZDOTDIR，继续原生启动（打包另有资源检查）。
@@ -714,5 +846,23 @@ final class LocalShellLauncherTests: XCTestCase {
             close(fd)
         }
         return fd
+    }
+}
+
+/// 测试闭包会在 FIFO 专用队列回调；用锁保护跨线程断言值。
+private final class ThreadSafeStringBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: String?
+
+    var value: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func set(_ value: String) {
+        lock.lock()
+        storage = value
+        lock.unlock()
     }
 }

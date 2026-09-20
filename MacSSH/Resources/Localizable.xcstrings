@@ -503,6 +503,9 @@
     "Add" : {
 
     },
+    "Add to Saved Commands" : {
+
+    },
     "Agent" : {
 
     },
@@ -2312,6 +2315,9 @@
 
     },
     "Delete this group?" : {
+
+    },
+    "Delete This History Entry" : {
 
     },
     "Denied" : {
@@ -5502,6 +5508,9 @@
     "Read terminal context" : {
 
     },
+    "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded." : {
+
+    },
     "Red" : {
 
     },
@@ -6707,6 +6716,23 @@
         }
       }
     },
+    "sidebar_right.add_to_saved_commands" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Add to Saved Commands"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "添加到常用命令"
+          }
+        }
+      }
+    },
     "sidebar_right.clear_history" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -6928,6 +6954,23 @@
         }
       }
     },
+    "sidebar_right.delete_history_entry" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Delete This History Entry"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "删除此条记录"
+          }
+        }
+      }
+    },
     "sidebar_right.edit" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -7087,13 +7130,13 @@
         "en" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded."
+            "value" : "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded."
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "当前版本仅记录通过 MacSSH 执行的命令。\n手动在终端输入的命令不会记录。"
+            "value" : "记录通过 MacSSH 执行的命令，以及在本地 zsh 中实际执行的命令。\n密码与 REPL、tmux 内部输入不会记录。"
           }
         }
       }
@@ -7264,6 +7307,23 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "显示侧边栏"
+          }
+        }
+      }
+    },
+    "sidebar_right.command_group" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Group"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所属分组"
           }
         }
       }
@@ -8323,9 +8383,6 @@
 
     },
     "This SSH session has %lld file transfer tasks. Closing it will cancel active and waiting transfers." : {
-
-    },
-    "This version records commands run through MacSSH.\nCommands entered manually in the terminal are not recorded." : {
 
     },
     "This will close %lld terminal session(s) connected to %@." : {

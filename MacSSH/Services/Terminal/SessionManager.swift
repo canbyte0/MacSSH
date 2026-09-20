@@ -36,6 +36,11 @@ final class SessionManager {
 
     private let sshService: SSHService
 
+    /// 由 AppState 在创建 Manager 时注入；Local service 仅用它持久化
+    /// zsh Shell Integration 上报的已执行命令。弱引用避免扩大所有权。
+    @ObservationIgnored
+    private weak var commandHistoryStore: CommandHistoryStore?
+
     /// 传输运行时（Phase 10，AppState 装配；弱引用避免与
     /// `TransferManager.sessionManager` 形成引用环）。关闭 / Reconnect
     /// 会话前必须经其屏障取消并等待传输清理完成。
@@ -67,8 +72,9 @@ final class SessionManager {
     @ObservationIgnored
     weak var terminalFontSizeController: TerminalFontSizeController?
 
-    init(sshService: SSHService) {
+    init(sshService: SSHService, commandHistoryStore: CommandHistoryStore? = nil) {
         self.sshService = sshService
+        self.commandHistoryStore = commandHistoryStore
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
         createLocalSession()
     }
@@ -126,7 +132,8 @@ final class SessionManager {
         let logicalSessionID = UUID()
         let service = LocalTerminalService(
             session: TerminalSession(shellPath: LoginShellResolver.resolve()),
-            logicalSessionID: logicalSessionID
+            logicalSessionID: logicalSessionID,
+            commandHistoryStore: commandHistoryStore
         )
         let session = ManagedTerminalSession(
             id: logicalSessionID,

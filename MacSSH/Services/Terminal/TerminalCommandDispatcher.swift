@@ -8,6 +8,8 @@ enum CommandSource: String {
     case savedCommand
     /// 用户从「历史记录」页点击 Run（replay，任务书 §25 / 验收 §39：再新增一条 history）。
     case historyReplay
+    /// 本地 zsh Shell Integration 在 `preexec` 时上报的手动执行命令。
+    case manualShell
 }
 
 /// MacSSH 1.1 Phase 7：TerminalCommandDispatcher 解析到的当前可写 active terminal 输入目标。

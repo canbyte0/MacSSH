@@ -1,5 +1,35 @@
+import CoreTransferable
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
+
+/// 拖动载荷只携带稳定业务 ID；普通文本无法解码为此结构，真正的数据与目标分组
+/// 均由 Store 重新解析。使用系统 `data` 类型可避免额外注册仅限应用内部的自定义 UTI。
+private struct SavedCommandDragPayload: Codable, Sendable, Transferable {
+    let commandID: UUID
+
+    static var transferRepresentation: some TransferRepresentation {
+        CodableRepresentation(contentType: .data)
+    }
+}
+
+/// 常用命令列表的局部布局参数。
+private enum SavedCommandsSidebarLayout {
+    /// 分组标题与命令行共用的水平内容留白。
+    static let rowHorizontalPadding = AppTheme.Spacing.regular
+    /// 分组标题与命令行共用的上下留白。
+    static let rowVerticalPadding = AppTheme.Spacing.compact / 2
+    /// 抹平 14 pt 粗体与 13 pt 等宽字体的行高差，确保单行背景总高度完全一致。
+    static let singleLineMinimumContentHeight: CGFloat = 18
+    /// 分组标题与命令行共用的悬停背景圆角。
+    static let rowCornerRadius: CGFloat = 4
+    /// 原生 DisclosureGroup 的标题从展开箭头之后开始；向左补齐 11.5 pt 后，
+    /// 分组悬停背景与下方命令行背景共享同一左边界。
+    static let groupHeaderLeadingExpansion: CGFloat = 11.5
+    /// 原生 DisclosureGroup 的标题尾部保留 4 pt；向右补齐后，分组悬停背景
+    /// 与下方命令行背景共享同一右边界。
+    static let groupHeaderTrailingExpansion: CGFloat = 4
+}
 
 /// MacSSH 1.1 Phase 7：常用命令侧边栏视图（分组 + hover Paste/Run + CRUD）。
 ///
@@ -13,6 +43,7 @@ struct SavedCommandsSidebarView: View {
     @Environment(AppState.self) private var appState
     @Environment(\.modelContext) private var modelContext
     @Environment(\.locale) private var locale
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     @Query(
         sort: [SortDescriptor(\SavedCommandGroup.sortOrder), SortDescriptor(\SavedCommandGroup.createdAt)]
@@ -31,6 +62,9 @@ struct SavedCommandsSidebarView: View {
     }
 
     @State private var sheet: Sheet?
+    @State private var isUngroupedExpanded = true
+    @State private var isUngroupedHovering = false
+    @State private var isUngroupedDropTargeted = false
 
     init() {}
 
@@ -167,7 +201,8 @@ struct SavedCommandsSidebarView: View {
                     canDispatch: appState.commandDispatcher.canDispatch,
                     onEditCommand: { sheet = .editCommand($0) },
                     onRenameGroup: { sheet = .renameGroup($0) },
-                    onAddCommand: { sheet = .addCommandInGroup($0) }
+                    onAddCommand: { sheet = .addCommandInGroup($0) },
+                    onMoveCommand: moveCommand
                 )
             }
         )
@@ -175,15 +210,7 @@ struct SavedCommandsSidebarView: View {
 
     private var ungroupedSection: AnyView {
         AnyView(
-            Group {
-                if !ungrouped.isEmpty {
-                    Text("sidebar_right.ungrouped")
-                        // 与历史说明、来源标注保持相同的辅助字号。
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, AppTheme.Spacing.regular)
-                        .padding(.vertical, AppTheme.Spacing.compact / 2)
-                }
+            DisclosureGroup(isExpanded: ungroupedExpansionBinding) {
                 ForEach(ungrouped) { command in
                     SavedCommandRow(
                         command: command,
@@ -191,8 +218,84 @@ struct SavedCommandsSidebarView: View {
                         onEdit: { sheet = .editCommand(command) }
                     )
                 }
+            } label: {
+                HStack {
+                    Text("sidebar_right.ungrouped")
+                        // 与真实分组标题保持相同的 14 pt 粗体层级。
+                        .font(.system(size: 14, weight: .bold))
+                    Spacer()
+                }
+                // 先补回标题内容缩进；外层负 padding 只扩展背景与命中区域，不移动文字。
+                .padding(.leading, SavedCommandsSidebarLayout.groupHeaderLeadingExpansion)
+                // 未分组标题整行都可展开/收起，也继续作为移出分组的拖放目标。
+                .frame(minHeight: SavedCommandsSidebarLayout.singleLineMinimumContentHeight)
+                .padding(.vertical, SavedCommandsSidebarLayout.rowVerticalPadding)
+                .contentShape(Rectangle())
+                .background(
+                    RoundedRectangle(cornerRadius: SavedCommandsSidebarLayout.rowCornerRadius)
+                        .fill(ungroupedHeaderBackground)
+                )
+                // 抵消 DisclosureGroup 的箭头缩进和尾部保留空间，使悬停矩形与命令行等宽。
+                .padding(.leading, -SavedCommandsSidebarLayout.groupHeaderLeadingExpansion)
+                .padding(.trailing, -SavedCommandsSidebarLayout.groupHeaderTrailingExpansion)
+                // 悬停反馈与普通分组一致；拖放进入时由蓝色目标高亮覆盖。
+                .animation(
+                    reduceMotion
+                        ? nil
+                        : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+                    value: isUngroupedHovering
+                )
+                .onHover { isUngroupedHovering = $0 }
+                .onTapGesture {
+                    ungroupedExpansionBinding.wrappedValue.toggle()
+                }
+                .dropDestination(for: SavedCommandDragPayload.self) { payloads, _ in
+                    guard let payload = payloads.first else {
+                        return false
+                    }
+                    return moveCommand(payload.commandID, nil)
+                } isTargeted: {
+                    isUngroupedDropTargeted = $0
+                }
+                .accessibilityIdentifier("sidebar_right.ungroupedDropTarget")
+            }
+            .padding(.horizontal, SavedCommandsSidebarLayout.rowHorizontalPadding)
+        )
+    }
+
+    /// 未分组标题的视觉状态：拖放目标优先，其次是普通鼠标悬停。
+    private var ungroupedHeaderBackground: Color {
+        if isUngroupedDropTargeted {
+            return Color.accentColor.opacity(0.16)
+        }
+        return isUngroupedHovering ? Color.primary.opacity(0.04) : Color.clear
+    }
+
+    /// 未分组与普通分组共用相同的展开动画策略；Reduce Motion 开启时直接更新。
+    private var ungroupedExpansionBinding: Binding<Bool> {
+        Binding(
+            get: { isUngroupedExpanded },
+            set: { expanded in
+                withAnimation(
+                    reduceMotion
+                        ? nil
+                        : .easeInOut(duration: AppTheme.SidebarMotion.groupDuration)
+                ) {
+                    isUngroupedExpanded = expanded
+                }
             }
         )
+    }
+
+    /// 执行一次命令分组移动；Drop Destination 仅在持久化成功时接受拖放。
+    private func moveCommand(_ commandID: UUID, _ groupID: UUID?) -> Bool {
+        do {
+            try appState.savedCommandStore.moveCommand(id: commandID, toGroupID: groupID)
+            return true
+        } catch {
+            AppLogger.app.error("Saved command move between groups failed")
+            return false
+        }
     }
 
     // MARK: - Editor sheets (native Form)
@@ -292,10 +395,14 @@ private struct GroupSection: View {
     let onRenameGroup: (SavedCommandGroup) -> Void
     /// 分组内新增命令入口（GUI Acceptance Round 1 FAIL #2：分组内无法新增命令）。
     let onAddCommand: (SavedCommandGroup) -> Void
+    /// 把命令拖入此分组；返回值表示目标是否接受本次拖放。
+    let onMoveCommand: (UUID, UUID?) -> Bool
     @Environment(AppState.self) private var appState
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var isExpanded = true
     @State private var pendingDelete = false
+    @State private var isHovering = false
+    @State private var isDropTargeted = false
 
     var body: some View {
         DisclosureGroup(isExpanded: expansionBinding) {
@@ -323,16 +430,43 @@ private struct GroupSection: View {
                     .font(.system(size: 14, weight: .bold))
                 Spacer()
             }
+            // 先补回标题内容缩进；外层负 padding 只扩展背景与命中区域，不移动文字。
+            .padding(.leading, SavedCommandsSidebarLayout.groupHeaderLeadingExpansion)
             // 让分组标题右侧空白区域同时参与左右键命中，整行都可切换或打开菜单。
+            .frame(minHeight: SavedCommandsSidebarLayout.singleLineMinimumContentHeight)
+            .padding(.vertical, SavedCommandsSidebarLayout.rowVerticalPadding)
             .contentShape(Rectangle())
+            .background(
+                RoundedRectangle(cornerRadius: SavedCommandsSidebarLayout.rowCornerRadius)
+                    .fill(headerBackground)
+            )
+            // 抵消 DisclosureGroup 的箭头缩进和尾部保留空间，使悬停矩形与命令行等宽。
+            .padding(.leading, -SavedCommandsSidebarLayout.groupHeaderLeadingExpansion)
+            .padding(.trailing, -SavedCommandsSidebarLayout.groupHeaderTrailingExpansion)
+            // 标题整行悬停时显示浅灰背景；拖放进入时改用蓝色目标高亮。
+            .animation(
+                reduceMotion
+                    ? nil
+                    : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+                value: isHovering
+            )
+            .onHover { isHovering = $0 }
             .onTapGesture {
                 expansionBinding.wrappedValue.toggle()
             }
             .contextMenu {
                 groupContextMenu
             }
+            .dropDestination(for: SavedCommandDragPayload.self) { payloads, _ in
+                guard let payload = payloads.first else {
+                    return false
+                }
+                return onMoveCommand(payload.commandID, group.id)
+            } isTargeted: {
+                isDropTargeted = $0
+            }
         }
-        .padding(.horizontal, AppTheme.Spacing.regular)
+        .padding(.horizontal, SavedCommandsSidebarLayout.rowHorizontalPadding)
         .alert(
             L10n.string("sidebar_right.delete_group_confirm", defaultValue: "Delete this group?", locale: appState.language.locale),
             isPresented: $pendingDelete
@@ -353,6 +487,14 @@ private struct GroupSection: View {
                 arguments: Int64(group.commands.count)
             ))
         }
+    }
+
+    /// 普通分组标题的视觉状态：拖放目标优先，其次是鼠标悬停。
+    private var headerBackground: Color {
+        if isDropTargeted {
+            return Color.accentColor.opacity(0.16)
+        }
+        return isHovering ? Color.primary.opacity(0.04) : Color.clear
     }
 
     /// DisclosureGroup 与键盘操作共用同一 Binding，确保展开和收起都进入
@@ -439,8 +581,9 @@ private struct SavedCommandRow: View {
             )
             .opacity(isHovering ? 1 : 0)
         }
-        .padding(.horizontal, AppTheme.Spacing.regular)
-        .padding(.vertical, AppTheme.Spacing.compact / 2)
+        .frame(minHeight: SavedCommandsSidebarLayout.singleLineMinimumContentHeight)
+        .padding(.horizontal, SavedCommandsSidebarLayout.rowHorizontalPadding)
+        .padding(.vertical, SavedCommandsSidebarLayout.rowVerticalPadding)
         .background(rowBackground)
         .contentShape(Rectangle())
         // 行底色与操作按钮淡入淡出，避免 hover 时瞬间闪现。
@@ -459,6 +602,8 @@ private struct SavedCommandRow: View {
                 Label("sidebar_right.delete_command", systemImage: "trash")
             }
         }
+        // 整行可拖动；载荷只包含命令 ID，目标分组由 Drop Destination 决定。
+        .draggable(SavedCommandDragPayload(commandID: command.id))
         .accessibilityElement(children: .contain)
     }
 
@@ -473,37 +618,68 @@ private struct SavedCommandRow: View {
 
     @ViewBuilder
     private var rowBackground: some View {
-        RoundedRectangle(cornerRadius: 4)
+        RoundedRectangle(cornerRadius: SavedCommandsSidebarLayout.rowCornerRadius)
             .fill(isHovering ? Color.primary.opacity(0.04) : Color.clear)
     }
 }
 
 // MARK: - Editor sheets (native Form)
 
-private struct CommandEditorSheet: View {
+/// 命令编辑器可选择的现有分组快照。
+///
+/// 仅传递编辑器展示与保存所需的稳定字段，避免 Sheet 直接持有 SwiftData 模型对象。
+struct CommandEditorGroupOption: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+}
+
+/// 常用命令的共用编辑器。History 右键「添加到常用命令」也复用此 Sheet，
+/// 确保标题、命令校验与普通新增入口完全一致。
+struct CommandEditorSheet: View {
     enum Mode {
         case create
+        /// 从历史记录新增：仅预填命令，标题仍由用户填写。
+        case createPrefilled(command: String)
         case edit(title: String?, command: String)
     }
     let mode: Mode
-    let onSave: (String, String) -> Void
+    private let groupOptions: [CommandEditorGroupOption]
+    private let showsGroupPicker: Bool
+    private let onSave: (String, String, UUID?) -> Void
 
     @Environment(\.locale) private var locale
     @Environment(\.dismiss) private var dismiss
     @State private var title: String
     @State private var text: String
+    @State private var selectedGroupID: UUID?
 
+    /// 普通新增、分组内新增和编辑命令沿用原界面，不显示分组选择器。
     init(mode: Mode, onSave: @escaping (String, String) -> Void) {
         self.mode = mode
+        groupOptions = []
+        showsGroupPicker = false
+        self.onSave = { title, command, _ in onSave(title, command) }
+        let initialValues = Self.initialValues(for: mode)
+        _title = State(initialValue: initialValues.title)
+        _text = State(initialValue: initialValues.command)
+        _selectedGroupID = State(initialValue: nil)
+    }
+
+    /// 从历史记录添加时显示现有分组；`nil` 代表未分组，也是默认选择。
+    init(
+        mode: Mode,
+        groupOptions: [CommandEditorGroupOption],
+        selectedGroupID: UUID? = nil,
+        onSave: @escaping (String, String, UUID?) -> Void
+    ) {
+        self.mode = mode
+        self.groupOptions = groupOptions
+        showsGroupPicker = true
         self.onSave = onSave
-        switch mode {
-        case .create:
-            _title = State(initialValue: "")
-            _text = State(initialValue: "")
-        case .edit(let existingTitle, let existingCommand):
-            _title = State(initialValue: existingTitle ?? "")
-            _text = State(initialValue: existingCommand)
-        }
+        let initialValues = Self.initialValues(for: mode)
+        _title = State(initialValue: initialValues.title)
+        _text = State(initialValue: initialValues.command)
+        _selectedGroupID = State(initialValue: selectedGroupID)
     }
 
     var body: some View {
@@ -519,6 +695,27 @@ private struct CommandEditorSheet: View {
                 .textFieldStyle(.roundedBorder)
                 // 命令编辑框与侧栏命令文本统一为 13 pt 终端字体（JetBrains Mono 级联）。
                 .font(Font(TerminalFontProvider.regularFont(size: 13)))
+            if showsGroupPicker {
+                Picker(
+                    L10n.string("sidebar_right.command_group", defaultValue: "Group", locale: locale),
+                    selection: $selectedGroupID
+                ) {
+                    // SwiftData 中 `group == nil` 就是未分组，不创建虚拟分组模型。
+                    Text(verbatim: L10n.string(
+                        "sidebar_right.ungrouped",
+                        defaultValue: "Ungrouped",
+                        locale: locale
+                    ))
+                    .tag(nil as UUID?)
+
+                    ForEach(groupOptions) { option in
+                        Text(verbatim: option.name)
+                            .tag(option.id as UUID?)
+                    }
+                }
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("sidebar_right.commandGroupPicker")
+            }
             if let err = validationError {
                 Text(verbatim: err).font(.caption).foregroundStyle(.red)
             }
@@ -528,7 +725,7 @@ private struct CommandEditorSheet: View {
                     Text(verbatim: L10n.string("action.cancel", defaultValue: "Cancel", locale: locale))
                 }
                 Button {
-                    onSave(title, text)
+                    onSave(title, text, selectedGroupID)
                     dismiss()
                 } label: {
                     Text(verbatim: L10n.string("common.save", defaultValue: "Save", locale: locale))
@@ -540,9 +737,21 @@ private struct CommandEditorSheet: View {
         .frame(width: 360)
     }
 
-    private var modeTitle: String {
+    /// 集中计算三种模式的初始值，确保两个初始化入口保持完全一致。
+    private static func initialValues(for mode: Mode) -> (title: String, command: String) {
         switch mode {
         case .create:
+            return ("", "")
+        case .createPrefilled(let existingCommand):
+            return ("", existingCommand)
+        case .edit(let existingTitle, let existingCommand):
+            return (existingTitle ?? "", existingCommand)
+        }
+    }
+
+    private var modeTitle: String {
+        switch mode {
+        case .create, .createPrefilled:
             return L10n.string("sidebar_right.add_command", defaultValue: "New Command", locale: locale)
         case .edit:
             return L10n.string("sidebar_right.edit_command", defaultValue: "Edit Command", locale: locale)

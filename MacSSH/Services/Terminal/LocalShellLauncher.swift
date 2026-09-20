@@ -69,7 +69,8 @@ enum LocalShellLauncher {
 
     /// 生产入口：读取当前账户与文件系统状态，决定启动链。
     static func makeConfiguration(
-        pasteHighlightControlPath: String? = nil
+        pasteHighlightControlPath: String? = nil,
+        commandHistoryEventPath: String? = nil
     ) -> LocalShellLaunchConfiguration {
         let account = LoginShellResolver.currentAccount()
         return resolve(
@@ -80,6 +81,7 @@ enum LocalShellLauncher {
             lang: systemLocaleLANG(),
             pasteHighlightEnabled: UserDefaults.standard.bool(forKey: AppPreferenceKey.pasteHighlightEnabled),
             pasteHighlightControlPath: pasteHighlightControlPath,
+            commandHistoryEventPath: commandHistoryEventPath,
             zshIntegrationDirectory: Bundle.main.url(forResource: "ShellIntegration", withExtension: nil)?.path,
             isExecutable: { path in
                 path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path)
@@ -161,6 +163,7 @@ enum LocalShellLauncher {
         lang: String?,
         pasteHighlightEnabled: Bool = true,
         pasteHighlightControlPath: String? = nil,
+        commandHistoryEventPath: String? = nil,
         zshIntegrationDirectory: String? = nil,
         isExecutable: (String) -> Bool
     ) -> LocalShellLaunchConfiguration {
@@ -209,6 +212,11 @@ enum LocalShellLauncher {
             )
             if let pasteHighlightControlPath {
                 environment.append("MACSSH_PASTE_HIGHLIGHT_FIFO=\(pasteHighlightControlPath)")
+            }
+            // 手动命令历史使用另一条单向 FIFO，与粘贴高亮控制
+            // 完全隔离。只有本地 zsh 加载 Shell Integration 时才注入。
+            if let commandHistoryEventPath {
+                environment.append("MACSSH_COMMAND_HISTORY_FIFO=\(commandHistoryEventPath)")
             }
         }
 
