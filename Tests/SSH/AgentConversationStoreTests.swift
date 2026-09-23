@@ -15,6 +15,7 @@ final class AgentConversationStoreTests: XCTestCase {
         XCTAssertTrue(conversation.messages.isEmpty)
         XCTAssertTrue(conversation.draft.isEmpty)
         XCTAssertFalse(conversation.isGenerating)
+        XCTAssertNil(conversation.scrollAnchorMessageID)
         XCTAssertEqual(store.count, 1)
     }
 
@@ -87,6 +88,46 @@ final class AgentConversationStoreTests: XCTestCase {
         XCTAssertFalse(conversationA.messages.isEmpty)
         XCTAssertTrue(conversationB.messages.isEmpty, "不同 session 的消息不得串线")
         XCTAssertEqual(store.count, 2)
+    }
+
+    /// 每个 Terminal Session 独立保存 Agent 浏览位置；重新获取同一
+    /// conversation 时锚点仍存在，其他 session 不受影响。
+    func testScrollAnchorPersistsPerConversationAndRemainsSessionIsolated() {
+        let store = AgentConversationStore()
+        let sessionA = UUID()
+        let sessionB = UUID()
+        let conversationA = store.conversation(for: sessionA)
+        let conversationB = store.conversation(for: sessionB)
+        let messageA = AgentMessage(role: .assistant, content: "A anchor")
+        let messageB = AgentMessage(role: .assistant, content: "B anchor")
+        conversationA.append(messageA)
+        conversationB.append(messageB)
+
+        conversationA.rememberScrollAnchor(messageA.id)
+
+        XCTAssertEqual(
+            store.conversation(for: sessionA).scrollAnchorMessageID,
+            messageA.id,
+            "重新进入同一 session 的 Agent 页面时必须保留原消息锚点"
+        )
+        XCTAssertNil(
+            conversationB.scrollAnchorMessageID,
+            "一个 session 的浏览位置不得写入另一个 session"
+        )
+    }
+
+    /// 停止生成时可能删除空 assistant 占位；若它恰好是滚动锚点，必须
+    /// 清空失效 ID，让 UI 下次进入时安全回退到最后一条可见消息。
+    func testRemovingAnchoredMessageClearsScrollAnchor() {
+        let conversation = AgentConversation(sessionID: UUID())
+        let message = AgentMessage(role: .assistant, content: "", state: .streaming)
+        conversation.append(message)
+        conversation.rememberScrollAnchor(message.id)
+
+        conversation.removeMessage(message.id)
+
+        XCTAssertNil(conversation.scrollAnchorMessageID)
+        XCTAssertTrue(conversation.messages.isEmpty)
     }
 
     /// Local 与 Remote session（不同 UUID）各自独立——store 只按 UUID 键，

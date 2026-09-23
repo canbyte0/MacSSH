@@ -120,7 +120,17 @@ struct AgentSidebarView: View {
                         }
                     }
                 }
+                // macOS 14 的 scrollPosition(id:) 需要显式标记目标布局；
+                // 绑定值会随用户滚动更新，从而在 View 被移除前保存当前位置。
+                .scrollTargetLayout()
                 .padding(.vertical, AppTheme.Spacing.compact / 2)
+            }
+            .scrollPosition(
+                id: scrollPositionBinding(for: conversation),
+                anchor: .top
+            )
+            .onAppear {
+                restoreScrollPosition(for: conversation, proxy: proxy)
             }
             // 新消息 / streaming chunk 到来时滚到底部；用户主动上翻暂不锁定
             // （任务书 §19 第一版策略）。trigger 含最后一条消息 id + 内容长度，
@@ -129,6 +139,50 @@ struct AgentSidebarView: View {
                 if let last = conversation.renderableMessages.last {
                     proxy.scrollTo(last.id, anchor: .bottom)
                 }
+            }
+        }
+        // 切换 Terminal Session 时重建消息区，使新 conversation 的独立锚点
+        // 立即生效；conversation 与生成任务本身仍由 AppState 持有并保持存活。
+        .id(conversation.sessionID)
+    }
+
+    /// 将 SwiftUI 的双向滚动位置绑定收口到 conversation 的显式写入 API。
+    private func scrollPositionBinding(
+        for conversation: AgentConversation
+    ) -> Binding<UUID?> {
+        Binding(
+            get: { conversation.scrollAnchorMessageID },
+            set: { conversation.rememberScrollAnchor($0) }
+        )
+    }
+
+    /// 首次进入没有历史锚点时沿用聊天界面的末尾位置；再次进入时恢复
+    /// 已记录消息。异步到下一次主线程循环，确保 LazyVStack 已完成目标布局。
+    private func restoreScrollPosition(
+        for conversation: AgentConversation,
+        proxy: ScrollViewProxy
+    ) {
+        let messages = conversation.renderableMessages
+        guard let last = messages.last else { return }
+
+        let savedAnchor = conversation.scrollAnchorMessageID
+        let validSavedAnchor = savedAnchor.flatMap { candidate in
+            messages.contains(where: { $0.id == candidate }) ? candidate : nil
+        }
+
+        if savedAnchor != nil && validSavedAnchor == nil {
+            // 流式占位消息可能在侧栏隐藏期间被移除，不能恢复到失效 ID。
+            conversation.rememberScrollAnchor(nil)
+        }
+
+        let target = validSavedAnchor ?? last.id
+        let anchor: UnitPoint = validSavedAnchor == nil ? .bottom : .top
+
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                proxy.scrollTo(target, anchor: anchor)
             }
         }
     }

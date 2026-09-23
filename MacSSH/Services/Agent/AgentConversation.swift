@@ -30,6 +30,13 @@ final class AgentConversation {
     /// Composer 草稿（per-session，切 tab 互不干扰）。
     var draft = ""
 
+    /// Agent 消息区当前靠近顶部的可见消息。
+    ///
+    /// 该值与 conversation 一样仅保存在内存中，并按 Terminal Session 隔离；
+    /// Agent tab 被移出 SwiftUI 视图树后，重新进入时用它恢复原浏览位置。
+    /// 不保存像素偏移，避免把短生命周期的视图几何写入会话数据。
+    private(set) var scrollAnchorMessageID: UUID?
+
     /// 当前是否有流式生成进行中（同一 session 同时只允许一个 generation）。
     private(set) var isGenerating = false
 
@@ -84,6 +91,17 @@ final class AgentConversation {
     /// 空占位不属于"已生成的 partial content"）。
     func removeMessage(_ messageID: UUID) {
         messages.removeAll { $0.id == messageID }
+        if scrollAnchorMessageID == messageID {
+            // 被删除的消息不能继续作为 ScrollView 恢复目标；下次进入时
+            // AgentSidebarView 会回退到当前最后一条可见消息。
+            scrollAnchorMessageID = nil
+        }
+    }
+
+    /// 记录 SwiftUI ScrollView 回传的当前可见消息锚点。
+    /// nil 表示尚未建立锚点，或当前锚点已不再有效。
+    func rememberScrollAnchor(_ messageID: UUID?) {
+        scrollAnchorMessageID = messageID
     }
 
     /// 更新指定 tool card 的状态与结构化结果（B4 §38）。
