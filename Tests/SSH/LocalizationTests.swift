@@ -20,7 +20,17 @@ final class LocalizationTests: XCTestCase {
     func testCriticalKeysHaveZhHansAndEnglishTranslations() {
         let criticalKeys: [String] = [
             "settings.language",
+            "settings.categories",
+            "settings.category.hint",
+            "settings.terminal_color_scheme",
+            "settings.terminal_color_scheme.follow_app",
+            "settings.terminal_color_scheme.ghostty",
+            "terminal.rename_tab",
+            "terminal.rename_tab_placeholder",
             "settings.title",
+            "settings.terminal_color_scheme",
+            "settings.terminal_color_scheme.follow_app",
+            "settings.terminal_color_scheme.ghostty",
             "sidebar.local_terminal",
             "sidebar.hosts",
             "sidebar.transfers",

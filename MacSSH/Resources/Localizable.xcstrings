@@ -5687,6 +5687,40 @@
         }
       }
     },
+    "settings.categories" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Categories"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "设置分类"
+          }
+        }
+      }
+    },
+    "settings.category.hint" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choose a category on the left to view its settings."
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择左侧分类查看对应设置"
+          }
+        }
+      }
+    },
     "settings.confirm_before_closing_ssh" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -5989,6 +6023,57 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "终端"
+          }
+        }
+      }
+    },
+    "settings.terminal_color_scheme" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Color scheme"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "终端配色"
+          }
+        }
+      }
+    },
+    "settings.terminal_color_scheme.follow_app" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Follow App Appearance"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跟随应用外观"
+          }
+        }
+      }
+    },
+    "settings.terminal_color_scheme.ghostty" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghostty Default"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ghostty 默认"
           }
         }
       }
@@ -8038,6 +8123,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "重新连接"
+          }
+        }
+      }
+    },
+    "terminal.rename_tab" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rename Tab…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重命名…"
+          }
+        }
+      }
+    },
+    "terminal.rename_tab_placeholder" : {
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tab name"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标签名称"
           }
         }
       }

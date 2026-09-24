@@ -171,6 +171,56 @@ final class AppLanguageTests: XCTestCase {
         XCTAssertEqual(session.title, "Local")
     }
 
+    /// Tab 重命名仅改变当前会话的标签展示，语言切换与技术名保持独立。
+    @MainActor
+    func testLocalTabRenameKeepsRuntimeTitleAndRejectsBlankName() throws {
+        let appState = try makeAppState()
+        let session = try XCTUnwrap(appState.sessionManager.activeSession)
+        let originalID = session.id
+        let originalService = session.localService
+
+        XCTAssertTrue(session.renameTab(to: "  开发环境  "))
+        XCTAssertEqual(session.tabTitle(locale: AppLanguage.simplifiedChinese.locale), "开发环境")
+        XCTAssertEqual(session.tabTitle(locale: AppLanguage.english.locale), "开发环境")
+        XCTAssertEqual(session.displayTitle(locale: AppLanguage.english.locale), "Terminal")
+        XCTAssertEqual(session.title, "Local")
+        XCTAssertEqual(session.id, originalID)
+        XCTAssertTrue(session.localService === originalService)
+
+        XCTAssertFalse(session.renameTab(to: " \n "))
+        XCTAssertFalse(session.renameTab(to: "无效\n名称"))
+        XCTAssertEqual(session.tabTitle(locale: AppLanguage.simplifiedChinese.locale), "开发环境")
+    }
+
+    /// SSH 标签别名不修改 Host 元数据，也不传播到另一个 Session。
+    @MainActor
+    func testRemoteTabRenameStaysWithinOneSession() {
+        let hostID = UUID()
+        let first = ManagedTerminalSession(
+            remoteHostID: hostID,
+            hostDisplayName: "Server",
+            hostname: "server.example",
+            port: 22,
+            baseTitle: "Server",
+            titleCounter: 1
+        )
+        let second = ManagedTerminalSession(
+            remoteHostID: hostID,
+            hostDisplayName: "Server",
+            hostname: "server.example",
+            port: 22,
+            baseTitle: "Server",
+            titleCounter: 2
+        )
+
+        XCTAssertTrue(second.renameTab(to: "生产环境"))
+        XCTAssertEqual(second.tabTitle(locale: AppLanguage.english.locale), "生产环境")
+        XCTAssertEqual(first.tabTitle(locale: AppLanguage.english.locale), "Server")
+        XCTAssertEqual(second.displayTitle(locale: AppLanguage.english.locale), "Server 2")
+        XCTAssertEqual(second.hostDisplayName, "Server")
+        XCTAssertEqual(second.title, "Server 2")
+    }
+
     /// 英文界面的 Sidebar、页面标题与 Local Tab 均省略“Local”前缀。
     @MainActor
     func testEnglishTerminalDisplayNamesOmitLocalQualifier() throws {

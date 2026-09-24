@@ -43,6 +43,14 @@ final class AppState {
     /// 不重建任何 Runtime Session / Shell / SSH。
     let terminalAppearanceCoordinator: TerminalAppearanceCoordinator
 
+    /// 终端配色偏好；切换后同步刷新全部现存本地和远程 TerminalView。
+    var terminalColorScheme: TerminalColorScheme {
+        didSet {
+            terminalColorScheme.save(to: userDefaults)
+            terminalAppearanceCoordinator.setColorScheme(terminalColorScheme)
+        }
+    }
+
     /// MacSSH 1.1 Phase 8：应用外观控制器，由本 App 层稳定对象持有。
     /// 单一 writer（任务书 §9 / §17）：应用外观偏好读写只由本控制器进行；
     /// Settings Picker 绑定 `controller.mode`。跟随用户请求模式设置
@@ -135,6 +143,8 @@ final class AppState {
         self.userDefaults = userDefaults
         language = AppLanguage.load(from: userDefaults)
         pasteHighlightEnabled = userDefaults.bool(forKey: AppPreferenceKey.pasteHighlightEnabled)
+        let initialTerminalColorScheme = TerminalColorScheme.load(from: userDefaults)
+        terminalColorScheme = initialTerminalColorScheme
 
         let sshService = SSHService(modelContainer: modelContainer)
         self.sshService = sshService
@@ -142,7 +152,9 @@ final class AppState {
         // MacSSH 1.1 Phase 4：协调器须在 SessionManager 之前创建——
         // SessionManager 构造时即创建首个 Local Session，由 AppState 在装配
         // 完成后回填注册其 terminalView（与 localeProvider 回填模式一致）。
-        let terminalAppearanceCoordinator = TerminalAppearanceCoordinator()
+        let terminalAppearanceCoordinator = TerminalAppearanceCoordinator(
+            colorScheme: initialTerminalColorScheme
+        )
         self.terminalAppearanceCoordinator = terminalAppearanceCoordinator
 
         // MacSSH 1.1 Phase 8：外观控制器须在 SessionManager 之前创建并 apply

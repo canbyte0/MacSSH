@@ -1,10 +1,40 @@
 import AppKit
 import SwiftTerm
 
+/// 用户选择的终端配色预设；与整个 App 的浅色/深色模式分别保存。
+enum TerminalColorScheme: String, CaseIterable, Identifiable, Sendable {
+    case followApp
+    case ghostty
+
+    var id: Self { self }
+
+    /// 旧用户没有此偏好时继续使用原有配色。
+    static let defaultScheme: Self = .followApp
+
+    var localizedOptionKey: String {
+        switch self {
+        case .followApp: "settings.terminal_color_scheme.follow_app"
+        case .ghostty: "settings.terminal_color_scheme.ghostty"
+        }
+    }
+
+    static func load(from defaults: UserDefaults) -> Self {
+        guard let value = defaults.string(forKey: AppPreferenceKey.terminalColorScheme),
+              let scheme = Self(rawValue: value) else {
+            return .defaultScheme
+        }
+        return scheme
+    }
+
+    func save(to defaults: UserDefaults) {
+        defaults.set(rawValue, forKey: AppPreferenceKey.terminalColorScheme)
+    }
+}
+
 /// MacSSH 终端外观（明 / 暗模式）的唯一权威来源（MacSSH 1.1 Phase 4）。
 ///
 /// 与 `TerminalFontProvider` 职责严格分离（任务书第四节）：本类型只负责终端的
-/// 默认前景 / 背景 / 选区颜色，不涉及字体、字号、级联或单元格几何。本地 Terminal
+/// 默认前景 / 背景 / 选区及 ANSI 颜色，不涉及字体、字号、级联或单元格几何。本地 Terminal
 /// 与远程 Terminal 共用同一配置（任务书第二节），杜绝 Local / Remote 外观不一致。
 ///
 /// ## 为什么不继续使用 `configureNativeColors()`
@@ -60,6 +90,24 @@ enum TerminalAppearanceProvider {
         let background: RGB
         let selectionBackground: RGB
         let selectionForeground: RGB
+        /// nil 表示沿用 SwiftTerm 原有 ANSI 色；Ghostty 预设提供 16 色。
+        let ansiColors: [RGB]?
+
+        init(
+            mode: Mode,
+            foreground: RGB,
+            background: RGB,
+            selectionBackground: RGB,
+            selectionForeground: RGB,
+            ansiColors: [RGB]? = nil
+        ) {
+            self.mode = mode
+            self.foreground = foreground
+            self.background = background
+            self.selectionBackground = selectionBackground
+            self.selectionForeground = selectionForeground
+            self.ansiColors = ansiColors
+        }
     }
 
     /// Light 调色板：等价于 `NSColor.textColor` / `NSColor.textBackgroundColor`
@@ -85,6 +133,34 @@ enum TerminalAppearanceProvider {
         selectionForeground: RGB(red: 0xFF, green: 0xFF, blue: 0xFF)
     )
 
+    /// 本机 Ghostty 1.3.1 `+show-config --default` 的默认深色方案。
+    /// Ghostty 未显式设置选区色时采用窗口前景/背景互换。
+    static let ghostty = Palette(
+        mode: .dark,
+        foreground: RGB(red: 0xFF, green: 0xFF, blue: 0xFF),
+        background: RGB(red: 0x28, green: 0x2C, blue: 0x34),
+        selectionBackground: RGB(red: 0xFF, green: 0xFF, blue: 0xFF),
+        selectionForeground: RGB(red: 0x28, green: 0x2C, blue: 0x34),
+        ansiColors: [
+            RGB(red: 0x1D, green: 0x1F, blue: 0x21),
+            RGB(red: 0xCC, green: 0x66, blue: 0x66),
+            RGB(red: 0xB5, green: 0xBD, blue: 0x68),
+            RGB(red: 0xF0, green: 0xC6, blue: 0x74),
+            RGB(red: 0x81, green: 0xA2, blue: 0xBE),
+            RGB(red: 0xB2, green: 0x94, blue: 0xBB),
+            RGB(red: 0x8A, green: 0xBE, blue: 0xB7),
+            RGB(red: 0xC5, green: 0xC8, blue: 0xC6),
+            RGB(red: 0x66, green: 0x66, blue: 0x66),
+            RGB(red: 0xD5, green: 0x4E, blue: 0x53),
+            RGB(red: 0xB9, green: 0xCA, blue: 0x4A),
+            RGB(red: 0xE7, green: 0xC5, blue: 0x47),
+            RGB(red: 0x7A, green: 0xA6, blue: 0xDA),
+            RGB(red: 0xC3, green: 0x97, blue: 0xD8),
+            RGB(red: 0x70, green: 0xC0, blue: 0xB1),
+            RGB(red: 0xEA, green: 0xEA, blue: 0xEA)
+        ]
+    )
+
     // MARK: - Appearance → Palette
 
     /// 由 `NSAppearance` 解析出对应模式（任务书第五 / 四十八节）。
@@ -103,6 +179,11 @@ enum TerminalAppearanceProvider {
     /// 由 `NSAppearance` 解析出对应调色板。
     static func palette(for appearance: NSAppearance?) -> Palette {
         mode(for: appearance) == .dark ? dark : light
+    }
+
+    /// Ghostty 预设始终使用自己的深色方案，App 外观仅控制窗口 chrome。
+    static func palette(for appearance: NSAppearance?, colorScheme: TerminalColorScheme) -> Palette {
+        colorScheme == .ghostty ? ghostty : palette(for: appearance)
     }
 
     /// 由当前 App Effective Appearance 解析调色板（供 Service 初始化与
@@ -147,13 +228,26 @@ enum TerminalAppearanceProvider {
     /// 下保持可见（任务书第十八节）。
     ///
     /// 不修改字体、字号、级联或单元格几何（任务书第二十一 / 五十一节）。
-    /// 不调用 `installColors`：保留 SwiftTerm 自带 ANSI 16/256 palette
-    /// （任务书第二十四 / 四十三节，仅调整默认 fg/bg）。
+    /// 原方案不重装 ANSI 色；Ghostty 方案安装其 16 色，切回原方案时恢复
+    /// SwiftTerm 原有 ANSI 色，16...255 仍使用标准 xterm 色表。
     ///
     /// `@MainActor`：`TerminalView` 的颜色属性由 SwiftTerm 标注为 MainActor-isolated，
     /// 本方法仅在 MainActor 上下文（Service init、Coordinator）调用。
     @MainActor
-    static func apply(_ palette: Palette, to terminalView: TerminalView) {
+    static func apply(
+        _ palette: Palette,
+        to terminalView: TerminalView,
+        restoreDefaultANSI: Bool = false
+    ) {
+        if let ansiColors = palette.ansiColors {
+            // 只替换 ANSI 0...15；SwiftTerm 继续生成标准 xterm 16...255。
+            terminalView.installColors(ansiColors.map {
+                SwiftTerm.Color(red8: UInt16($0.red), green8: UInt16($0.green), blue8: UInt16($0.blue))
+            })
+        } else if restoreDefaultANSI {
+            // 用户从 Ghostty 切回原方案时恢复 SwiftTerm 原有 ANSI 16 色。
+            terminalView.installColors(SwiftTerm.Color.terminalAppColors)
+        }
         terminalView.nativeForegroundColor = nsColor(for: palette.foreground)
         terminalView.nativeBackgroundColor = nsColor(for: palette.background)
         terminalView.selectedTextBackgroundColor = nsColor(for: palette.selectionBackground)

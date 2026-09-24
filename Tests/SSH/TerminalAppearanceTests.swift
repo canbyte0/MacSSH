@@ -61,6 +61,38 @@ final class TerminalAppearanceTests: XCTestCase {
         )
     }
 
+    /// Ghostty 1.3.1 默认前景、背景、选区和 16 色须与预览来源一致。
+    func testGhosttyPaletteMatchesInstalledDefault() {
+        let palette = TerminalAppearanceProvider.ghostty
+        XCTAssertEqual(palette.background, .init(red: 0x28, green: 0x2C, blue: 0x34))
+        XCTAssertEqual(palette.foreground, .init(red: 0xFF, green: 0xFF, blue: 0xFF))
+        XCTAssertEqual(palette.selectionBackground, palette.foreground)
+        XCTAssertEqual(palette.selectionForeground, palette.background)
+        XCTAssertEqual(palette.ansiColors?.count, 16)
+        XCTAssertEqual(palette.ansiColors?[1], .init(red: 0xCC, green: 0x66, blue: 0x66))
+        XCTAssertEqual(palette.ansiColors?[10], .init(red: 0xB9, green: 0xCA, blue: 0x4A))
+        XCTAssertEqual(palette.ansiColors?[15], .init(red: 0xEA, green: 0xEA, blue: 0xEA))
+        XCTAssertEqual(
+            TerminalAppearanceProvider.palette(
+                for: NSAppearance(named: .aqua), colorScheme: .ghostty
+            ),
+            palette
+        )
+    }
+
+    /// 未设置或损坏的偏好须保留原方案；明确选择 Ghostty 后重启仍能恢复。
+    func testTerminalColorSchemePersistenceAndFallback() throws {
+        let suiteName = "MacSSH.TerminalColorSchemeTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+
+        XCTAssertEqual(TerminalColorScheme.load(from: defaults), .followApp)
+        TerminalColorScheme.ghostty.save(to: defaults)
+        XCTAssertEqual(TerminalColorScheme.load(from: defaults), .ghostty)
+        defaults.set("unknown", forKey: AppPreferenceKey.terminalColorScheme)
+        XCTAssertEqual(TerminalColorScheme.load(from: defaults), .followApp)
+    }
+
     // MARK: - Contrast（任务书第四十七节）
 
     /// Light 前景-背景须有合理可读对比度（WCAG AA 正常文本 >= 4.5）。
@@ -152,6 +184,47 @@ final class TerminalAppearanceTests: XCTestCase {
                        TerminalAppearanceProvider.appliedBackgroundRGB(of: remote))
         XCTAssertEqual(TerminalAppearanceProvider.appliedForegroundRGB(of: local),
                        TerminalAppearanceProvider.appliedForegroundRGB(of: remote))
+    }
+
+    /// 现有和新建终端都应用 Ghostty；切回原方案恢复颜色且字体不变。
+    func testGhosttySchemeSwitchUpdatesExistingAndNewViewsWithoutChangingFonts() {
+        let coordinator = TerminalAppearanceCoordinator(
+            appearanceResolver: { NSAppearance(named: .aqua) },
+            observationInstaller: { _ in TerminalAppearanceObservationToken(invalidate: {}) }
+        )
+        let local = makeLocalProcessTerminalView()
+        let remote = makeRemoteTerminalView()
+        let originalLocalFont = local.font
+        let originalRemoteFont = remote.font
+        coordinator.register(local)
+        coordinator.register(remote)
+
+        coordinator.setColorScheme(.ghostty)
+        for view in [local as TerminalView, remote] {
+            XCTAssertEqual(TerminalAppearanceProvider.appliedBackgroundRGB(of: view),
+                           TerminalAppearanceProvider.ghostty.background)
+            XCTAssertEqual(TerminalAppearanceProvider.appliedForegroundRGB(of: view),
+                           TerminalAppearanceProvider.ghostty.foreground)
+        }
+        let newRemote = makeRemoteTerminalView()
+        coordinator.register(newRemote)
+        XCTAssertEqual(TerminalAppearanceProvider.appliedBackgroundRGB(of: newRemote),
+                       TerminalAppearanceProvider.ghostty.background)
+
+        // App 切换浅色/深色不应覆盖固定的 Ghostty 终端配色。
+        coordinator.applyCurrentAppearance()
+        XCTAssertEqual(TerminalAppearanceProvider.appliedBackgroundRGB(of: local),
+                       TerminalAppearanceProvider.ghostty.background)
+
+        coordinator.setColorScheme(.followApp)
+        for view in [local as TerminalView, remote, newRemote] {
+            XCTAssertEqual(TerminalAppearanceProvider.appliedBackgroundRGB(of: view),
+                           TerminalAppearanceProvider.light.background)
+        }
+        XCTAssertEqual(local.font.fontName, originalLocalFont.fontName)
+        XCTAssertEqual(local.font.pointSize, originalLocalFont.pointSize)
+        XCTAssertEqual(remote.font.fontName, originalRemoteFont.fontName)
+        XCTAssertEqual(remote.font.pointSize, originalRemoteFont.pointSize)
     }
 
     // MARK: - Font 不变性（任务书第二十一 / 五十一节）

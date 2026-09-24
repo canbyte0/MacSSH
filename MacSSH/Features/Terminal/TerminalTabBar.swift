@@ -7,6 +7,9 @@ import SwiftUI
 /// 点击仅切换 activeSessionID，绝不重建 Session。
 struct TerminalTabBar: View {
     @Environment(AppState.self) private var appState
+    @Environment(\.locale) private var locale
+    // 探针和覆盖层共用一个原生控件，SwiftUI 更新时不重复创建。
+    @State private var tabScrollbar = TerminalTabScrollbarProbe(accessibilityLabel: "")
 
     private var manager: SessionManager {
         appState.sessionManager
@@ -31,22 +34,33 @@ struct TerminalTabBar: View {
                 Button(action: newLocalSession) {
                     Image(systemName: "plus")
                         .frame(width: AppTheme.Layout.tabBarHeight, height: AppTheme.Layout.tabBarHeight)
+                        // 透明留白也属于按钮，避免只有细小的加号图形能够命中。
+                        .contentShape(Rectangle())
                 }
-                .buttonStyle(
-                    AppInteractiveButtonStyle(
-                        baseStyle: PlainButtonStyle(),
-                        // 点击区域仍为完整 Tab Bar 高度，仅收紧可见悬停底色。
-                        compactBackgroundDiameter: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
-                    )
-                )
+                .buttonStyle(TerminalNewSessionButtonStyle())
                 .help("terminal.new_local")
                 .accessibilityLabel("terminal.new_local")
                 .accessibilityIdentifier("tabBar.newSession")
             }
             // 为首尾标签留出与标签间距一致的边距，避免圆角紧贴容器边缘。
             .padding(.horizontal, AppTheme.Spacing.compact)
+            .background {
+                // 在原滚动容器内挂接细滚动条，不占用标签与正文的布局高度。
+                TerminalTabScrollbarBridge(probe: tabScrollbar, accessibilityLabel: L10n.string(
+                    "accessibility.terminal_tabs",
+                    defaultValue: "Terminal tabs",
+                    locale: locale
+                ))
+                .frame(width: 0, height: 0)
+            }
         }
         .frame(height: AppTheme.Layout.tabBarHeight)
+        .overlay(alignment: .bottom) {
+            // 可见滑块仅 3 pt；底部 8 pt 覆盖层接收原生拖动，不占用正文高度。
+            TerminalTabScrollbarTrack(probe: tabScrollbar)
+                .frame(height: 8)
+                .padding(.horizontal, AppTheme.Spacing.compact)
+        }
         .background(.bar)
         .accessibilityLabel("accessibility.terminal_tabs")
         .accessibilityIdentifier("tabBar")
@@ -58,10 +72,59 @@ struct TerminalTabBar: View {
     }
 }
 
+/// 新增按钮使用 Button 自带的按压状态，避免为反馈额外注册零距离拖动手势。
+/// 仅用于标签栏的新增入口，保持其他按钮的现有交互以及 28 pt 悬停底色。
+private struct TerminalNewSessionButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var isHovering = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        let hovering = isEnabled && isHovering
+        let pressing = isEnabled && configuration.isPressed
+        let scale = reduceMotion ? 1 : pressing
+            ? AppTheme.ButtonInteraction.pressedScale
+            : hovering ? AppTheme.ButtonInteraction.hoveredScale : 1
+        let opacity = pressing
+            ? AppTheme.ButtonInteraction.pressedBackgroundOpacity
+            : hovering ? AppTheme.ButtonInteraction.hoverBackgroundOpacity : 0
+
+        configuration.label
+            .scaleEffect(scale)
+            .background {
+                Circle()
+                    .fill(Color.primary.opacity(opacity))
+                    .frame(
+                        width: AppTheme.ButtonInteraction.compactIconBackgroundDiameter,
+                        height: AppTheme.ButtonInteraction.compactIconBackgroundDiameter
+                    )
+                    // 装饰底色不参与事件分发，点击仍由原生 Button 处理。
+                    .allowsHitTesting(false)
+            }
+            // 缩放只影响视觉；42 × 42 pt 的完整命中区域保持稳定。
+            .contentShape(Rectangle())
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AppTheme.ButtonInteraction.hoverDuration),
+                value: hovering
+            )
+            .animation(
+                reduceMotion ? nil : .easeOut(duration: AppTheme.ButtonInteraction.pressDuration),
+                value: pressing
+            )
+            .onHover { isHovering = isEnabled && $0 }
+            .onChange(of: isEnabled) { _, enabled in
+                if !enabled { isHovering = false }
+            }
+    }
+}
+
 /// 单个 Tab：标题 + 连接状态指示（Remote）+ 关闭按钮。
 private struct TerminalTabItemView: View {
     @Environment(\.locale) private var locale
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var renameFieldFocused: Bool
+    @State private var isRenaming = false
+    @State private var renameDraft = ""
 
     let session: ManagedTerminalSession
     let isActive: Bool
@@ -72,9 +135,32 @@ private struct TerminalTabItemView: View {
         HStack(spacing: AppTheme.Spacing.compact) {
             statusIndicator
 
-            Text(verbatim: session.displayTitle(locale: locale))
-                .lineLimit(1)
-                .truncationMode(.tail)
+            if isRenaming {
+                // 原位编辑只改变当前 Session 的 Tab 别名，不重建终端运行时。
+                TextField("terminal.rename_tab_placeholder", text: $renameDraft)
+                    .textFieldStyle(.roundedBorder)
+                    .frame(width: 160)
+                    .focused($renameFieldFocused)
+                    .task {
+                        // 原生菜单关闭时会把焦点还给终端；等菜单完成关闭后
+                        // 再聚焦输入框，右键选择“重命名”即可直接输入。
+                        try? await Task.sleep(for: .milliseconds(120))
+                        guard !Task.isCancelled, isRenaming else { return }
+                        renameFieldFocused = true
+                    }
+                    .onSubmit(commitRename)
+                    .onExitCommand(perform: cancelRename)
+                    .onChange(of: renameFieldFocused) { _, isFocused in
+                        if !isFocused && isRenaming { commitRename() }
+                    }
+                    .accessibilityIdentifier("tabBar.renameField")
+            } else {
+                Text(verbatim: session.tabTitle(locale: locale))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: session.customTabTitle == nil ? nil : 180, alignment: .leading)
+                    .help(session.tabTitle(locale: locale))
+            }
 
             Button(action: close) {
                 Image(systemName: "xmark")
@@ -88,7 +174,7 @@ private struct TerminalTabItemView: View {
             .accessibilityLabel(
                 Text(
                     verbatim: TerminalAccessibilityText.closeTab(
-                        title: session.displayTitle(locale: locale),
+                        title: session.tabTitle(locale: locale),
                         locale: locale
                     )
                 )
@@ -121,7 +207,19 @@ private struct TerminalTabItemView: View {
                 style: .continuous
             )
         )
-        .onTapGesture(perform: activate)
+        .onTapGesture {
+            if !isRenaming { activate() }
+        }
+        .contextMenu {
+            Button {
+                beginRename()
+            } label: {
+                Label("terminal.rename_tab", systemImage: "pencil")
+            }
+            Button(role: .destructive, action: close) {
+                Label("terminal.close_tab", systemImage: "xmark")
+            }
+        }
         .animation(
             reduceMotion
                 ? nil
@@ -132,6 +230,26 @@ private struct TerminalTabItemView: View {
         .accessibilityLabel(accessibilityLabel)
         .accessibilityValue(isActive ? Text("accessibility.selected") : Text(verbatim: ""))
         .accessibilityIdentifier("tabBar.\(session.title)")
+    }
+
+    /// 打开当前标签的编辑框；取消时仍可恢复显示原有名称。
+    private func beginRename() {
+        renameDraft = session.tabTitle(locale: locale)
+        isRenaming = true
+    }
+
+    /// Enter 或失焦提交；非法名称保持原标签名。
+    private func commitRename() {
+        guard isRenaming else { return }
+        session.renameTab(to: renameDraft)
+        isRenaming = false
+        renameFieldFocused = false
+    }
+
+    /// Esc 直接退出编辑，不改 Session 数据。
+    private func cancelRename() {
+        isRenaming = false
+        renameFieldFocused = false
     }
 
     /// 连接状态指示（任务书 14）：● Connected / ○ Disconnected /
@@ -179,14 +297,14 @@ private struct TerminalTabItemView: View {
         case .local:
             Text(
                 verbatim: TerminalAccessibilityText.localTab(
-                    title: session.displayTitle(locale: locale),
+                    title: session.tabTitle(locale: locale),
                     locale: locale
                 )
             )
         case .remoteSSH:
             Text(
                 verbatim: TerminalAccessibilityText.sshTab(
-                    title: session.displayTitle(locale: locale),
+                    title: session.tabTitle(locale: locale),
                     locale: locale
                 )
             )

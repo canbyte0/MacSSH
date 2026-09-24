@@ -34,6 +34,8 @@
 		A1000000000000000000000A /* PlaceholderContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000B /* PlaceholderContentView.swift */; };
 		A1000000000000000000000B /* AppStatusBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000C /* AppStatusBar.swift */; };
 		A1000000000000000000000C /* TerminalTabBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000D /* TerminalTabBar.swift */; };
+		B92400000000000000000001 /* TerminalTabScrollbar.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92400000000000000000002 /* TerminalTabScrollbar.swift */; };
+		B92400000000000000000003 /* TerminalTabScrollbarTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B92400000000000000000004 /* TerminalTabScrollbarTests.swift */; };
 		A1000000000000000000000D /* TerminalWorkspaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000E /* TerminalWorkspaceView.swift */; };
 		A1000000000000000000000E /* HostListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000000000000000000000F /* HostListView.swift */; };
 		A1000000000000000000000F /* TransferListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A20000000000000000000010 /* TransferListView.swift */; };
@@ -311,6 +313,8 @@
 		A2000000000000000000000B /* PlaceholderContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PlaceholderContentView.swift; sourceTree = "<group>"; };
 		A2000000000000000000000C /* AppStatusBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppStatusBar.swift; sourceTree = "<group>"; };
 		A2000000000000000000000D /* TerminalTabBar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabBar.swift; sourceTree = "<group>"; };
+		B92400000000000000000002 /* TerminalTabScrollbar.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabScrollbar.swift; sourceTree = "<group>"; };
+		B92400000000000000000004 /* TerminalTabScrollbarTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalTabScrollbarTests.swift; sourceTree = "<group>"; };
 		A2000000000000000000000E /* TerminalWorkspaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalWorkspaceView.swift; sourceTree = "<group>"; };
 		A2000000000000000000000F /* HostListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HostListView.swift; sourceTree = "<group>"; };
 		A20000000000000000000010 /* TransferListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TransferListView.swift; sourceTree = "<group>"; };
@@ -879,6 +883,7 @@
 			D2000000000000000000000D /* KnownHostServiceTests.swift */,
 			E20000000000000000000006 /* RemoteTerminalTests.swift */,
 			F20000000000000000000003 /* SessionManagerTests.swift */,
+			B92400000000000000000004 /* TerminalTabScrollbarTests.swift */,
 			G40000000000000000000001 /* SFTPSessionTests.swift */,
 			G40000000000000000000002 /* SFTPServiceTests.swift */,
 			M20000000000000000000001 /* SFTPTransferTests.swift */,
@@ -1000,6 +1005,7 @@
 			isa = PBXGroup;
 			children = (
 				A2000000000000000000000D /* TerminalTabBar.swift */,
+				B92400000000000000000002 /* TerminalTabScrollbar.swift */,
 				A2000000000000000000000E /* TerminalWorkspaceView.swift */,
 				A20000000000000000000015 /* TerminalRepresentable.swift */,
 				E20000000000000000000005 /* RemoteTerminalRepresentable.swift */,
@@ -1294,6 +1300,7 @@
 				A1000000000000000000000A /* PlaceholderContentView.swift in Sources */,
 				A1000000000000000000000B /* AppStatusBar.swift in Sources */,
 				A1000000000000000000000C /* TerminalTabBar.swift in Sources */,
+				B92400000000000000000001 /* TerminalTabScrollbar.swift in Sources */,
 				A1000000000000000000000D /* TerminalWorkspaceView.swift in Sources */,
 				A1000000000000000000000E /* HostListView.swift in Sources */,
 				A1000000000000000000000F /* TransferListView.swift in Sources */,
@@ -1453,6 +1460,7 @@
 				D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */,
 				E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */,
 				F10000000000000000000003 /* SessionManagerTests.swift in Sources */,
+				B92400000000000000000003 /* TerminalTabScrollbarTests.swift in Sources */,
 				G30000000000000000000001 /* SFTPSessionTests.swift in Sources */,
 				G30000000000000000000002 /* SFTPServiceTests.swift in Sources */,
 				M10000000000000000000001 /* SFTPTransferTests.swift in Sources */,

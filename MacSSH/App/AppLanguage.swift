@@ -57,6 +57,8 @@ enum AppPreferenceKey {
     static let appearanceMode = "macssh.appearanceMode"
     /// MacSSH 1.1 Phase 9：终端字号（Int，10...32，step 1，default 14）。
     static let terminalFontSize = "macssh.terminalFontSize"
+    /// 终端配色预设（followApp / ghostty）。
+    static let terminalColorScheme = "macssh.terminalColorScheme"
     /// 本地 zsh 粘贴高亮偏好；未设置时关闭，新终端启动时读取。
     static let pasteHighlightEnabled = "macssh.pasteHighlightEnabled"
 }

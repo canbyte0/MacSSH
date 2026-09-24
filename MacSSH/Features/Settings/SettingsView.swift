@@ -1,6 +1,37 @@
 import SwiftData
 import SwiftUI
 
+/// 设置页左侧的小菜单；SSH 项包含连接设置与已知主机。
+private enum SettingsCategory: String, CaseIterable, Identifiable {
+    case general
+    case terminal
+    case appearance
+    case agent
+    case ssh
+
+    var id: Self { self }
+
+    var titleKey: String {
+        switch self {
+        case .general: "settings.section.general"
+        case .terminal: "settings.section.terminal"
+        case .appearance: "settings.section.appearance"
+        case .agent: "settings.section.agent"
+        case .ssh: "SSH"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .general: "gearshape"
+        case .terminal: "terminal"
+        case .appearance: "paintpalette"
+        case .agent: "sparkles"
+        case .ssh: "network"
+        }
+    }
+}
+
 /// Settings 页面。
 ///
 /// Phase 6 起在 SSH 区新增可交互的 Known Hosts 管理：
@@ -15,6 +46,9 @@ struct SettingsView: View {
         sort: [SortDescriptor(\KnownHost.hostname), SortDescriptor(\KnownHost.port)]
     )
     private var knownHosts: [KnownHost]
+
+    /// 分类仅控制当前可见设置；离开设置页后从“通用”重新进入。
+    @State private var selectedCategory: SettingsCategory = .general
 
     @State private var pendingForgetID: KnownHost.ID?
 
@@ -47,252 +81,299 @@ struct SettingsView: View {
         @Bindable var appearanceController = appState.appearanceController
         @Bindable var fontSizeController = appState.terminalFontSizeController
 
-        Form {
-            Section("settings.section.general") {
-                Picker("settings.language", selection: $appState.language) {
-                    ForEach(AppLanguage.allCases) { language in
-                        // 语言名称固定使用自身语言，避免误切后找不到返回入口。
-                        Text(verbatim: language.displayName)
-                            .tag(language)
-                    }
-                }
-                .pickerStyle(.menu)
-                .accessibilityIdentifier("settings.language")
+        HStack(spacing: 0) {
+            categoryMenu
+            Divider()
 
-                LabeledContent("settings.launch_behavior") {
-                    Text("settings.open_main_window")
-                }
-                LabeledContent("settings.confirm_before_closing_ssh") {
-                    Text("common.on")
-                }
-            }
-
-            Section("settings.section.terminal") {
-                LabeledContent("settings.font") {
-                    Text(verbatim: "JetBrains Mono")
-                }
-                // MacSSH 1.1 Phase 9：终端字号可配置（任务书 §46）。
-                // 采用紧凑 −/+ 方块按钮 + 中间当前字号（用户在 Phase 9B UI
-                // Preview Gate 选定方案 A）。10 pt 时减号 disabled，32 pt 时
-                // 加号 disabled，避免越界；不允许直接编辑文字。绑定
-                // `$fontSizeController.size`（单一 source of truth），
-                // 写入经 `size.didSet` 同步 persist + apply（广播全部已注册
-                // TerminalView，SwiftTerm font setter 内置 resetFont → resize
-                // → sizeChanged → Local setWinSize / Remote resizeChannelPTY，
-                // 不重建任何 Runtime Session）。
-                LabeledContent("settings.font_size") {
-                    HStack(spacing: 6) {
-                        Button {
-                            fontSizeController.decrement()
-                        } label: {
-                            Image(systemName: "minus")
-                                .frame(width: 12, height: 12)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(fontSizeController.size <= TerminalFontSizeController.minSize)
-                        .accessibilityIdentifier("settings.fontSizeDecrement")
-
-                        Text("\(fontSizeController.size) pt")
-                            .monospacedDigit()
-                            .frame(minWidth: 50, alignment: .center)
-                            .accessibilityIdentifier("settings.fontSizeValue")
-
-                        Button {
-                            fontSizeController.increment()
-                        } label: {
-                            Image(systemName: "plus")
-                                .frame(width: 12, height: 12)
-                        }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
-                        .disabled(fontSizeController.size >= TerminalFontSizeController.maxSize)
-                        .accessibilityIdentifier("settings.fontSizeIncrement")
-                    }
-                }
-                LabeledContent("settings.scrollback") {
-                    Text("settings.scrollback_value")
-                }
-                // 原生开关：经每个 Local Session 的控制 FIFO 立即同步到 zsh ZLE，
-                // 不向当前命令行注入命令，也不影响 Remote Session。
-                Toggle("settings.paste_highlight", isOn: $appState.pasteHighlightEnabled)
-                    .toggleStyle(.switch)
-                    .accessibilityIdentifier("settings.pasteHighlight")
-                Text("settings.paste_highlight_help")
-                    .font(.footnote)
+            VStack(alignment: .leading, spacing: 0) {
+                // 分类切换只重建右侧 Form，避免沿用上一分类的滚动位置。
+                Text(LocalizedStringKey(selectedCategory.titleKey))
+                    .font(.title2.weight(.semibold))
+                    .padding(.horizontal, 24)
+                    .padding(.top, 24)
+                Text("settings.category.hint")
+                    .font(.subheadline)
                     .foregroundStyle(.secondary)
-                // MacSSH 1.1 Phase 6：终端字符串高亮子区块（与现有只读占位
-                // 共存于同一 Section；规则 CRUD 经 Store 触发 Coordinator
-                // 广播重绘，不重建任何 Runtime Session）。
-                HighlightRulesEditor(store: appState.terminalHighlightCoordinator.highlightStore)
-                    .padding(.top, 4)
+                    .padding(.horizontal, 24)
+                    .padding(.top, 6)
 
-                // MacSSH 1.1 Phase 7：命令历史设置（任务书 §32 / §33 / §40）。
-                // grouped Form 会自动绘制相邻行分隔线；这里不再额外插入
-                // Divider，避免它被 Form 当作独立行并产生多余的空白行高。
-                Toggle("sidebar_right.save_history", isOn: historyEnabledBinding)
-                    .accessibilityIdentifier("settings.saveCommandHistory")
-                Text(verbatim: L10n.string(
-                    "sidebar_right.history_disclosure",
-                    defaultValue: "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded.",
-                    locale: locale
-                ))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                Button(role: .destructive) {
-                    pendingClearHistory = true
-                } label: {
-                    Text("sidebar_right.clear_history")
-                }
-                .buttonStyle(.bordered)
-                .accessibilityIdentifier("settings.clearHistory")
-            }
+                Form {
+                    if selectedCategory == .general {
+                        Section {
+                            Picker("settings.language", selection: $appState.language) {
+                                ForEach(AppLanguage.allCases) { language in
+                                    // 语言名称固定使用自身语言，避免误切后找不到返回入口。
+                                    Text(verbatim: language.displayName)
+                                        .tag(language)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("settings.language")
 
-            Section("settings.section.appearance") {
-                // MacSSH 1.1 Phase 8：外观模式 Picker（任务书 §29）。风格与上方
-                // 「语言」Picker 完全一致：LabeledContent 行 + native menu Picker。
-                // 行内值反映 requested mode（controller.mode），非 resolved
-                // effectiveAppearance（任务书 §31：system + 系统深色 → 显示
-                // 「跟随系统」而非「深色」）。选择即生效，无 Save / Apply / 重启。
-                Picker("settings.mode", selection: $appearanceController.mode) {
-                    ForEach(AppAppearanceMode.allCases) { mode in
-                        Text(LocalizedStringKey(mode.localizedOptionKey))
-                            .tag(mode)
+                            LabeledContent("settings.launch_behavior") {
+                                Text("settings.open_main_window")
+                            }
+                            LabeledContent("settings.confirm_before_closing_ssh") {
+                                Text("common.on")
+                            }
+                        }
+
                     }
-                }
-                .pickerStyle(.menu)
-                .accessibilityIdentifier("settings.appearanceMode")
-            }
 
-            Section("settings.section.agent") {
-                // MacSSH 1.1 Phase 10C-D：Provider Picker（任务书 §10）。
-                // API Key 状态行只反映当前所选 provider 自己的凭据；
-                // 切换经 switchAgentProvider 智能联动 model / baseURL 草稿
-                // 并原子持久化。
-                LabeledContent("agent.settings.provider") {
-                    Picker("agent.settings.provider", selection: $agentProviderDraft) {
-                        ForEach(
-                            AgentProviderSettings.Provider.allCases,
-                            id: \.self
-                        ) { provider in
-                            Text(LocalizedStringKey(provider.localizedNameKey))
-                                .tag(provider)
+                    if selectedCategory == .terminal {
+                        Section {
+                            // 只切换终端颜色；字体、字号及 App 外观设置各自保持原值。
+                            Picker("settings.terminal_color_scheme", selection: $appState.terminalColorScheme) {
+                                ForEach(TerminalColorScheme.allCases) { scheme in
+                                    Text(LocalizedStringKey(scheme.localizedOptionKey))
+                                        .tag(scheme)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("settings.terminalColorScheme")
+
+                            LabeledContent("settings.font") {
+                                Text(verbatim: "JetBrains Mono")
+                            }
+                            // MacSSH 1.1 Phase 9：终端字号可配置（任务书 §46）。
+                            // 采用紧凑 −/+ 方块按钮 + 中间当前字号（用户在 Phase 9B UI
+                            // Preview Gate 选定方案 A）。10 pt 时减号 disabled，32 pt 时
+                            // 加号 disabled，避免越界；不允许直接编辑文字。绑定
+                            // `$fontSizeController.size`（单一 source of truth），
+                            // 写入经 `size.didSet` 同步 persist + apply（广播全部已注册
+                            // TerminalView，SwiftTerm font setter 内置 resetFont → resize
+                            // → sizeChanged → Local setWinSize / Remote resizeChannelPTY，
+                            // 不重建任何 Runtime Session）。
+                            LabeledContent("settings.font_size") {
+                                HStack(spacing: 6) {
+                                    Button {
+                                        fontSizeController.decrement()
+                                    } label: {
+                                        Image(systemName: "minus")
+                                            .frame(width: 12, height: 12)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .disabled(fontSizeController.size <= TerminalFontSizeController.minSize)
+                                    .accessibilityIdentifier("settings.fontSizeDecrement")
+
+                                    Text("\(fontSizeController.size) pt")
+                                        .monospacedDigit()
+                                        .frame(minWidth: 50, alignment: .center)
+                                        .accessibilityIdentifier("settings.fontSizeValue")
+
+                                    Button {
+                                        fontSizeController.increment()
+                                    } label: {
+                                        Image(systemName: "plus")
+                                            .frame(width: 12, height: 12)
+                                    }
+                                    .buttonStyle(.bordered)
+                                    .controlSize(.small)
+                                    .disabled(fontSizeController.size >= TerminalFontSizeController.maxSize)
+                                    .accessibilityIdentifier("settings.fontSizeIncrement")
+                                }
+                            }
+                            LabeledContent("settings.scrollback") {
+                                Text("settings.scrollback_value")
+                            }
+                            // 原生开关：经每个 Local Session 的控制 FIFO 立即同步到 zsh ZLE，
+                            // 不向当前命令行注入命令，也不影响 Remote Session。
+                            Toggle("settings.paste_highlight", isOn: $appState.pasteHighlightEnabled)
+                                .toggleStyle(.switch)
+                                .accessibilityIdentifier("settings.pasteHighlight")
+                            Text("settings.paste_highlight_help")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            // MacSSH 1.1 Phase 6：终端字符串高亮子区块（与现有只读占位
+                            // 共存于同一 Section；规则 CRUD 经 Store 触发 Coordinator
+                            // 广播重绘，不重建任何 Runtime Session）。
+                            HighlightRulesEditor(store: appState.terminalHighlightCoordinator.highlightStore)
+                                .padding(.top, 4)
+
+                            // MacSSH 1.1 Phase 7：命令历史设置（任务书 §32 / §33 / §40）。
+                            // grouped Form 会自动绘制相邻行分隔线；这里不再额外插入
+                            // Divider，避免它被 Form 当作独立行并产生多余的空白行高。
+                            Toggle("sidebar_right.save_history", isOn: historyEnabledBinding)
+                                .accessibilityIdentifier("settings.saveCommandHistory")
+                            Text(verbatim: L10n.string(
+                                "sidebar_right.history_disclosure",
+                                defaultValue: "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded.",
+                                locale: locale
+                            ))
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            Button(role: .destructive) {
+                                pendingClearHistory = true
+                            } label: {
+                                Text("sidebar_right.clear_history")
+                            }
+                            .buttonStyle(.bordered)
+                            .accessibilityIdentifier("settings.clearHistory")
+                        }
+
+                    }
+
+                    if selectedCategory == .appearance {
+                        Section {
+                            // MacSSH 1.1 Phase 8：外观模式 Picker（任务书 §29）。风格与上方
+                            // 「语言」Picker 完全一致：LabeledContent 行 + native menu Picker。
+                            // 行内值反映 requested mode（controller.mode），非 resolved
+                            // effectiveAppearance（任务书 §31：system + 系统深色 → 显示
+                            // 「跟随系统」而非「深色」）。选择即生效，无 Save / Apply / 重启。
+                            Picker("settings.mode", selection: $appearanceController.mode) {
+                                ForEach(AppAppearanceMode.allCases) { mode in
+                                    Text(LocalizedStringKey(mode.localizedOptionKey))
+                                        .tag(mode)
+                                }
+                            }
+                            .pickerStyle(.menu)
+                            .accessibilityIdentifier("settings.appearanceMode")
+                        }
+
+                    }
+
+                    if selectedCategory == .agent {
+                        Section {
+                            // MacSSH 1.1 Phase 10C-D：Provider Picker（任务书 §10）。
+                            // API Key 状态行只反映当前所选 provider 自己的凭据；
+                            // 切换经 switchAgentProvider 智能联动 model / baseURL 草稿
+                            // 并原子持久化。
+                            LabeledContent("agent.settings.provider") {
+                                Picker("agent.settings.provider", selection: $agentProviderDraft) {
+                                    ForEach(
+                                        AgentProviderSettings.Provider.allCases,
+                                        id: \.self
+                                    ) { provider in
+                                        Text(LocalizedStringKey(provider.localizedNameKey))
+                                            .tag(provider)
+                                    }
+                                }
+                                .pickerStyle(.menu)
+                                .onChange(of: agentProviderDraft) { _, newProvider in
+                                    switchAgentProvider(to: newProvider)
+                                }
+                                .accessibilityIdentifier("settings.agent.provider")
+                            }
+                            // Model：用户可输入账户可用的任意 model ID；空值保存时回退
+                            // provider defaults 集中默认值（任务书 §9：默认值不得散落 View）。
+                            LabeledContent("agent.settings.model") {
+                                TextField(
+                                    "agent.settings.model.placeholder",
+                                    text: $agentModelDraft
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 240)
+                                .accessibilityIdentifier("settings.agent.model")
+                            }
+                            // Base URL：默认 https://api.openai.com/v1，可改（仍为
+                            // OpenAI Responses endpoint 语义，任务书 §10）。
+                            LabeledContent("agent.settings.base_url") {
+                                TextField(
+                                    "agent.settings.base_url.placeholder",
+                                    text: $agentBaseURLDraft
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 240)
+                                .accessibilityIdentifier("settings.agent.baseURL")
+                            }
+                            if agentBaseURLInvalid {
+                                Text("agent.settings.base_url_invalid")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                                    .accessibilityIdentifier("settings.agent.baseURLInvalidHint")
+                            }
+                            // grouped Form 会自动分隔 Base URL 与 API Key；额外 Divider
+                            // 会被布局为独立空白行，因此这里直接衔接下一项设置。
+                            // API Key：SecureField 草稿——保存后立即清空，绝不把 Keychain
+                            // 内容回填显示；状态行只区分「已配置 / 未配置」（任务书 §12：
+                            // 不显示 sk-… 任何形式的部分 Key）。
+                            LabeledContent("agent.settings.api_key") {
+                                SecureField(
+                                    "agent.settings.api_key.placeholder",
+                                    text: $agentAPIKeyDraft
+                                )
+                                .textFieldStyle(.roundedBorder)
+                                .frame(maxWidth: 240)
+                                .accessibilityIdentifier("settings.agent.apiKey")
+                            }
+                            LabeledContent("agent.settings.api_key.status") {
+                                if agentKeyConfigured {
+                                    Text("agent.settings.api_key.configured")
+                                } else {
+                                    Text("agent.settings.api_key.not_configured")
+                                }
+                            }
+                            HStack {
+                                Button {
+                                    Task { await saveAgentConfiguration() }
+                                } label: {
+                                    Text("agent.settings.api_key.save")
+                                }
+                                .buttonStyle(.bordered)
+                                .accessibilityIdentifier("settings.agent.save")
+
+                                Button(role: .destructive) {
+                                    Task { await deleteAgentAPIKey() }
+                                } label: {
+                                    Text("agent.settings.api_key.delete")
+                                }
+                                .buttonStyle(.bordered)
+                                .disabled(!agentKeyConfigured)
+                                .accessibilityIdentifier("settings.agent.deleteAPIKey")
+                            }
+                            Text("agent.settings.api_key.help")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                        }
+
+                    }
+
+                    if selectedCategory == .ssh {
+                        Section {
+                            LabeledContent("settings.connection_timeout") {
+                                Text("settings.connection_timeout_value")
+                            }
+                            LabeledContent("KeepAlive") {
+                                Text("common.on")
+                            }
+                        }
+
+                        Section("known_hosts.title") {
+                            if knownHosts.isEmpty {
+                                Text("known_hosts.empty_message")
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(knownHosts) { knownHost in
+                                    KnownHostRow(
+                                        knownHost: knownHost,
+                                        locale: locale,
+                                        onForget: { pendingForgetID = knownHost.id }
+                                    )
+                                }
+                            }
+                        }
+
+                        Section {
+                            Text("settings.read_only_note")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .onChange(of: agentProviderDraft) { _, newProvider in
-                        switchAgentProvider(to: newProvider)
-                    }
-                    .accessibilityIdentifier("settings.agent.provider")
                 }
-                // Model：用户可输入账户可用的任意 model ID；空值保存时回退
-                // provider defaults 集中默认值（任务书 §9：默认值不得散落 View）。
-                LabeledContent("agent.settings.model") {
-                    TextField(
-                        "agent.settings.model.placeholder",
-                        text: $agentModelDraft
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 240)
-                    .accessibilityIdentifier("settings.agent.model")
-                }
-                // Base URL：默认 https://api.openai.com/v1，可改（仍为
-                // OpenAI Responses endpoint 语义，任务书 §10）。
-                LabeledContent("agent.settings.base_url") {
-                    TextField(
-                        "agent.settings.base_url.placeholder",
-                        text: $agentBaseURLDraft
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 240)
-                    .accessibilityIdentifier("settings.agent.baseURL")
-                }
-                if agentBaseURLInvalid {
-                    Text("agent.settings.base_url_invalid")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                        .accessibilityIdentifier("settings.agent.baseURLInvalidHint")
-                }
-                // grouped Form 会自动分隔 Base URL 与 API Key；额外 Divider
-                // 会被布局为独立空白行，因此这里直接衔接下一项设置。
-                // API Key：SecureField 草稿——保存后立即清空，绝不把 Keychain
-                // 内容回填显示；状态行只区分「已配置 / 未配置」（任务书 §12：
-                // 不显示 sk-… 任何形式的部分 Key）。
-                LabeledContent("agent.settings.api_key") {
-                    SecureField(
-                        "agent.settings.api_key.placeholder",
-                        text: $agentAPIKeyDraft
-                    )
-                    .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 240)
-                    .accessibilityIdentifier("settings.agent.apiKey")
-                }
-                LabeledContent("agent.settings.api_key.status") {
-                    if agentKeyConfigured {
-                        Text("agent.settings.api_key.configured")
-                    } else {
-                        Text("agent.settings.api_key.not_configured")
-                    }
-                }
-                HStack {
-                    Button {
-                        Task { await saveAgentConfiguration() }
-                    } label: {
-                        Text("agent.settings.api_key.save")
-                    }
-                    .buttonStyle(.bordered)
-                    .accessibilityIdentifier("settings.agent.save")
-
-                    Button(role: .destructive) {
-                        Task { await deleteAgentAPIKey() }
-                    } label: {
-                        Text("agent.settings.api_key.delete")
-                    }
-                    .buttonStyle(.bordered)
-                    .disabled(!agentKeyConfigured)
-                    .accessibilityIdentifier("settings.agent.deleteAPIKey")
-                }
-                Text("agent.settings.api_key.help")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
+                .formStyle(.grouped)
+                .id(selectedCategory)
+                // 限制宽窗口中的表单宽度，让卡片与分类标题靠近左侧小菜单。
+                .frame(maxWidth: 820, maxHeight: .infinity, alignment: .topLeading)
             }
-
-            Section("SSH") {
-                LabeledContent("settings.connection_timeout") {
-                    Text("settings.connection_timeout_value")
-                }
-                LabeledContent("KeepAlive") {
-                    Text("common.on")
-                }
-            }
-
-            Section("known_hosts.title") {
-                if knownHosts.isEmpty {
-                    Text("known_hosts.empty_message")
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(knownHosts) { knownHost in
-                        KnownHostRow(
-                            knownHost: knownHost,
-                            locale: locale,
-                            onForget: { pendingForgetID = knownHost.id }
-                        )
-                    }
-                }
-            }
-
-            Section {
-                Text("settings.read_only_note")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         }
-        .formStyle(.grouped)
         // SwiftUI 的 LabeledContent 会缓存聚合后的 Accessibility Value。
         // 语言变化时只重建 Settings 展示子树，确保 VoiceOver 与可见文案同步；
         // AppState 持有的 Session / Transfer / Shell Runtime 不会因此重建。
         .id(appState.language)
+        .accessibilityElement(children: .contain)
         // NavigationSplitView 会缓存 LocalizedStringKey 形式的页面标题；显式使用
         // 当前 Locale 解析成 String，确保可见标题与 VoiceOver 在切换语言时同步刷新。
         .navigationTitle(
@@ -355,6 +436,49 @@ struct SettingsView: View {
         } message: {
             Text("agent.settings.api_key.action_failed_message")
         }
+    }
+
+    /// 与主侧边栏并列的设置分类入口；宽度固定以保留右侧表单空间。
+    private var categoryMenu: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("settings.categories")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
+                .accessibilityIdentifier("settings.categories")
+
+            ForEach(SettingsCategory.allCases) { category in
+                Button {
+                    selectedCategory = category
+                } label: {
+                    Label {
+                        Text(LocalizedStringKey(category.titleKey))
+                    } icon: {
+                        Image(systemName: category.systemImage)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 9)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(selectedCategory == category ? Color.accentColor : Color.primary)
+                .background(
+                    selectedCategory == category ? Color.accentColor.opacity(0.12) : Color.clear,
+                    in: RoundedRectangle(cornerRadius: 9)
+                )
+                .accessibilityAddTraits(selectedCategory == category ? .isSelected : [])
+                .accessibilityIdentifier("settings.category.\(category.rawValue)")
+            }
+
+            Spacer(minLength: 0)
+        }
+        .padding(12)
+        .padding(.top, 20)
+        .frame(width: 210)
+        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background(Color(nsColor: .controlBackgroundColor))
     }
 
     // MARK: - MacSSH 1.1 Phase 10C / 10C-D：AI Agent 设置（任务书 §12 / §13 / §10）

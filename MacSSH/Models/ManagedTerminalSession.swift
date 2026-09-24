@@ -80,6 +80,27 @@ final class ManagedTerminalSession: Identifiable {
         return titleCounter == 1 ? base : "\(base) \(titleCounter)"
     }
 
+    /// 用户为当前 Tab 指定的名称；仅在此 Session 生命周期内保存。
+    /// 技术名、Host 配置及传输列表继续使用原有标题。
+    private(set) var customTabTitle: String?
+
+    /// Tab 专用标题：有用户名称时覆盖自动编号，其他界面仍使用 displayTitle。
+    func tabTitle(locale: Locale) -> String {
+        customTabTitle ?? displayTitle(locale: locale)
+    }
+
+    /// 去掉首尾空白并拒绝空名、换行与控制字符，避免破坏单行标签布局。
+    @discardableResult
+    func renameTab(to proposedTitle: String) -> Bool {
+        let title = proposedTitle.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !title.isEmpty,
+              !title.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains) else {
+            return false
+        }
+        customTabTitle = title
+        return true
+    }
+
     // MARK: - Local runtime（kind == .local 时非 nil）
 
     let localService: LocalTerminalService?

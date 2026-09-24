@@ -45,6 +45,9 @@ final class TerminalAppearanceCoordinator {
     /// 当前外观观察令牌（非 nil 表示已安装；nil 表示尚未安装或安装失败待重试）。
     private var appearanceObservation: TerminalAppearanceObservationToken?
 
+    /// 由 AppState 持有的用户偏好驱动；默认继续跟随 App 外观。
+    private var colorScheme: TerminalColorScheme
+
     /// 解析当前 `NSAppearance` 的接缝。生产读取 `NSApp?.effectiveAppearance`；
     /// 测试注入可变值以确定性验证 register / 广播行为，不依赖系统当前模式
     /// （任务书第四十八节，不依赖 XCTest 启动环境碰巧已有 NSApp）。
@@ -62,9 +65,11 @@ final class TerminalAppearanceCoordinator {
     ///   - observationInstaller: 安装外观变化观察；默认观察 `NSApp` 的
     ///     `effectiveAppearance` KVO，回调切回 MainActor 与视图操作建立同一线程边界。
     init(
+        colorScheme: TerminalColorScheme = .followApp,
         appearanceResolver: @escaping @MainActor () -> NSAppearance? = { NSApp?.effectiveAppearance },
         observationInstaller: @escaping @MainActor (@escaping @MainActor () -> Void) -> TerminalAppearanceObservationToken? = TerminalAppearanceCoordinator.installDefaultAppAppearanceObservation
     ) {
+        self.colorScheme = colorScheme
         self.appearanceResolver = appearanceResolver
         self.observationInstaller = observationInstaller
     }
@@ -80,8 +85,18 @@ final class TerminalAppearanceCoordinator {
         ensureObservationInstalled()
         terminalViews.add(terminalView)
         // 只给该 view 应用当前外观。
-        let palette = TerminalAppearanceProvider.palette(for: appearanceResolver())
+        let palette = TerminalAppearanceProvider.palette(
+            for: appearanceResolver(), colorScheme: colorScheme
+        )
         TerminalAppearanceProvider.apply(palette, to: terminalView)
+    }
+
+    /// 设置变更同步广播给现存会话；从 Ghostty 返回原方案时恢复 ANSI 色。
+    func setColorScheme(_ newScheme: TerminalColorScheme) {
+        guard newScheme != colorScheme else { return }
+        let restoreDefaultANSI = colorScheme == .ghostty && newScheme == .followApp
+        colorScheme = newScheme
+        applyCurrentColorSchemeToAllRegisteredViews(restoreDefaultANSI: restoreDefaultANSI)
     }
 
     // MARK: - App-level explicit apply（MacSSH 1.1 Phase 8）
@@ -176,12 +191,22 @@ final class TerminalAppearanceCoordinator {
     /// 排队广播被误跳过）。Terminal 数量有限、Appearance 改变频率极低，重复
     /// apply 的成本远低于错误去重导致同一窗口出现两种 palette 的风险。
     private func applyCurrentAppearanceToAllRegisteredViews() {
-        let palette = TerminalAppearanceProvider.palette(for: appearanceResolver())
+        // Ghostty 配色固定；App chrome 切换明暗不覆盖终端内的 ANSI 色。
+        guard colorScheme == .followApp else { return }
+        applyCurrentColorSchemeToAllRegisteredViews()
+    }
+
+    private func applyCurrentColorSchemeToAllRegisteredViews(restoreDefaultANSI: Bool = false) {
+        let palette = TerminalAppearanceProvider.palette(
+            for: appearanceResolver(), colorScheme: colorScheme
+        )
         let liveViews = terminalViews.allObjects
         for view in liveViews {
-            TerminalAppearanceProvider.apply(palette, to: view)
+            TerminalAppearanceProvider.apply(
+                palette, to: view, restoreDefaultANSI: restoreDefaultANSI
+            )
         }
-        AppLogger.terminal.info("Terminal appearance updated to \(palette.mode.rawValue, privacy: .public)")
+        AppLogger.terminal.info("Terminal color scheme updated to \(self.colorScheme.rawValue, privacy: .public)")
     }
 }
 
