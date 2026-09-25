@@ -1,80 +1,6 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
-    "" : {
-
-    },
-    "(%@)" : {
-
-    },
-    "〈empty text〉" : {
-
-    },
-    "%@ · %lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@ · %2$lld"
-          }
-        }
-      }
-    },
-    "%@:%lld" : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "%1$@:%2$lld"
-          }
-        }
-      }
-    },
-    "%lld Hosts" : {
-
-    },
-    "%lld item" : {
-
-    },
-    "%lld items" : {
-
-    },
-    "%lld pt" : {
-
-    },
-    "%lld task" : {
-
-    },
-    "%lld tasks" : {
-
-    },
-    "%lld Transferring" : {
-
-    },
-    "%lld Waiting" : {
-
-    },
-    "1 Host" : {
-
-    },
-    "A credential with this identifier already exists." : {
-
-    },
-    "A file with the same name already exists on the server and will not be overwritten." : {
-
-    },
-    "A Group with this name may already exist." : {
-
-    },
-    "A network error occurred while connecting to the server." : {
-
-    },
-    "A task downloading to the same local destination is already in the queue." : {
-
-    },
-    "A task uploading to the same remote destination is already in the queue." : {
-
-    },
     "accessibility.host_key_changed_dialog" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -499,15 +425,6 @@
           }
         }
       }
-    },
-    "Add" : {
-
-    },
-    "Add to Saved Commands" : {
-
-    },
-    "Agent" : {
-
     },
     "agent.command.approve" : {
       "extractionState" : "manual_uploaded",
@@ -2124,33 +2041,6 @@
         }
       }
     },
-    "AI service" : {
-
-    },
-    "AI service is not configured. Add an API Key in Settings." : {
-
-    },
-    "All Hosts" : {
-
-    },
-    "Approval required" : {
-
-    },
-    "Approve" : {
-
-    },
-    "Approve this command to start execution." : {
-
-    },
-    "Authenticating…" : {
-
-    },
-    "Authentication failed. Check your API Key." : {
-
-    },
-    "Authentication failed. Check your username and password." : {
-
-    },
     "authentication.password" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -2184,54 +2074,6 @@
           }
         }
       }
-    },
-    "Blue" : {
-
-    },
-    "Cancel" : {
-
-    },
-    "Cancelled" : {
-
-    },
-    "Cancelling" : {
-
-    },
-    "Case Insensitive" : {
-
-    },
-    "Case Sensitive" : {
-
-    },
-    "Choose a private key file." : {
-
-    },
-    "Choose Private Key File" : {
-
-    },
-    "Clear all command history?" : {
-
-    },
-    "Clear History" : {
-
-    },
-    "Close" : {
-
-    },
-    "Close tab: %@" : {
-
-    },
-    "Command" : {
-
-    },
-    "Command cannot be empty." : {
-
-    },
-    "Command must be a single line." : {
-
-    },
-    "Commands in this group will move to Ungrouped (%lld command(s))." : {
-
     },
     "common.none" : {
       "extractionState" : "manual_uploaded",
@@ -2283,57 +2125,6 @@
           }
         }
       }
-    },
-    "Completed" : {
-
-    },
-    "Connecting to %@" : {
-
-    },
-    "Connecting…" : {
-
-    },
-    "Connection failed" : {
-
-    },
-    "Connection lost" : {
-
-    },
-    "Create local file" : {
-
-    },
-    "Create only · existing destinations are not overwritten" : {
-
-    },
-    "Create this new local text file with the exact approved UTF-8 text." : {
-
-    },
-    "Created · cleanup pending" : {
-
-    },
-    "Delete “%@”?" : {
-
-    },
-    "Delete this group?" : {
-
-    },
-    "Delete This History Entry" : {
-
-    },
-    "Denied" : {
-
-    },
-    "Deny" : {
-
-    },
-    "Done" : {
-
-    },
-    "Download" : {
-
-    },
-    "Edit Command" : {
-
     },
     "error.keychain.access_denied" : {
       "extractionState" : "manual_uploaded",
@@ -3593,30 +3384,6 @@
         }
       }
     },
-    "Exact command" : {
-
-    },
-    "Exact text" : {
-
-    },
-    "Exact UTF-8 text" : {
-
-    },
-    "Failed" : {
-
-    },
-    "Favorite could not be updated." : {
-
-    },
-    "Favorites" : {
-
-    },
-    "File created" : {
-
-    },
-    "File created; private staging cleanup is still pending." : {
-
-    },
     "files.title" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -3633,24 +3400,6 @@
           }
         }
       }
-    },
-    "Get current directory" : {
-
-    },
-    "Gray" : {
-
-    },
-    "Green" : {
-
-    },
-    "Group" : {
-
-    },
-    "Group name" : {
-
-    },
-    "Group name cannot be empty." : {
-
     },
     "groups.delete" : {
       "extractionState" : "manual_uploaded",
@@ -3838,12 +3587,6 @@
           }
         }
       }
-    },
-    "Hide Sidebar" : {
-
-    },
-    "History" : {
-
     },
     "host_editor.authentication" : {
       "extractionState" : "manual_uploaded",
@@ -4712,12 +4455,6 @@
         }
       }
     },
-    "Hostname is required." : {
-
-    },
-    "Hosts" : {
-
-    },
     "hosts.add" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -5211,17 +4948,22 @@
         }
       }
     },
-    "If approved, bounded stdout and stderr will be returned to %@." : {
-
-    },
-    "Input could not be delivered to the remote terminal." : {
-
-    },
     "KeepAlive" : {
-
-    },
-    "Keychain Error" : {
-
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "KeepAlive"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "保持连接"
+          }
+        }
+      }
     },
     "known_hosts.empty_message" : {
       "extractionState" : "manual_uploaded",
@@ -5359,41 +5101,22 @@
         }
       }
     },
-    "List directory" : {
-
-    },
-    "Local" : {
-
-    },
-    "Local · %@" : {
-
-    },
-    "Local · %@ · Exited" : {
-
-    },
-    "Local · %@ · Failed to Start" : {
-
-    },
-    "Local · %@ · Starting" : {
-
-    },
-    "Local terminal tab: %@" : {
-
-    },
-    "macOS Keychain denied access to the credential." : {
-
-    },
-    "macOS Keychain interaction is not currently allowed." : {
-
-    },
-    "macOS Keychain is currently unavailable." : {
-
-    },
     "MacSSH" : {
-
-    },
-    "MacSSH will create a new local text file at the shown target. Existing files are not overwritten. The exact approved UTF-8 text will be written if publication succeeds. Remote files are not modified." : {
-
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacSSH"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "MacSSH"
+          }
+        }
+      }
     },
     "menu.terminal" : {
       "extractionState" : "manual_uploaded",
@@ -5412,150 +5135,6 @@
         }
       }
     },
-    "Name is required." : {
-
-    },
-    "Network error. Check your connection." : {
-
-    },
-    "New Command" : {
-
-    },
-    "New Group" : {
-
-    },
-    "New Local Terminal" : {
-
-    },
-    "New Passphrase" : {
-
-    },
-    "New Password" : {
-
-    },
-    "No" : {
-
-    },
-    "No file chosen" : {
-
-    },
-    "No private key file is configured for this host. Choose a private key before connecting." : {
-
-    },
-    "No saved password was found for this host. Save a password before connecting." : {
-
-    },
-    "No Terminal Sessions" : {
-
-    },
-    "Only regular files can be deleted." : {
-
-    },
-    "Only regular files can be downloaded." : {
-
-    },
-    "Only regular files can be uploaded." : {
-
-    },
-    "Opening…" : {
-
-    },
-    "Orange" : {
-
-    },
-    "Partially delivered" : {
-
-    },
-    "Passphrase" : {
-
-    },
-    "Password" : {
-
-    },
-    "Paste into Terminal" : {
-
-    },
-    "Permission denied; the transfer could not be completed." : {
-
-    },
-    "Please check the host name and username before connecting." : {
-
-    },
-    "Policy" : {
-
-    },
-    "Port must be between 1 and 65535." : {
-
-    },
-    "Preparing" : {
-
-    },
-    "Private key authentication was rejected by the server. Check that the key is authorized." : {
-
-    },
-    "Provider" : {
-
-    },
-    "Purple" : {
-
-    },
-    "Rate limit reached. Try again later." : {
-
-    },
-    "Read file" : {
-
-    },
-    "Read terminal context" : {
-
-    },
-    "Records commands run through MacSSH and commands executed in local zsh.\nPasswords and input inside REPL or tmux are not recorded." : {
-
-    },
-    "Red" : {
-
-    },
-    "Reject this command before it starts." : {
-
-    },
-    "Reject this file creation before anything is written." : {
-
-    },
-    "Reject this terminal input before anything is sent." : {
-
-    },
-    "Remote shell exited" : {
-
-    },
-    "Remote SSH" : {
-
-    },
-    "Remote Terminal: %@" : {
-
-    },
-    "Rename Group" : {
-
-    },
-    "Replacing the destination file failed." : {
-
-    },
-    "Resize Sidebar" : {
-
-    },
-    "Run command" : {
-
-    },
-    "Run Command" : {
-
-    },
-    "Running" : {
-
-    },
-    "Save" : {
-
-    },
-    "Saved Commands" : {
-
-    },
     "search.no_results" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -5572,15 +5151,6 @@
           }
         }
       }
-    },
-    "Send" : {
-
-    },
-    "Send this text to the interactive terminal." : {
-
-    },
-    "Send to terminal" : {
-
     },
     "session.close.active_transfers" : {
       "extractionState" : "manual_uploaded",
@@ -5632,9 +5202,6 @@
           }
         }
       }
-    },
-    "Settings" : {
-
     },
     "settings.appearance.dark" : {
       "extractionState" : "manual_uploaded",
@@ -6741,15 +6308,6 @@
         }
       }
     },
-    "Shell exited" : {
-
-    },
-    "Show Sidebar" : {
-
-    },
-    "Show Tab %lld" : {
-
-    },
     "sidebar_right.add" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -7103,23 +6661,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "执行命令"
-          }
-        }
-      }
-    },
-    "sidebar_right.group_actions" : {
-      "extractionState" : "manual_uploaded",
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Group Actions"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "分组操作"
           }
         }
       }
@@ -7499,37 +7040,21 @@
       }
     },
     "SSH" : {
-
-    },
-    "SSH · %@" : {
-
-    },
-    "SSH · %@ · Authenticating…" : {
-
-    },
-    "SSH · %@ · Closing…" : {
-
-    },
-    "SSH · %@ · Connecting…" : {
-
-    },
-    "SSH · %@ · Exited" : {
-
-    },
-    "SSH · %@ · Opening…" : {
-
-    },
-    "SSH · %@ · Verifying Host…" : {
-
-    },
-    "SSH ○ %@ · Disconnected" : {
-
-    },
-    "SSH ○ %@ · Failed" : {
-
-    },
-    "SSH terminal tab: %@" : {
-
+      "extractionState" : "manual_uploaded",
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "SSH"
+          }
+        }
+      }
     },
     "status.authenticating" : {
       "extractionState" : "manual_uploaded",
@@ -7819,24 +7344,6 @@
           }
         }
       }
-    },
-    "Stop" : {
-
-    },
-    "Submit (append Return)" : {
-
-    },
-    "SwiftData could not save the Host. Please try again." : {
-
-    },
-    "System" : {
-
-    },
-    "Target" : {
-
-    },
-    "Terminal" : {
-
     },
     "terminal.close" : {
       "extractionState" : "manual_uploaded",
@@ -8297,241 +7804,6 @@
         }
       }
     },
-    "The agent stopped after reaching the tool round limit. Try simplifying your request." : {
-
-    },
-    "The agent stopped: terminal input delivery was incomplete and the terminal state is uncertain." : {
-
-    },
-    "The AI service had a problem. Try again later." : {
-
-    },
-    "The AI service rejected the request." : {
-
-    },
-    "The AI service returned an unreadable response." : {
-
-    },
-    "The configured private key file could not be found. It may have been moved or deleted." : {
-
-    },
-    "The connection closed, but the SSH session could not be cleaned up cleanly." : {
-
-    },
-    "The connection could not be established." : {
-
-    },
-    "The connection timed out. The server or network may be unreachable." : {
-
-    },
-    "The connection was cancelled because the server identity was not trusted." : {
-
-    },
-    "The connection was cancelled." : {
-
-    },
-    "The connection was refused. No SSH server is listening on this port." : {
-
-    },
-    "The credential cannot be empty." : {
-
-    },
-    "The credential could not be prepared for secure storage." : {
-
-    },
-    "The credential operation could not be completed." : {
-
-    },
-    "The credential was not found in macOS Keychain." : {
-
-    },
-    "The current session is unavailable." : {
-
-    },
-    "The Group could not be deleted." : {
-
-    },
-    "The Group could not be saved." : {
-
-    },
-    "the host" : {
-
-    },
-    "The Host could not be deleted. Please try again." : {
-
-    },
-    "The Host could not be saved." : {
-
-    },
-    "The Host was not deleted and macOS Keychain restoration also failed. Please retry." : {
-
-    },
-    "The Host was not saved and macOS Keychain cleanup also failed. Please retry." : {
-
-    },
-    "The item does not exist. Refresh and try again." : {
-
-    },
-    "The item is no longer in this folder. Refresh and try again." : {
-
-    },
-    "The local file could not be read." : {
-
-    },
-    "The local temporary file could not be written." : {
-
-    },
-    "The name cannot be empty, contain /, or be . or ..." : {
-
-    },
-    "The operation could not be completed." : {
-
-    },
-    "The operation failed. The destination name may already exist, or the server refused it." : {
-
-    },
-    "The operation was cancelled." : {
-
-    },
-    "The private key file exists but could not be read. Check its file permissions." : {
-
-    },
-    "The remote file no longer exists." : {
-
-    },
-    "The remote terminal channel is closed." : {
-
-    },
-    "The remote terminal could not be resized." : {
-
-    },
-    "The response was cut off before completion. Try again or simplify your request." : {
-
-    },
-    "The saved passphrase is incorrect and could not decrypt the private key." : {
-
-    },
-    "The server address could not be resolved. Check the hostname and your network." : {
-
-    },
-    "The server could not open an SFTP session." : {
-
-    },
-    "The server identity could not be read after the handshake." : {
-
-    },
-    "The server refused to allocate a pseudo-terminal." : {
-
-    },
-    "The server refused to open a terminal channel." : {
-
-    },
-    "The server refused to start a remote shell." : {
-
-    },
-    "The server reported a protocol error during the transfer." : {
-
-    },
-    "The server reported an error while writing data." : {
-
-    },
-    "The server's host key has changed. The connection was blocked to protect against a possible man-in-the-middle attack." : {
-
-    },
-    "The session no longer exists." : {
-
-    },
-    "The SFTP server reported an error." : {
-
-    },
-    "The SFTP session is unavailable." : {
-
-    },
-    "The SSH connection was lost and the transfer failed." : {
-
-    },
-    "The SSH connection was lost and the transfer failed. A temporary file may remain on the server: %@. You can clean it up manually later." : {
-
-    },
-    "The SSH connection was lost." : {
-
-    },
-    "The SSH handshake failed. The server may not be a compatible SSH server." : {
-
-    },
-    "The SSH session could not be created." : {
-
-    },
-    "The stored credential could not be decoded." : {
-
-    },
-    "The terminal connection was interrupted while receiving output." : {
-
-    },
-    "The terminal session is no longer available." : {
-
-    },
-    "The transfer queue is full. Please wait for some tasks to finish." : {
-
-    },
-    "The transfer was cancelled." : {
-
-    },
-    "The trusted host key could not be saved, so the connection was closed before signing in. Please try again." : {
-
-    },
-    "This file is being transferred, so the operation was blocked." : {
-
-    },
-    "This folder no longer exists on the server." : {
-
-    },
-    "This only removes command history. Saved commands and groups are not affected." : {
-
-    },
-    "This private key requires a passphrase, but none is saved. Save a passphrase before connecting." : {
-
-    },
-    "This sends input to the existing interactive terminal. The terminal or a running application may act on it immediately. If Submit is enabled, MacSSH appends Return after the text. Terminal output is not captured by this action." : {
-
-    },
-    "This server does not support password authentication." : {
-
-    },
-    "This server does not support public key authentication." : {
-
-    },
-    "This SSH session has %lld file transfer tasks. Closing it will cancel active and waiting transfers." : {
-
-    },
-    "This will close %lld terminal session(s) connected to %@." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "new",
-            "value" : "This will close %1$lld terminal session(s) connected to %2$@."
-          }
-        }
-      }
-    },
-    "This will disconnect from %@." : {
-
-    },
-    "Timed out" : {
-
-    },
-    "Title" : {
-
-    },
-    "Title cannot be empty." : {
-
-    },
-    "Title must be a single line." : {
-
-    },
-    "Tool call" : {
-
-    },
     "toolbar.new_local_terminal_help" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -8565,12 +7837,6 @@
           }
         }
       }
-    },
-    "Transfer Queue" : {
-
-    },
-    "Transfer verification failed; the byte count does not match." : {
-
     },
     "transfer.queue.running" : {
       "extractionState" : "manual_uploaded",
@@ -8742,12 +8008,6 @@
         }
       }
     },
-    "Transferring" : {
-
-    },
-    "Transfers" : {
-
-    },
     "transfers.clear_finished" : {
       "extractionState" : "manual_uploaded",
       "localizations" : {
@@ -8832,24 +8092,6 @@
           }
         }
       }
-    },
-    "Trusted %@" : {
-
-    },
-    "Unable to generate response." : {
-
-    },
-    "Ungrouped" : {
-
-    },
-    "Upload" : {
-
-    },
-    "Username is required." : {
-
-    },
-    "UTF-8 bytes" : {
-
     },
     "validation.highlight_text_required" : {
       "extractionState" : "manual_uploaded",
@@ -8952,33 +8194,6 @@
           }
         }
       }
-    },
-    "Verifying Host…" : {
-
-    },
-    "Waiting" : {
-
-    },
-    "Waiting for connection" : {
-
-    },
-    "Working directory" : {
-
-    },
-    "Yellow" : {
-
-    },
-    "Yes" : {
-
-    },
-    "You" : {
-
-    },
-    "You do not have permission to complete this operation." : {
-
-    },
-    "You do not have permission to view this folder." : {
-
     }
   },
   "version" : "1.0"

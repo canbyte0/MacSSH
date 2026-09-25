@@ -70,7 +70,8 @@ enum LocalShellLauncher {
     /// 生产入口：读取当前账户与文件系统状态，决定启动链。
     static func makeConfiguration(
         pasteHighlightControlPath: String? = nil,
-        commandHistoryEventPath: String? = nil
+        commandHistoryEventPath: String? = nil,
+        shellStateEventPath: String? = nil
     ) -> LocalShellLaunchConfiguration {
         let account = LoginShellResolver.currentAccount()
         return resolve(
@@ -82,6 +83,7 @@ enum LocalShellLauncher {
             pasteHighlightEnabled: UserDefaults.standard.bool(forKey: AppPreferenceKey.pasteHighlightEnabled),
             pasteHighlightControlPath: pasteHighlightControlPath,
             commandHistoryEventPath: commandHistoryEventPath,
+            shellStateEventPath: shellStateEventPath,
             zshIntegrationDirectory: Bundle.main.url(forResource: "ShellIntegration", withExtension: nil)?.path,
             isExecutable: { path in
                 path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path)
@@ -164,6 +166,7 @@ enum LocalShellLauncher {
         pasteHighlightEnabled: Bool = true,
         pasteHighlightControlPath: String? = nil,
         commandHistoryEventPath: String? = nil,
+        shellStateEventPath: String? = nil,
         zshIntegrationDirectory: String? = nil,
         isExecutable: (String) -> Bool
     ) -> LocalShellLaunchConfiguration {
@@ -217,6 +220,9 @@ enum LocalShellLauncher {
             // 完全隔离。只有本地 zsh 加载 Shell Integration 时才注入。
             if let commandHistoryEventPath {
                 environment.append("MACSSH_COMMAND_HISTORY_FIFO=\(commandHistoryEventPath)")
+            }
+            if let shellStateEventPath {
+                environment.append("MACSSH_SHELL_STATE_FIFO=\(shellStateEventPath)")
             }
         }
 

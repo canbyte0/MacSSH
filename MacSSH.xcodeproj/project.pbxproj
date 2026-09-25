@@ -133,8 +133,14 @@
 		E10000000000000000000002 /* SSHChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000002 /* SSHChannel.swift */; };
 		E10000000000000000000003 /* RemoteTerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000003 /* RemoteTerminalSession.swift */; };
 		E10000000000000000000004 /* RemoteTerminalService.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000004 /* RemoteTerminalService.swift */; };
+		B11000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */; };
+		B11000000000000000000002 /* TerminalSuggestionFoundation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000002 /* TerminalSuggestionFoundation.swift */; };
+		B11000000000000000000003 /* LocalShellStateChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000003 /* LocalShellStateChannel.swift */; };
 		E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* RemoteTerminalRepresentable.swift */; };
 		E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000006 /* RemoteTerminalTests.swift */; };
+		B13000000000000000000001 /* RemoteInputAdmissionQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */; };
+		B13000000000000000000002 /* TerminalSuggestionFoundationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */; };
+		B13000000000000000000003 /* LocalShellStateChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000003 /* LocalShellStateChannelTests.swift */; };
 		F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* ManagedTerminalSession.swift */; };
 		F10000000000000000000002 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* SessionManager.swift */; };
 		F10000000000000000000003 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* SessionManagerTests.swift */; };
@@ -506,8 +512,14 @@
 		E20000000000000000000002 /* SSHChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SSHChannel.swift; sourceTree = "<group>"; };
 		E20000000000000000000003 /* RemoteTerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalSession.swift; sourceTree = "<group>"; };
 		E20000000000000000000004 /* RemoteTerminalService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalService.swift; sourceTree = "<group>"; };
+		B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalInputAdmissionQueue.swift; sourceTree = "<group>"; };
+		B12000000000000000000002 /* TerminalSuggestionFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSuggestionFoundation.swift; sourceTree = "<group>"; };
+		B12000000000000000000003 /* LocalShellStateChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellStateChannel.swift; sourceTree = "<group>"; };
 		E20000000000000000000005 /* RemoteTerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRepresentable.swift; sourceTree = "<group>"; };
 		E20000000000000000000006 /* RemoteTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalTests.swift; sourceTree = "<group>"; };
+		B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteInputAdmissionQueueTests.swift; sourceTree = "<group>"; };
+		B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSuggestionFoundationTests.swift; sourceTree = "<group>"; };
+		B14000000000000000000003 /* LocalShellStateChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellStateChannelTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000001 /* ManagedTerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagedTerminalSession.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		F20000000000000000000003 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
@@ -882,6 +894,9 @@
 			D2000000000000000000000B /* DependencyIdentityTests.swift */,
 			D2000000000000000000000D /* KnownHostServiceTests.swift */,
 			E20000000000000000000006 /* RemoteTerminalTests.swift */,
+			B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */,
+			B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */,
+			B14000000000000000000003 /* LocalShellStateChannelTests.swift */,
 			F20000000000000000000003 /* SessionManagerTests.swift */,
 			B92400000000000000000004 /* TerminalTabScrollbarTests.swift */,
 			G40000000000000000000001 /* SFTPSessionTests.swift */,
@@ -1086,6 +1101,9 @@
 				H62000000000000000000007 /* TerminalHighlightStore.swift */,
 				W62000000000000000000001 /* TerminalScrollIndicatorController.swift */,
 				E20000000000000000000004 /* RemoteTerminalService.swift */,
+				B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */,
+				B12000000000000000000002 /* TerminalSuggestionFoundation.swift */,
+				B12000000000000000000003 /* LocalShellStateChannel.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
 				A20000000000000000000020 /* CommandValidation.swift */,
 				A20000000000000000000021 /* SavedCommandStore.swift */,
@@ -1433,6 +1451,9 @@
 				E10000000000000000000002 /* SSHChannel.swift in Sources */,
 				E10000000000000000000003 /* RemoteTerminalSession.swift in Sources */,
 				E10000000000000000000004 /* RemoteTerminalService.swift in Sources */,
+				B11000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift in Sources */,
+				B11000000000000000000002 /* TerminalSuggestionFoundation.swift in Sources */,
+				B11000000000000000000003 /* LocalShellStateChannel.swift in Sources */,
 				E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */,
 				F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */,
 				F10000000000000000000002 /* SessionManager.swift in Sources */,
@@ -1459,6 +1480,9 @@
 				D1000000000000000000000F /* KnownHostServiceTests.swift in Sources */,
 				D10000000000000000000011 /* HostEditorValidationTests.swift in Sources */,
 				E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */,
+				B13000000000000000000001 /* RemoteInputAdmissionQueueTests.swift in Sources */,
+				B13000000000000000000002 /* TerminalSuggestionFoundationTests.swift in Sources */,
+				B13000000000000000000003 /* LocalShellStateChannelTests.swift in Sources */,
 				F10000000000000000000003 /* SessionManagerTests.swift in Sources */,
 				B92400000000000000000003 /* TerminalTabScrollbarTests.swift in Sources */,
 				G30000000000000000000001 /* SFTPSessionTests.swift in Sources */,

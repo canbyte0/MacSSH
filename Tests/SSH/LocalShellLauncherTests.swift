@@ -22,6 +22,22 @@ import XCTest
 /// 账户路径），绝不硬编码日期文本、ttys 编号或具体 PATH 字符串。
 @MainActor
 final class LocalShellLauncherTests: XCTestCase {
+    /// 私有状态 FIFO 仅交给受控本地 zsh；其他 Shell 不接收无效能力。
+    func testShellStateFIFOIsInjectedOnlyForControlledZsh() {
+        for shell in ["/bin/zsh", "/bin/bash"] {
+            let configuration = LocalShellLauncher.resolve(
+                username: "tester", home: "/tmp/macssh-test-home",
+                accountShell: shell, environmentShell: nil, lang: nil,
+                shellStateEventPath: "/private/tmp/state.fifo",
+                zshIntegrationDirectory: "/private/tmp/ShellIntegration",
+                isExecutable: { _ in true }
+            )
+            XCTAssertEqual(
+                configuration.environment.contains("MACSSH_SHELL_STATE_FIFO=/private/tmp/state.fifo"),
+                shell == "/bin/zsh"
+            )
+        }
+    }
     /// 集成用例持有的 Local Terminal Service；tearDown 统一清理子进程。
     private var services: [LocalTerminalService] = []
 

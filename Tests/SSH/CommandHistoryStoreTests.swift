@@ -141,6 +141,32 @@ final class CommandHistoryStoreTests: XCTestCase {
         XCTAssertEqual(store.entries(forSession: sessionID).first?.command, "ls")
     }
 
+    /// 预测只读现有历史开关；全局文本去重刷新来源后不能误用旧 Local 快照。
+    func testHistoryPredictionRespectsStoreToggleAndGlobalDedupeScope() {
+        let localSession = UUID()
+        let request = SuggestionRequest(
+            logicalSessionID: localSession,
+            terminalKind: .local,
+            targetGeneration: 1,
+            typedPrefix: "git",
+            inputRevision: 1
+        )
+        let provider = HistorySuggestionProvider(store: store)
+        store.append(
+            command: "git status", sessionID: localSession,
+            sessionKind: "local", hostDisplayName: nil, source: "manualShell"
+        )
+        XCTAssertEqual(provider.candidate(for: request)?.suffix, " status")
+        store.historyEnabled = false
+        XCTAssertNil(provider.candidate(for: request))
+        store.historyEnabled = true
+        store.append(
+            command: "git status", sessionID: UUID(),
+            sessionKind: "remoteSSH", hostDisplayName: "test-host", source: "historyReplay"
+        )
+        XCTAssertNil(provider.candidate(for: request))
+    }
+
     func testClosedSessionPersistence() {
         let sessionID = UUID()
         store.append(command: "ls", sessionID: sessionID, sessionKind: "remoteSSH", hostDisplayName: "web-01", source: "savedCommand")

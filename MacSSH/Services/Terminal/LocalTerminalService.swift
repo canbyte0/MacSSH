@@ -274,6 +274,13 @@ final class LocalTerminalService: NSObject {
     /// 每个 Local zsh Session 独立的手动命令上报通道。
     private var shellCommandHistoryChannel: ShellCommandHistoryChannel?
 
+    /// 只提供当前受控 zsh 的 prompt/executing 信号，不读取终端绘制内容。
+    private var shellStateChannel: LocalShellStateChannel?
+
+    var trustedShellEditState: LocalShellEditState {
+        shellStateChannel?.tracker.snapshot() ?? .unavailable
+    }
+
     /// Store 由 AppState 强持有；Service 仅作为本会话事件转发者。
     private weak var commandHistoryStore: CommandHistoryStore?
 
@@ -343,6 +350,7 @@ final class LocalTerminalService: NSObject {
         session.processState = .starting
         if URL(fileURLWithPath: session.shellPath).lastPathComponent == "zsh" {
             pasteHighlightControlChannel = PasteHighlightControlChannel()
+            shellStateChannel = LocalShellStateChannel()
             if commandHistoryStore != nil {
                 shellCommandHistoryChannel = ShellCommandHistoryChannel { [weak self] command in
                     Task { @MainActor [weak self] in
@@ -361,7 +369,8 @@ final class LocalTerminalService: NSObject {
 
         let configuration = LocalShellLauncher.makeConfiguration(
             pasteHighlightControlPath: pasteHighlightControlChannel?.fifoPath,
-            commandHistoryEventPath: shellCommandHistoryChannel?.fifoPath
+            commandHistoryEventPath: shellCommandHistoryChannel?.fifoPath,
+            shellStateEventPath: shellStateChannel?.fifoPath
         )
         switch configuration.strategy {
         case .systemLogin:
@@ -579,6 +588,8 @@ final class LocalTerminalService: NSObject {
         pasteHighlightControlChannel = nil
         shellCommandHistoryChannel?.close()
         shellCommandHistoryChannel = nil
+        shellStateChannel?.close()
+        shellStateChannel = nil
     }
 }
 

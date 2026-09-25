@@ -13,6 +13,10 @@ import XCTest
 /// 其余 key 由构建期 String Catalog 完整性（脚本生成全量翻译）与
 /// 人工 UI Sweep 兜底。
 final class LocalizationTests: XCTestCase {
+    /// SwiftUI 直接使用的品牌、技术缩写与设置标签；它们不是点分 key，
+    /// 英文值与 key 相同是正确翻译，仍须在 Catalog 中显式标为 translated。
+    private static let directLiteralKeys: Set<String> = ["MacSSH", "SSH", "KeepAlive"]
+
     // MARK: - 关键 UI key：zh-Hans / en 均非空
 
     /// 任务书七十八：关键 UI key 在 zh-Hans 与 en 都必须非空。
@@ -907,26 +911,41 @@ final class LocalizationTests: XCTestCase {
     // MARK: - String Catalog 全量完整性（任务书六十二 / 一百）
 
     /// 全量审计：String Catalog 中的每一个 key 都必须在 zh-Hans 与 en
-    /// 两个语言下都有非空翻译，且不等于 raw key（任务书六十二：不允许
-    /// 大量 Missing / Untranslated；任务书六十三：不泄漏 raw key）。
+    /// 两个语言下都有非空翻译。点分 key 不能回退 raw key；品牌和技术词
+    /// 允许与原文相同，但必须有显式 translated 单元。
     ///
     /// 这是"不为 500 个 string 写 500 条脆弱断言"的替代方案：
     /// 以 Catalog 自身为数据源做遍历审计，新增 key 自动纳入。
     func testCatalogKeysAllHaveCompleteTranslations() throws {
-        let keys = try catalogKeys()
+        let catalog = try catalogEntries()
+        let keys = Set(catalog.keys)
         XCTAssertGreaterThan(keys.count, 200, "Catalog key 数量异常少，资源可能未打包进 App")
 
         var missingZhHans: [String] = []
         var missingEnglish: [String] = []
 
         for key in keys {
-            let zh = L10n.string(key, defaultValue: "", locale: AppLanguage.simplifiedChinese.locale)
-            let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
-            if zh.isEmpty || zh == key {
-                missingZhHans.append(key)
+            // 原文字面量允许等于英文原文；逐语言检查显式 translated 单元，
+            // 动态 L10n 审计入口会把 value == key 当作缺失，因此不能用于这些键。
+            func hasTranslatedUnit(_ language: String) -> Bool {
+                guard let entry = catalog[key] as? [String: Any],
+                      let localizations = entry["localizations"] as? [String: Any],
+                      let localization = localizations[language] as? [String: Any],
+                      let unit = localization["stringUnit"] as? [String: String],
+                      unit["state"] == "translated",
+                      let value = unit["value"], !value.isEmpty
+                else { return false }
+                return true
             }
-            if en.isEmpty || en == key {
-                missingEnglish.append(key)
+            let isDirectLiteral = Self.directLiteralKeys.contains(key)
+            if isDirectLiteral {
+                if !hasTranslatedUnit("zh-Hans") { missingZhHans.append(key) }
+                if !hasTranslatedUnit("en") { missingEnglish.append(key) }
+            } else {
+                let zh = L10n.string(key, defaultValue: "", locale: AppLanguage.simplifiedChinese.locale)
+                let en = L10n.string(key, defaultValue: "", locale: AppLanguage.english.locale)
+                if zh.isEmpty || zh == key { missingZhHans.append(key) }
+                if en.isEmpty || en == key { missingEnglish.append(key) }
             }
         }
 
@@ -946,7 +965,8 @@ final class LocalizationTests: XCTestCase {
     /// Catalog key 都在源码中被引用过至少一次（覆盖参数传递、三元返回、
     /// `StaticString` 赋值、插值前缀等各种调用形式）。
     func testCatalogHasNoObsoleteKeys() throws {
-        let referenced = try sourceReferencedKeys()
+        // 这三个直接/动态传给 SwiftUI 的字面量无法由点分 key 扫描器识别。
+        let referenced = try sourceReferencedKeys().union(Self.directLiteralKeys)
         let orphaned = try catalogKeys().subtracting(referenced)
         XCTAssertTrue(
             orphaned.isEmpty,
@@ -999,6 +1019,11 @@ final class LocalizationTests: XCTestCase {
 
     /// 读取 Localizable.xcstrings 中定义的全部 key。
     private func catalogKeys() throws -> Set<String> {
+        Set(try catalogEntries().keys)
+    }
+
+    /// 保留完整条目，供直用字面量验证两种语言的显式翻译状态。
+    private func catalogEntries() throws -> [String: Any] {
         let root = try repositoryRoot()
         let catalogURL = root
             .appendingPathComponent("MacSSH", isDirectory: true)
@@ -1012,7 +1037,7 @@ final class LocalizationTests: XCTestCase {
         else {
             throw NSError(domain: "LocalizationTests", code: 2, userInfo: nil)
         }
-        return Set(strings.keys)
+        return strings
     }
 
     /// 从测试文件位置反推仓库根目录（…/Tests/SSH/*.swift → 仓库根）。

@@ -2010,6 +2010,43 @@ final class RemoteInteractiveInputTransportTests: XCTestCase {
         XCTAssertEqual(received, [65, 66, 67, 68])
     }
 
+    /// 新普通输入 admission 与 Agent 使用同一个 endpoint/FIFO；独占事务
+    /// 在 A 后占位时，排队的 D 不能插入事务内部，也不会等待成死锁。
+    func testOrderedAdmissionRespectsAgentExclusiveTransaction() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [])
+        let firstWriteGate = B3OneShotInputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in await probe.next(bytes: bytes, offset: offset) },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook {
+            await firstWriteGate.wait()
+        }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+        let admission = RemoteTerminalInputAdmissionQueue<SSHInteractiveInputEndpoint>(
+            writer: { endpoint, bytes in await endpoint.writeAcknowledged(bytes) }
+        )
+        admission.install(endpoint)
+        admission.enqueue([65])
+        try await waitUntil { await firstWriteGate.hasArrived }
+
+        let transaction = Task {
+            try await endpoint.withExclusiveInteractiveInputTransaction { transaction in
+                try await transaction.write([66])
+                try await transaction.write([67])
+            }
+        }
+        try await waitUntil { await connection.hasPendingOrActiveInteractiveInputTransaction }
+        admission.enqueue([68])
+        await firstWriteGate.release()
+        try await transaction.value
+        try await waitUntil { await probe.snapshot() == [65, 66, 67, 68] }
+        let received = await probe.snapshot()
+        XCTAssertEqual(received, [65, 66, 67, 68])
+    }
+
     /// 同一 Shell incarnation 至多允许一个 pending/active transaction。
     func testOnlyOneExclusiveTransactionMayBePendingOrActive() async throws {
         let connection = makeConnection()
@@ -2107,8 +2144,8 @@ final class RemoteInteractiveInputTransportTests: XCTestCase {
         let sendEnd = try XCTUnwrap(source[sendStart.upperBound...].range(of: "/// SwiftTerm 尺寸变化"))
         let sendBody = String(source[sendStart.upperBound..<sendEnd.lowerBound])
 
-        XCTAssertTrue(sendBody.contains("inputAdmission.capture()"))
-        XCTAssertTrue(sendBody.contains("endpoint.writeAcknowledged(bytes)"))
+        XCTAssertTrue(sendBody.contains("inputAdmission.enqueue(Array(data))"))
+        XCTAssertFalse(sendBody.contains("Task {"), "delegate 回调不得再启动无序独立投递")
         XCTAssertFalse(sendBody.contains("self.connection"))
         XCTAssertFalse(sendBody.contains("writeChannelInput"))
     }
@@ -2167,8 +2204,9 @@ final class RemoteInteractiveInputTransportTests: XCTestCase {
         XCTAssertEqual(connectionBBytes, [])
     }
 
-    /// 精确复现 send → 延迟 physical delivery → reattach；新 connection 不得收到旧字节。
-    func testLateDelegateTaskAcrossReattachCannotRetarget() async throws {
+    /// 精确复现旧代输入已入队但 physical delivery 被阻塞时发生 reattach。
+    /// 旧项可能因取消而完全不写，也可能写在旧 connection；绝不能写入新连接。
+    func testQueuedDelegateInputAcrossReattachCannotRetarget() async throws {
         let connectionA = makeConnection()
         let connectionB = makeConnection()
         let probeA = B3InputBackendProbe(steps: [.wouldBlock, .accepted(1)])
@@ -2207,9 +2245,84 @@ final class RemoteInteractiveInputTransportTests: XCTestCase {
         XCTAssertTrue(service.terminalView === terminalView, "Reconnect 必须复用同一 TerminalView")
 
         await deliveryGate.release()
-        try await waitUntil { await probeA.snapshot() == [65] }
+        let newBytes: [UInt8] = [66]
+        service.send(source: terminalView, data: newBytes[...])
+        try await waitUntil { await probeB.snapshot() == [66] }
+        let oldConnectionBytes = await probeA.snapshot()
         let connectionBBytes = await probeB.snapshot()
-        XCTAssertEqual(connectionBBytes, [])
+        XCTAssertTrue(oldConnectionBytes.isEmpty || oldConnectionBytes == [65])
+        XCTAssertEqual(connectionBBytes, [66])
+    }
+
+    /// 超过 4 MiB 的同步接纳必须变成可见失败态；Reconnect 才能开放新代次。
+    func testAdmissionOverflowFailsVisibleAndReconnectRestoresInput() async throws {
+        let connectionA = makeConnection()
+        let probeA = B3InputBackendProbe(steps: [])
+        await connectionA.installTestInteractiveInputBackend(
+            { bytes, offset in await probeA.next(bytes: bytes, offset: offset) },
+            readinessWait: {}
+        )
+        let endpointAValue = await connectionA.interactiveInputEndpoint()
+        let endpointA = try XCTUnwrap(endpointAValue)
+        let service = RemoteTerminalService(connection: connectionA, hostname: "A", port: 22)
+        service.installTestInputEndpoint(endpointA)
+        service.session.phase = .active
+
+        let oversized = [UInt8](repeating: 65, count: 4 * 1024 * 1024 + 1)
+        service.send(source: service.terminalView, data: oversized[...])
+        try await waitUntil { service.session.phase == .failed(.channelWriteFailed) }
+        let oldInput: [UInt8] = [66]
+        service.send(source: service.terminalView, data: oldInput[...])
+        let oldReceived = await probeA.snapshot()
+        XCTAssertEqual(oldReceived, [])
+
+        let connectionB = makeConnection()
+        let probeB = B3InputBackendProbe(steps: [])
+        await connectionB.installTestInteractiveInputBackend(
+            { bytes, offset in await probeB.next(bytes: bytes, offset: offset) },
+            readinessWait: {}
+        )
+        let endpointBValue = await connectionB.interactiveInputEndpoint()
+        let endpointB = try XCTUnwrap(endpointBValue)
+        await service.reattach(connection: connectionB)
+        service.installTestInputEndpoint(endpointB)
+        service.session.phase = .active
+        let newInput: [UInt8] = [67]
+        service.send(source: service.terminalView, data: newInput[...])
+        try await waitUntil { await probeB.snapshot() == [67] }
+        let newReceived = await probeB.snapshot()
+        XCTAssertEqual(newReceived, [67])
+        service.stop()
+    }
+
+    /// 正数前缀后失败时撤销后续队列，并将仍显示 active 的会话置为可见失败。
+    func testPartialDeliveryFailureFailsVisibleWithoutLaterInput() async throws {
+        let connection = makeConnection()
+        let probe = B3InputBackendProbe(steps: [.accepted(1), .failed(.writeFailed)])
+        let gate = B3OneShotInputGate()
+        await connection.installTestInteractiveInputBackend(
+            { bytes, offset in await probe.next(bytes: bytes, offset: offset) },
+            readinessWait: {}
+        )
+        await connection.setTestInteractiveInputAfterPositiveWriteHook { await gate.wait() }
+        let endpointValue = await connection.interactiveInputEndpoint()
+        let endpoint = try XCTUnwrap(endpointValue)
+        let service = RemoteTerminalService(connection: connection, hostname: "A", port: 22)
+        service.installTestInputEndpoint(endpoint)
+        service.session.phase = .active
+
+        let first: [UInt8] = [65, 66]
+        service.send(source: service.terminalView, data: first[...])
+        try await waitUntil { await gate.hasArrived }
+        let later: [UInt8] = [67]
+        service.send(source: service.terminalView, data: later[...])
+        await gate.release()
+        try await waitUntil { service.session.phase == .failed(.channelWriteFailed) }
+        let deliveredPrefix = await probe.snapshot()
+        XCTAssertEqual(deliveredPrefix, [65])
+        service.send(source: service.terminalView, data: later[...])
+        let afterFailure = await probe.snapshot()
+        XCTAssertEqual(afterFailure, [65])
     }
 
     /// 最高风险三类 deterministic 交错各重复至少 50 次，防止只靠单次 timing 通过。
@@ -2294,9 +2407,16 @@ final class RemoteInteractiveInputTransportTests: XCTestCase {
         await service.reattach(connection: connectionB)
         service.installTestInputEndpoint(endpointB)
         await gate.release()
-        try await waitUntil { await probeA.snapshot() == [65] }
+        let newBytes: [UInt8] = [66]
+        service.send(source: view, data: newBytes[...])
+        try await waitUntil { await probeB.snapshot() == [66] }
+        let oldConnectionBytes = await probeA.snapshot()
         let connectionBBytes = await probeB.snapshot()
-        XCTAssertEqual(connectionBBytes, [], "iteration \(iteration): old delegate bytes retargeted to B")
+        XCTAssertTrue(
+            oldConnectionBytes.isEmpty || oldConnectionBytes == [65],
+            "iteration \(iteration): old input may be cancelled or delivered only to A"
+        )
+        XCTAssertEqual(connectionBBytes, [66], "iteration \(iteration): old delegate bytes retargeted to B")
     }
 
     private func runReplacementDuringPartialWriteIteration(_ iteration: Int) async throws {
