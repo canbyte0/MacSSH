@@ -276,9 +276,39 @@ final class LocalTerminalService: NSObject {
 
     /// 只提供当前受控 zsh 的 prompt/executing 信号，不读取终端绘制内容。
     private var shellStateChannel: LocalShellStateChannel?
+    private var zleEditChannel: LocalZLEEditSnapshotChannel?
+    let editableInputTracker = TerminalEditableInputTracker()
 
     var trustedShellEditState: LocalShellEditState {
         shellStateChannel?.tracker.snapshot() ?? .unavailable
+    }
+
+    func suggestionEligibility(settingsEnabled: Bool, historyEnabled: Bool) -> SuggestionEligibility {
+        let snapshot = editableInputTracker.snapshot
+        let generation = editableInputTracker.promptGeneration
+        let trusted = generation.map { trustedShellEditState == .ready($0) } ?? false
+        let validSnapshot = editableInputTracker.snapshotMatches
+        let cursorAtEnd = snapshot.map {
+            $0.leftBuffer.utf8.elementsEqual($0.buffer.utf8) && $0.rightBuffer.isEmpty
+        } ?? false
+        let viewportAtBottom = terminalView.scrollThumbsize >= 1
+            || terminalView.scrollPosition == 1
+        let rendered = validSnapshot && viewportAtBottom && TerminalRenderedInputValidator.validate(
+            terminal: terminalView.getTerminal(), prefix: editableInputTracker.observedPrefix)
+        return SuggestionEligibility(
+            trustedShellEditing: trusted,
+            editableSnapshotValid: validSnapshot,
+            observedPrefixMatchesSnapshot: snapshot?.buffer.utf8.elementsEqual(
+                editableInputTracker.observedPrefix.utf8) == true,
+            terminalRenderedStateValid: rendered,
+            cursorAtEditableEnd: cursorAtEnd,
+            rightSideClear: rendered,
+            terminalFocused: terminalView.window?.firstResponder === terminalView,
+            alternateScreen: terminalView.getTerminal().isCurrentBufferAlternate,
+            imeMarkedText: terminalView.hasMarkedText(),
+            settingsEnabled: settingsEnabled,
+            historyEnabled: historyEnabled
+        )
     }
 
     /// Store 由 AppState 强持有；Service 仅作为本会话事件转发者。
@@ -324,6 +354,13 @@ final class LocalTerminalService: NSObject {
         terminalView.scrollIndicatorNeedsUpdate = { [weak self] in
             self?.scrollIndicatorController.update()
         }
+        terminalView.editableTextInserted = { [weak self] text in
+            self?.editableInputTracker.observeInsertText(text)
+        }
+        terminalView.editableInputInvalidated = { [weak self] in
+            self?.editableInputTracker.invalidate()
+            self?.zleEditChannel?.tracker.discard()
+        }
         // MacSSH 1.1 Phase 4：用 TerminalAppearanceProvider 替换 SwiftTerm 的
         // `configureNativeColors()`。后者把动态 `NSColor.textBackgroundColor`
         // 经 `getTerminalColor()` 一次性解析成固定 RGB 冻结进 `Terminal`，
@@ -351,6 +388,33 @@ final class LocalTerminalService: NSObject {
         if URL(fileURLWithPath: session.shellPath).lastPathComponent == "zsh" {
             pasteHighlightControlChannel = PasteHighlightControlChannel()
             shellStateChannel = LocalShellStateChannel()
+            zleEditChannel = LocalZLEEditSnapshotChannel()
+            shellStateChannel?.tracker.onTransition = { [weak self] state in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    switch state {
+                    case let .ready(generation):
+                        let latest = self.zleEditChannel?.tracker.snapshot()
+                        if latest?.promptGeneration != generation {
+                            self.zleEditChannel?.tracker.discard()
+                        }
+                        self.editableInputTracker.promptReady(generation)
+                        if let latest, latest.promptGeneration == generation {
+                            self.editableInputTracker.accept(latest)
+                        }
+                    default:
+                        self.zleEditChannel?.tracker.discard()
+                        self.editableInputTracker.invalidate()
+                    }
+                }
+            }
+            zleEditChannel?.tracker.onSnapshot = { [weak self] snapshot in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let snapshot { self.editableInputTracker.accept(snapshot) }
+                    else { self.editableInputTracker.invalidate() }
+                }
+            }
             if commandHistoryStore != nil {
                 shellCommandHistoryChannel = ShellCommandHistoryChannel { [weak self] command in
                     Task { @MainActor [weak self] in
@@ -370,7 +434,8 @@ final class LocalTerminalService: NSObject {
         let configuration = LocalShellLauncher.makeConfiguration(
             pasteHighlightControlPath: pasteHighlightControlChannel?.fifoPath,
             commandHistoryEventPath: shellCommandHistoryChannel?.fifoPath,
-            shellStateEventPath: shellStateChannel?.fifoPath
+            shellStateEventPath: shellStateChannel?.fifoPath,
+            zleEditEventPath: zleEditChannel?.fifoPath
         )
         switch configuration.strategy {
         case .systemLogin:
@@ -584,12 +649,20 @@ final class LocalTerminalService: NSObject {
 
     /// 统一释放控制通道；进程启动失败、主动关闭和自然退出均调用。
     private func closeShellIntegrationChannels() {
+        editableInputTracker.invalidate()
+        zleEditChannel?.close()
+        zleEditChannel = nil
         pasteHighlightControlChannel?.close()
         pasteHighlightControlChannel = nil
         shellCommandHistoryChannel?.close()
         shellCommandHistoryChannel = nil
         shellStateChannel?.close()
         shellStateChannel = nil
+    }
+
+    func invalidateEditableInput() {
+        editableInputTracker.invalidate()
+        zleEditChannel?.tracker.discard()
     }
 }
 

@@ -209,6 +209,7 @@ final class AgentLocalTerminalMutationEndpoint {
         guard isAvailable else {
             throw AgentLocalTerminalMutationTransportError.channelClosed
         }
+        (exactTerminalView as? ScrollTrackingLocalProcessTerminalView)?.editableInputInvalidated?()
         try await inputTransport.withExclusiveInputTransaction(body)
     }
 }

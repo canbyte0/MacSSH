@@ -71,7 +71,8 @@ enum LocalShellLauncher {
     static func makeConfiguration(
         pasteHighlightControlPath: String? = nil,
         commandHistoryEventPath: String? = nil,
-        shellStateEventPath: String? = nil
+        shellStateEventPath: String? = nil,
+        zleEditEventPath: String? = nil
     ) -> LocalShellLaunchConfiguration {
         let account = LoginShellResolver.currentAccount()
         return resolve(
@@ -84,6 +85,7 @@ enum LocalShellLauncher {
             pasteHighlightControlPath: pasteHighlightControlPath,
             commandHistoryEventPath: commandHistoryEventPath,
             shellStateEventPath: shellStateEventPath,
+            zleEditEventPath: zleEditEventPath,
             zshIntegrationDirectory: Bundle.main.url(forResource: "ShellIntegration", withExtension: nil)?.path,
             isExecutable: { path in
                 path.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: path)
@@ -167,6 +169,7 @@ enum LocalShellLauncher {
         pasteHighlightControlPath: String? = nil,
         commandHistoryEventPath: String? = nil,
         shellStateEventPath: String? = nil,
+        zleEditEventPath: String? = nil,
         zshIntegrationDirectory: String? = nil,
         isExecutable: (String) -> Bool
     ) -> LocalShellLaunchConfiguration {
@@ -223,6 +226,9 @@ enum LocalShellLauncher {
             }
             if let shellStateEventPath {
                 environment.append("MACSSH_SHELL_STATE_FIFO=\(shellStateEventPath)")
+            }
+            if let zleEditEventPath {
+                environment.append("MACSSH_ZLE_EDIT_FIFO=\(zleEditEventPath)")
             }
         }
 

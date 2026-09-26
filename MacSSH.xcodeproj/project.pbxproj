@@ -136,11 +136,14 @@
 		B11000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */; };
 		B11000000000000000000002 /* TerminalSuggestionFoundation.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000002 /* TerminalSuggestionFoundation.swift */; };
 		B11000000000000000000003 /* LocalShellStateChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000003 /* LocalShellStateChannel.swift */; };
+		B11000000000000000000004 /* LocalZLEEditSnapshotChannel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000004 /* LocalZLEEditSnapshotChannel.swift */; };
+		B11000000000000000000005 /* TerminalEditableInputTracker.swift in Sources */ = {isa = PBXBuildFile; fileRef = B12000000000000000000005 /* TerminalEditableInputTracker.swift */; };
 		E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000005 /* RemoteTerminalRepresentable.swift */; };
 		E10000000000000000000006 /* RemoteTerminalTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20000000000000000000006 /* RemoteTerminalTests.swift */; };
 		B13000000000000000000001 /* RemoteInputAdmissionQueueTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */; };
 		B13000000000000000000002 /* TerminalSuggestionFoundationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */; };
 		B13000000000000000000003 /* LocalShellStateChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000003 /* LocalShellStateChannelTests.swift */; };
+		B13000000000000000000004 /* LocalZLEEditSnapshotChannelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B14000000000000000000004 /* LocalZLEEditSnapshotChannelTests.swift */; };
 		F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000001 /* ManagedTerminalSession.swift */; };
 		F10000000000000000000002 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000002 /* SessionManager.swift */; };
 		F10000000000000000000003 /* SessionManagerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F20000000000000000000003 /* SessionManagerTests.swift */; };
@@ -515,11 +518,14 @@
 		B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalInputAdmissionQueue.swift; sourceTree = "<group>"; };
 		B12000000000000000000002 /* TerminalSuggestionFoundation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSuggestionFoundation.swift; sourceTree = "<group>"; };
 		B12000000000000000000003 /* LocalShellStateChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellStateChannel.swift; sourceTree = "<group>"; };
+		B12000000000000000000004 /* LocalZLEEditSnapshotChannel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalZLEEditSnapshotChannel.swift; sourceTree = "<group>"; };
+		B12000000000000000000005 /* TerminalEditableInputTracker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalEditableInputTracker.swift; sourceTree = "<group>"; };
 		E20000000000000000000005 /* RemoteTerminalRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalRepresentable.swift; sourceTree = "<group>"; };
 		E20000000000000000000006 /* RemoteTerminalTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteTerminalTests.swift; sourceTree = "<group>"; };
 		B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteInputAdmissionQueueTests.swift; sourceTree = "<group>"; };
 		B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalSuggestionFoundationTests.swift; sourceTree = "<group>"; };
 		B14000000000000000000003 /* LocalShellStateChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalShellStateChannelTests.swift; sourceTree = "<group>"; };
+		B14000000000000000000004 /* LocalZLEEditSnapshotChannelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalZLEEditSnapshotChannelTests.swift; sourceTree = "<group>"; };
 		F20000000000000000000001 /* ManagedTerminalSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ManagedTerminalSession.swift; sourceTree = "<group>"; };
 		F20000000000000000000002 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
 		F20000000000000000000003 /* SessionManagerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManagerTests.swift; sourceTree = "<group>"; };
@@ -897,6 +903,7 @@
 			B14000000000000000000001 /* RemoteInputAdmissionQueueTests.swift */,
 			B14000000000000000000002 /* TerminalSuggestionFoundationTests.swift */,
 			B14000000000000000000003 /* LocalShellStateChannelTests.swift */,
+			B14000000000000000000004 /* LocalZLEEditSnapshotChannelTests.swift */,
 			F20000000000000000000003 /* SessionManagerTests.swift */,
 			B92400000000000000000004 /* TerminalTabScrollbarTests.swift */,
 			G40000000000000000000001 /* SFTPSessionTests.swift */,
@@ -1104,6 +1111,8 @@
 				B12000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift */,
 				B12000000000000000000002 /* TerminalSuggestionFoundation.swift */,
 				B12000000000000000000003 /* LocalShellStateChannel.swift */,
+				B12000000000000000000004 /* LocalZLEEditSnapshotChannel.swift */,
+				B12000000000000000000005 /* TerminalEditableInputTracker.swift */,
 				F20000000000000000000002 /* SessionManager.swift */,
 				A20000000000000000000020 /* CommandValidation.swift */,
 				A20000000000000000000021 /* SavedCommandStore.swift */,
@@ -1454,6 +1463,8 @@
 				B11000000000000000000001 /* RemoteTerminalInputAdmissionQueue.swift in Sources */,
 				B11000000000000000000002 /* TerminalSuggestionFoundation.swift in Sources */,
 				B11000000000000000000003 /* LocalShellStateChannel.swift in Sources */,
+				B11000000000000000000004 /* LocalZLEEditSnapshotChannel.swift in Sources */,
+				B11000000000000000000005 /* TerminalEditableInputTracker.swift in Sources */,
 				E10000000000000000000005 /* RemoteTerminalRepresentable.swift in Sources */,
 				F10000000000000000000001 /* ManagedTerminalSession.swift in Sources */,
 				F10000000000000000000002 /* SessionManager.swift in Sources */,
@@ -1483,6 +1494,7 @@
 				B13000000000000000000001 /* RemoteInputAdmissionQueueTests.swift in Sources */,
 				B13000000000000000000002 /* TerminalSuggestionFoundationTests.swift in Sources */,
 				B13000000000000000000003 /* LocalShellStateChannelTests.swift in Sources */,
+				B13000000000000000000004 /* LocalZLEEditSnapshotChannelTests.swift in Sources */,
 				F10000000000000000000003 /* SessionManagerTests.swift in Sources */,
 				B92400000000000000000003 /* TerminalTabScrollbarTests.swift in Sources */,
 				G30000000000000000000001 /* SFTPSessionTests.swift in Sources */,

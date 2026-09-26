@@ -3,13 +3,13 @@ import Foundation
 
 enum LocalShellEditState: Equatable, Sendable {
     case unavailable
-    case ready
-    case executing
+    case ready(UInt64)
+    case executing(UInt64)
     case stale
     case closed
 }
 
-/// 只接收 P(预备编辑) / X(开始执行) 两种无 payload 帧。
+/// 只接收 P/X<TAB>十进制代次；无代次旧帧不能作为可信编辑证明。
 /// 任意损坏帧都会锁定 unavailable，直到创建新会话，不能被后续 P 恢复。
 final class LocalShellStateTracker: @unchecked Sendable {
     private let lock = NSLock()
@@ -17,6 +17,7 @@ final class LocalShellStateTracker: @unchecked Sendable {
     private var state: LocalShellEditState = .unavailable
     private var lastSignalTime: TimeInterval?
     private var invalid = false
+    var onTransition: (@Sendable (LocalShellEditState) -> Void)?
 
     func ingest(_ data: Data, now: TimeInterval = Date().timeIntervalSince1970) {
         lock.lock()
@@ -26,16 +27,27 @@ final class LocalShellStateTracker: @unchecked Sendable {
         while let newline = pending.firstIndex(of: 0x0a) {
             let line = pending[..<newline]
             pending.removeSubrange(...newline)
-            if line.elementsEqual([0x50]) {
-                state = .ready
-                lastSignalTime = now
-            } else if line.elementsEqual([0x58]), state == .ready || state == .executing {
-                state = .executing
-                lastSignalTime = now
-            } else {
+            guard line.count >= 3,
+                  let separator = line.firstIndex(of: 0x09), separator == line.startIndex + 1,
+                  let generation = Self.parseGeneration(line[line.index(after: separator)...])
+            else {
                 failClosed()
                 return
             }
+            switch line.first {
+            case 0x50:
+                if case let .ready(previous) = state, generation <= previous { failClosed(); return }
+                if case let .executing(previous) = state, generation <= previous { failClosed(); return }
+                state = .ready(generation)
+            case 0x58:
+                guard state == .ready(generation) else { failClosed(); return }
+                state = .executing(generation)
+            default:
+                failClosed()
+                return
+            }
+            lastSignalTime = now
+            onTransition?(state)
         }
         if pending.count > 32 { failClosed() }
     }
@@ -47,9 +59,9 @@ final class LocalShellStateTracker: @unchecked Sendable {
     ) -> LocalShellEditState {
         lock.lock()
         defer { lock.unlock() }
-        guard state == .ready, let lastSignalTime else { return state }
+        guard case .ready = state, let lastSignalTime else { return state }
         let age = now - lastSignalTime
-        return age >= 0 && age <= maxAge ? .ready : .stale
+        return age >= 0 && age <= maxAge ? state : .stale
     }
 
     func close() {
@@ -64,6 +76,21 @@ final class LocalShellStateTracker: @unchecked Sendable {
         state = .unavailable
         pending.removeAll()
         lastSignalTime = nil
+        onTransition?(.unavailable)
+    }
+
+    private static func parseGeneration(_ bytes: Data.SubSequence) -> UInt64? {
+        guard !bytes.isEmpty, bytes.count <= 20, bytes.first != 0x30 else { return nil }
+        var value: UInt64 = 0
+        for byte in bytes {
+            guard (0x30...0x39).contains(byte) else { return nil }
+            let (next, overflow) = value.multipliedReportingOverflow(by: 10)
+            if overflow { return nil }
+            let (sum, additionOverflow) = next.addingReportingOverflow(UInt64(byte - 0x30))
+            if additionOverflow { return nil }
+            value = sum
+        }
+        return value > 0 ? value : nil
     }
 }
 

@@ -24,5 +24,6 @@ struct TerminalRepresentable: NSViewRepresentable {
     static func dismantleNSView(_ nsView: LocalProcessTerminalView, coordinator: Void) {
         // 会话属于 AppState，而非临时 SwiftUI 页面；切换 Sidebar 时保持运行。
         nsView.window?.makeFirstResponder(nil)
+        (nsView as? ScrollTrackingLocalProcessTerminalView)?.editableInputInvalidated?()
     }
 }

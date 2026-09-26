@@ -11,29 +11,29 @@ import XCTest
 final class AgentCredentialServiceTests: XCTestCase {
 
     private var service: AgentCredentialService!
-    /// 生产 namespace 引用（只读探测，绝不写入）。
-    private var productionService: AgentCredentialService!
+    private var otherNamespaceService: AgentCredentialService!
 
     override func setUp() {
         super.setUp()
         let namespace = "com.macssh.MacSSH.agent.tests.\(UUID().uuidString.lowercased())"
         service = AgentCredentialService(
-            keychainService: KeychainService(queueLabel: "\(namespace).queue"),
-            serviceNamespace: namespace
+            keychainService: KeychainService(queueLabel: "\(namespace).a.queue"),
+            serviceNamespace: "\(namespace).a"
         )
-        // 同一 KeychainService 即可：namespace 隔离由 service/account 决定。
-        productionService = AgentCredentialService(
-            keychainService: KeychainService(queueLabel: "\(namespace).prodprobe.queue"),
-            serviceNamespace: "com.macssh.MacSSH.agent"
+        otherNamespaceService = AgentCredentialService(
+            keychainService: KeychainService(queueLabel: "\(namespace).b.queue"),
+            serviceNamespace: "\(namespace).b"
         )
     }
 
     override func tearDown() async throws {
-        // 尽力清理（幂等 delete，两个 provider account 都清）。
+        // 失败时也尽力清理两个随机测试 namespace。
         try? await service.deleteAPIKey(for: .openAI)
         try? await service.deleteAPIKey(for: .deepSeek)
+        try? await otherNamespaceService.deleteAPIKey(for: .openAI)
+        try? await otherNamespaceService.deleteAPIKey(for: .deepSeek)
         service = nil
-        productionService = nil
+        otherNamespaceService = nil
         try await super.tearDown()
     }
 
@@ -113,21 +113,34 @@ final class AgentCredentialServiceTests: XCTestCase {
 
     // MARK: - namespace 隔离（任务书 §11 / §33）
 
-    func testTestNamespaceDoesNotTouchProductionNamespace() async throws {
-        // 测试 namespace 写入。
-        try await service.upsertAPIKey("test-api-key", for: .openAI)
+    func testServiceNamespacesAreIsolatedAcrossWriteUpdateAndDelete() async throws {
+        try await service.upsertAPIKey("test-api-key-a", for: .openAI)
+        let initialA = try await service.readAPIKey(for: .openAI)
+        let initialB = try await otherNamespaceService.readAPIKey(for: .openAI)
+        XCTAssertEqual(initialA, "test-api-key-a")
+        XCTAssertNil(initialB)
 
-        // 生产 namespace（com.macssh.MacSSH.agent）不受本测试影响：
-        // 只读探测，写入仅发生在隔离 namespace。生产项可能存在（用户
-        // 配置）或不存在（未配置），两种情况都合法——这里只断言读操作
-        // 不抛错且不返回测试 Key。
-        let productionKey = try await productionService.readAPIKey(for: .openAI)
-        XCTAssertNotEqual(productionKey, "test-api-key", "测试 Key 不得泄漏到生产 namespace")
+        try await otherNamespaceService.upsertAPIKey("test-api-key-b", for: .openAI)
+        let afterWriteA = try await service.readAPIKey(for: .openAI)
+        let afterWriteB = try await otherNamespaceService.readAPIKey(for: .openAI)
+        XCTAssertEqual(afterWriteA, "test-api-key-a")
+        XCTAssertEqual(afterWriteB, "test-api-key-b")
 
-        // 清理后测试 namespace 为空。
+        try await service.upsertAPIKey("test-api-key-a-updated", for: .openAI)
+        let afterUpdateA = try await service.readAPIKey(for: .openAI)
+        let afterUpdateB = try await otherNamespaceService.readAPIKey(for: .openAI)
+        XCTAssertEqual(afterUpdateA, "test-api-key-a-updated")
+        XCTAssertEqual(afterUpdateB, "test-api-key-b")
+
         try await service.deleteAPIKey(for: .openAI)
-        let key = try await service.readAPIKey(for: .openAI)
-        XCTAssertNil(key)
+        let afterDeleteA = try await service.readAPIKey(for: .openAI)
+        let afterDeleteB = try await otherNamespaceService.readAPIKey(for: .openAI)
+        XCTAssertNil(afterDeleteA)
+        XCTAssertEqual(afterDeleteB, "test-api-key-b")
+
+        try await otherNamespaceService.deleteAPIKey(for: .openAI)
+        let afterDeleteBToo = try await otherNamespaceService.readAPIKey(for: .openAI)
+        XCTAssertNil(afterDeleteBToo)
     }
 
     func testAccountDerivationDoesNotCrash() {

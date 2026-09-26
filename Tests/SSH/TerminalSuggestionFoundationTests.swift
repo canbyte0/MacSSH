@@ -5,16 +5,24 @@ import XCTest
 final class TerminalSuggestionFoundationTests: XCTestCase {
     private let eligible = SuggestionEligibility(
         trustedShellEditing: true,
+        editableSnapshotValid: true,
+        observedPrefixMatchesSnapshot: true,
+        terminalRenderedStateValid: true,
+        cursorAtEditableEnd: true,
+        rightSideClear: true,
         terminalFocused: true,
         alternateScreen: false,
         imeMarkedText: false,
-        settingsEnabled: true
+        settingsEnabled: true,
+        historyEnabled: true
     )
 
     private func request(
         session: UUID = UUID(),
         kind: SuggestionTerminalKind = .local,
         target: UInt64 = 1,
+        prompt: UInt64 = 1,
+        snapshot: UInt64 = 1,
         prefix: String = "git",
         revision: UInt64 = 1
     ) -> SuggestionRequest {
@@ -22,6 +30,8 @@ final class TerminalSuggestionFoundationTests: XCTestCase {
             logicalSessionID: session,
             terminalKind: kind,
             targetGeneration: target,
+            promptGeneration: prompt,
+            snapshotSequence: snapshot,
             typedPrefix: prefix,
             inputRevision: revision
         )
@@ -89,6 +99,8 @@ final class TerminalSuggestionFoundationTests: XCTestCase {
         let wrong: [SuggestionBinding] = [
             SuggestionBinding(request: request(session: UUID()), providerGeneration: binding.providerGeneration),
             SuggestionBinding(request: request(session: session, target: 2), providerGeneration: binding.providerGeneration),
+            SuggestionBinding(request: request(session: session, prompt: 2), providerGeneration: binding.providerGeneration),
+            SuggestionBinding(request: request(session: session, snapshot: 2), providerGeneration: binding.providerGeneration),
             SuggestionBinding(request: request(session: session, prefix: "gi"), providerGeneration: binding.providerGeneration),
             SuggestionBinding(request: request(session: session, revision: 2), providerGeneration: binding.providerGeneration),
             SuggestionBinding(request: original, providerGeneration: SuggestionGeneration(value: binding.providerGeneration.value + 1)),
@@ -105,19 +117,37 @@ final class TerminalSuggestionFoundationTests: XCTestCase {
             }
         }
         let ime = SuggestionEligibility(
-            trustedShellEditing: true, terminalFocused: true,
-            alternateScreen: false, imeMarkedText: true, settingsEnabled: true
+            trustedShellEditing: true, editableSnapshotValid: true,
+            observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+            cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: true,
+            alternateScreen: false, imeMarkedText: true, settingsEnabled: true,
+            historyEnabled: true
         )
         XCTAssertNil(machine.suffixIfCurrent(binding, currentRequest: original, eligibility: ime))
     }
 
     func testEligibilityVetoesAlternateScreenIMEUnfocusedAndUnknownShell() {
         let cases = [
-            SuggestionEligibility(trustedShellEditing: false, terminalFocused: true, alternateScreen: false, imeMarkedText: false, settingsEnabled: true),
-            SuggestionEligibility(trustedShellEditing: true, terminalFocused: false, alternateScreen: false, imeMarkedText: false, settingsEnabled: true),
-            SuggestionEligibility(trustedShellEditing: true, terminalFocused: true, alternateScreen: true, imeMarkedText: false, settingsEnabled: true),
-            SuggestionEligibility(trustedShellEditing: true, terminalFocused: true, alternateScreen: false, imeMarkedText: true, settingsEnabled: true),
-            SuggestionEligibility(trustedShellEditing: true, terminalFocused: true, alternateScreen: false, imeMarkedText: false, settingsEnabled: false),
+            SuggestionEligibility(trustedShellEditing: false, editableSnapshotValid: true,
+                observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+                cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: true,
+                alternateScreen: false, imeMarkedText: false, settingsEnabled: true, historyEnabled: true),
+            SuggestionEligibility(trustedShellEditing: true, editableSnapshotValid: false,
+                observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+                cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: true,
+                alternateScreen: false, imeMarkedText: false, settingsEnabled: true, historyEnabled: true),
+            SuggestionEligibility(trustedShellEditing: true, editableSnapshotValid: true,
+                observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+                cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: false,
+                alternateScreen: false, imeMarkedText: false, settingsEnabled: true, historyEnabled: true),
+            SuggestionEligibility(trustedShellEditing: true, editableSnapshotValid: true,
+                observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+                cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: true,
+                alternateScreen: true, imeMarkedText: false, settingsEnabled: true, historyEnabled: true),
+            SuggestionEligibility(trustedShellEditing: true, editableSnapshotValid: true,
+                observedPrefixMatchesSnapshot: true, terminalRenderedStateValid: true,
+                cursorAtEditableEnd: true, rightSideClear: true, terminalFocused: true,
+                alternateScreen: false, imeMarkedText: false, settingsEnabled: false, historyEnabled: true),
         ]
         for veto in cases {
             var machine = TerminalSuggestionStateMachine()

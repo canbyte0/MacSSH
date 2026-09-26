@@ -148,6 +148,8 @@ final class CommandHistoryStoreTests: XCTestCase {
             logicalSessionID: localSession,
             terminalKind: .local,
             targetGeneration: 1,
+            promptGeneration: 1,
+            snapshotSequence: 1,
             typedPrefix: "git",
             inputRevision: 1
         )

@@ -14,6 +14,8 @@ struct SuggestionRequest: Equatable, Sendable {
     let logicalSessionID: UUID
     let terminalKind: SuggestionTerminalKind
     let targetGeneration: UInt64
+    let promptGeneration: UInt64
+    let snapshotSequence: UInt64
     let typedPrefix: String
     let inputRevision: UInt64
 }
@@ -21,14 +23,22 @@ struct SuggestionRequest: Equatable, Sendable {
 /// 所有条件由未来 UI/会话接线显式提供；缺失条件一律不能推断为 true。
 struct SuggestionEligibility: Equatable, Sendable {
     let trustedShellEditing: Bool
+    let editableSnapshotValid: Bool
+    let observedPrefixMatchesSnapshot: Bool
+    let terminalRenderedStateValid: Bool
+    let cursorAtEditableEnd: Bool
+    let rightSideClear: Bool
     let terminalFocused: Bool
     let alternateScreen: Bool
     let imeMarkedText: Bool
     let settingsEnabled: Bool
+    let historyEnabled: Bool
 
     var isEligible: Bool {
-        trustedShellEditing && terminalFocused && !alternateScreen
-            && !imeMarkedText && settingsEnabled
+        trustedShellEditing && editableSnapshotValid && observedPrefixMatchesSnapshot
+            && terminalRenderedStateValid && cursorAtEditableEnd && rightSideClear
+            && terminalFocused && !alternateScreen && !imeMarkedText
+            && settingsEnabled && historyEnabled
     }
 }
 
@@ -84,7 +94,9 @@ struct TerminalSuggestionStateMachine: Sendable {
 
     @discardableResult
     mutating func begin(_ request: SuggestionRequest, eligibility: SuggestionEligibility) -> SuggestionBinding? {
-        guard eligibility.isEligible, !request.typedPrefix.isEmpty else {
+        guard eligibility.isEligible, request.terminalKind == .local,
+              request.promptGeneration > 0, request.snapshotSequence > 0,
+              !request.typedPrefix.isEmpty else {
             invalidate()
             return nil
         }

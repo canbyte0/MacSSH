@@ -3,7 +3,8 @@ typeset -g _macssh_paste_highlight_requested="${MACSSH_PASTE_HIGHLIGHT_ENABLED:-
 typeset -g _macssh_paste_highlight_fifo="${MACSSH_PASTE_HIGHLIGHT_FIFO-}"
 typeset -g _macssh_command_history_fifo="${MACSSH_COMMAND_HISTORY_FIFO-}"
 typeset -g _macssh_shell_state_fifo="${MACSSH_SHELL_STATE_FIFO-}"
-unset MACSSH_PASTE_HIGHLIGHT_ENABLED MACSSH_PASTE_HIGHLIGHT_FIFO MACSSH_COMMAND_HISTORY_FIFO MACSSH_SHELL_STATE_FIFO
+typeset -g _macssh_zle_edit_fifo="${MACSSH_ZLE_EDIT_FIFO-}"
+unset MACSSH_PASTE_HIGHLIGHT_ENABLED MACSSH_PASTE_HIGHLIGHT_FIFO MACSSH_COMMAND_HISTORY_FIFO MACSSH_SHELL_STATE_FIFO MACSSH_ZLE_EDIT_FIFO
 
 # 仅代理 .zshenv，并立即恢复原生目录：/etc/zshrc 设置 HISTFILE 时不得看到 App 路径。
 # 用户文件在顶层读取一次，后续 .zprofile/.zshrc/.zlogin/.zlogout 均由 zsh 原生加载。
@@ -112,14 +113,17 @@ if [[ -o interactive ]]; then
     # 私有状态 FIFO 只上报 P(提示符就绪) / X(开始执行)，不包含命令文本。
     # 该信号仅证明受控 zsh hook 的阶段；REPL/TUI 仍需其他条件否决。
     typeset -g _macssh_shell_state_fd=""
+    typeset -gi _macssh_prompt_generation=0
     _macssh_shell_state_ready() {
-        [[ -n "$_macssh_shell_state_fd" ]] && print -r -u "$_macssh_shell_state_fd" -- P 2>/dev/null
+        (( ++_macssh_prompt_generation ))
+        [[ -n "$_macssh_shell_state_fd" ]] && print -r -u "$_macssh_shell_state_fd" -- "P${_macssh_tab}${_macssh_prompt_generation}" 2>/dev/null
         return 0
     }
     _macssh_shell_state_executing() {
-        [[ -n "$_macssh_shell_state_fd" ]] && print -r -u "$_macssh_shell_state_fd" -- X 2>/dev/null
+        [[ -n "$_macssh_shell_state_fd" ]] && print -r -u "$_macssh_shell_state_fd" -- "X${_macssh_tab}${_macssh_prompt_generation}" 2>/dev/null
         return 0
     }
+    typeset -g _macssh_tab=$'\t'
     _macssh_install_shell_state_once() {
         local event_directory
         if [[ -n "$_macssh_shell_state_fifo" &&
@@ -145,6 +149,64 @@ if [[ -o interactive ]]; then
     }
     typeset -ga precmd_functions
     precmd_functions+=(_macssh_install_shell_state_once)
+
+    typeset -g _macssh_zle_edit_fd=""
+    typeset -gi _macssh_zle_edit_sequence=0
+
+    _macssh_hex_edit_field() {
+        local value="$1" i ch hexch
+        REPLY=''
+        {
+            local LC_CTYPE=C LC_COLLATE=C LC_ALL= LANG=
+            (( ${#value} <= 16384 )) || return 1
+            for ((i = 1; i <= ${#value}; ++i)); do
+                ch="$value[i]"
+                printf -v hexch '%02X' "'$ch"
+                REPLY+="$hexch"
+            done
+        }
+    }
+
+    _macssh_zle_snapshot() {
+        [[ -n "$_macssh_zle_edit_fd" && $_macssh_prompt_generation -gt 0 ]] || return 0
+        local encoded_buffer encoded_left encoded_right encoded_post
+        _macssh_hex_edit_field "$BUFFER" || return 0
+        encoded_buffer="$REPLY"
+        _macssh_hex_edit_field "$LBUFFER" || return 0
+        encoded_left="$REPLY"
+        _macssh_hex_edit_field "$RBUFFER" || return 0
+        encoded_right="$REPLY"
+        _macssh_hex_edit_field "$POSTDISPLAY" || return 0
+        encoded_post="$REPLY"
+        (( ++_macssh_zle_edit_sequence ))
+        print -r -u "$_macssh_zle_edit_fd" -- "E1${_macssh_tab}${_macssh_prompt_generation}${_macssh_tab}${_macssh_zle_edit_sequence}${_macssh_tab}${encoded_buffer}${_macssh_tab}${encoded_left}${_macssh_tab}${encoded_right}${_macssh_tab}${encoded_post}" 2>/dev/null
+        return 0
+    }
+
+    _macssh_install_zle_edit_once() {
+        local event_directory
+        if [[ -n "$_macssh_zle_edit_fifo" && -p "$_macssh_zle_edit_fifo" && -O "$_macssh_zle_edit_fifo" ]]; then
+            { exec {_macssh_zle_edit_fd}<>"$_macssh_zle_edit_fifo" } 2>/dev/null
+            event_directory="${_macssh_zle_edit_fifo:h}"
+            if [[ "${_macssh_zle_edit_fifo:t}" == edit.fifo &&
+                  "${event_directory:t}" == MacSSH-zle-edit-* ]]; then
+                /bin/rm -f -- "$_macssh_zle_edit_fifo"
+                /bin/rmdir -- "$event_directory" 2>/dev/null
+            fi
+        fi
+        unset _macssh_zle_edit_fifo
+        if [[ -n "$_macssh_zle_edit_fd" ]]; then
+            autoload -Uz add-zle-hook-widget
+            if (( $+functions[add-zle-hook-widget] )); then
+                add-zle-hook-widget line-init _macssh_zle_snapshot
+                add-zle-hook-widget line-pre-redraw _macssh_zle_snapshot
+            fi
+        fi
+        precmd_functions=("${(@)precmd_functions:#_macssh_install_zle_edit_once}")
+        unfunction _macssh_install_zle_edit_once
+    }
+    typeset -ga precmd_functions
+    precmd_functions+=(_macssh_install_zle_edit_once)
 
     typeset -ga _macssh_saved_paste_highlight
     typeset -g _macssh_paste_highlight_state=""

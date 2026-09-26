@@ -36,6 +36,11 @@ final class SessionManager {
 
     private let sshService: SSHService
 
+    @ObservationIgnored
+    private lazy var editableInputMonitor = TerminalEditableInputEventMonitor { [weak self] in
+        self?.activeSession?.localService
+    }
+
     /// 由 AppState 在创建 Manager 时注入；Local service 仅用它持久化
     /// zsh Shell Integration 上报的已执行命令。弱引用避免扩大所有权。
     @ObservationIgnored
@@ -77,6 +82,7 @@ final class SessionManager {
         self.commandHistoryStore = commandHistoryStore
         // 与 Phase 2 行为一致：启动即拥有一个 Local Terminal。
         createLocalSession()
+        editableInputMonitor.install()
     }
 
     // MARK: - 查询
@@ -129,6 +135,7 @@ final class SessionManager {
     /// 创建新的 Local Terminal（`+` / ⌘T）：新 Shell + 新 PTY + 新 SwiftTerm。
     @discardableResult
     func createLocalSession() -> ManagedTerminalSession {
+        activeSession?.localService?.invalidateEditableInput()
         let logicalSessionID = UUID()
         let service = LocalTerminalService(
             session: TerminalSession(shellPath: LoginShellResolver.resolve()),
@@ -163,6 +170,7 @@ final class SessionManager {
     /// 同一 Host 重复调用 = 继续新建 Session（任务书 37），每条连接独立。
     @discardableResult
     func createRemoteSession(host: Host) -> ManagedTerminalSession {
+        activeSession?.localService?.invalidateEditableInput()
         let session = ManagedTerminalSession(
             remoteHostID: host.id,
             hostDisplayName: host.name,
@@ -190,6 +198,7 @@ final class SessionManager {
         guard activeSessionID != id else {
             return
         }
+        activeSession?.localService?.invalidateEditableInput()
         activeSessionID = id
         AppLogger.app.info("Terminal session activated")
     }

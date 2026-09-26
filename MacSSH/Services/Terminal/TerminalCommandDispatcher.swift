@@ -135,8 +135,8 @@ final class TerminalCommandDispatcher {
                 guard let service = session.localService else { return nil }
                 let terminalView = service.terminalView
                 return ActiveInputTarget(
-                    pasteText: { terminalView.pasteText($0) },
-                    sendReturn: { terminalView.send(data: EscapeSequences.cmdRet[...]) },
+                    pasteText: { service.invalidateEditableInput(); terminalView.pasteText($0) },
+                    sendReturn: { service.invalidateEditableInput(); terminalView.send(data: EscapeSequences.cmdRet[...]) },
                     restoreFocus: { service.focusWhenAvailable() },
                     sessionID: session.id,
                     sessionKind: "local",

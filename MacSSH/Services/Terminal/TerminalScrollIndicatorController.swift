@@ -289,9 +289,46 @@ private final class TerminalScrollIndicatorView: NSView {
 /// 不替换 SwiftTerm 内部 delegate，也就不会破坏 PTY 输入输出。
 final class ScrollTrackingLocalProcessTerminalView: LocalProcessTerminalView {
     var scrollIndicatorNeedsUpdate: (() -> Void)?
+    var editableTextInserted: ((String) -> Void)?
+    var editableInputInvalidated: (() -> Void)?
+
+    override func insertText(_ string: Any, replacementRange: NSRange) {
+        let text = (string as? NSAttributedString)?.string ?? (string as? String)
+        let wasComposing = hasMarkedText()
+        super.insertText(string, replacementRange: replacementRange)
+        if wasComposing || replacementRange.length != 0 || replacementRange.location != NSNotFound {
+            editableInputInvalidated?()
+        } else if let text {
+            editableTextInserted?(text)
+        } else {
+            editableInputInvalidated?()
+        }
+    }
+
+    override func setMarkedText(_ string: Any, selectedRange: NSRange, replacementRange: NSRange) {
+        editableInputInvalidated?()
+        super.setMarkedText(string, selectedRange: selectedRange, replacementRange: replacementRange)
+    }
+
+    override func paste(_ sender: Any) {
+        editableInputInvalidated?()
+        super.paste(sender)
+    }
+
+    override func dataReceived(slice: ArraySlice<UInt8>) {
+        super.dataReceived(slice: slice)
+        if getTerminal().isCurrentBufferAlternate { editableInputInvalidated?() }
+    }
+
 
     override func scrolled(source: TerminalView, position: Double) {
         super.scrolled(source: source, position: position)
+        if getTerminal().isCurrentBufferAlternate { editableInputInvalidated?() }
         scrollIndicatorNeedsUpdate?()
+    }
+
+    override func rangeChanged(source: TerminalView, startY: Int, endY: Int) {
+        super.rangeChanged(source: source, startY: startY, endY: endY)
+        if getTerminal().isCurrentBufferAlternate { editableInputInvalidated?() }
     }
 }
